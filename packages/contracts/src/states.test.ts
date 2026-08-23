@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import {
   RUN_STATES,
   TERMINAL_STATES,
-  VERDICTS,
+  VERDICT_STATUSES,
   isTerminal,
   terminalStateOf,
-  terminalStateOfVerdict,
+  terminalStateOfVerification,
   type TerminalState,
+  type VerdictStatus,
+  type VerificationOutcome,
 } from "./states.ts";
 
 describe("terminalStateOf", () => {
@@ -44,35 +46,52 @@ describe("terminalStateOf", () => {
   });
 });
 
-describe("terminalStateOfVerdict", () => {
-  it("preserves the mapping vinci-code already ships", () => {
+describe("terminalStateOfVerification", () => {
+  it("preserves the mapping vinci-code ships, for every input it can receive", () => {
     // Mirrors remoteVerdictTaskState() in vinci/extensions/lib/task-outcome.ts.
-    // If this table changes, that runtime changes behaviour — which is the
-    // drift this package exists to prevent.
-    const fresh = { staled: false };
-    expect(terminalStateOfVerdict("VERIFIED_PASS", fresh)).toBe("DONE");
-    expect(terminalStateOfVerdict("BLOCKED", fresh)).toBe("BLOCKED");
-    expect(terminalStateOfVerdict("CONDITIONAL", fresh)).toBe("DONE_UNVERIFIED");
-    expect(terminalStateOfVerdict("FAILED", fresh)).toBe("DONE_UNVERIFIED");
-    expect(terminalStateOfVerdict("CANCELLED", fresh)).toBeUndefined();
+    // If this table changes, that runtime changes behaviour.
+    const fresh = (status: VerdictStatus) => ({ kind: "issued", status, staled: false }) as const;
+    expect(terminalStateOfVerification(fresh("VERIFIED_PASS"))).toBe("DONE");
+    expect(terminalStateOfVerification(fresh("BLOCKED"))).toBe("BLOCKED");
+    expect(terminalStateOfVerification(fresh("CONDITIONAL"))).toBe("DONE_UNVERIFIED");
+  });
+
+  it("returns no state when the job produced no assessment", () => {
+    // vinci-code's FAILED and CANCELLED switch arms are unreachable from a real
+    // Acceptance verdict; here those cases are a different shape entirely, so a
+    // consumer must handle "there is no verdict" before reading a status.
+    expect(terminalStateOfVerification({ kind: "not-issued", reason: "FAILED" })).toBeUndefined();
+    expect(terminalStateOfVerification({ kind: "not-issued", reason: "CANCELLED" })).toBeUndefined();
   });
 
   it("never reports a pass from a stale verdict", () => {
     // FR-7.4: a stale verdict stays visible as history but must not be
-    // represented as current. The strongest form of that rule is that no
-    // staled verdict — least of all VERIFIED_PASS — yields a state at all.
-    for (const verdict of VERDICTS) {
-      expect(terminalStateOfVerdict(verdict, { staled: true })).toBeUndefined();
+    // represented as current.
+    for (const status of VERDICT_STATUSES) {
+      expect(terminalStateOfVerification({ kind: "issued", status, staled: true })).toBeUndefined();
     }
   });
 
-  it("never turns a non-pass verdict into DONE", () => {
-    // FR-6.4 / FR-7 acceptance criterion: a run that skipped a required check
-    // must not read as verified.
-    for (const verdict of VERDICTS) {
-      if (verdict === "VERIFIED_PASS") continue;
-      expect(terminalStateOfVerdict(verdict, { staled: false })).not.toBe("DONE");
-    }
+  it("reaches DONE only from a fresh VERIFIED_PASS", () => {
+    // The strongest statement of FR-6.4 this type can make: enumerate every
+    // possible outcome and assert exactly one of them yields DONE.
+    const all: VerificationOutcome[] = [
+      ...VERDICT_STATUSES.flatMap((status) => [
+        { kind: "issued", status, staled: false } as const,
+        { kind: "issued", status, staled: true } as const,
+      ]),
+      { kind: "not-issued", reason: "FAILED" },
+      { kind: "not-issued", reason: "CANCELLED" },
+    ];
+    const done = all.filter((o) => terminalStateOfVerification(o) === "DONE");
+    expect(done).toEqual([{ kind: "issued", status: "VERIFIED_PASS", staled: false }]);
+  });
+
+  it("matches the only statuses the producer can emit", () => {
+    // vinci-acceptance packages/protocol/src/types.ts:
+    //   export type VerdictStatus = "VERIFIED_PASS" | "BLOCKED" | "CONDITIONAL";
+    // If Acceptance ever widens that union, this test is the tripwire.
+    expect([...VERDICT_STATUSES].sort()).toEqual(["BLOCKED", "CONDITIONAL", "VERIFIED_PASS"]);
   });
 });
 

@@ -59,20 +59,58 @@ export type TerminalState = (typeof TERMINAL_STATES)[number];
 /**
  * An assessment issued by Acceptance or another designated verifier (FR-7.2).
  *
- * A verdict is not a run state. A run may be `DONE_UNVERIFIED` with no verdict
- * at all, or `DONE` carrying a verdict that has since gone stale (FR-7.4).
- * Keeping the types separate is what stops a worker's own claim from being
- * rendered as independent verification (§8.1, principle 2).
+ * FR-7.2 names five "verdicts": VERIFIED_PASS, CONDITIONAL, BLOCKED, FAILED and
+ * CANCELLED. Only the first three are assessments. The producer proves it:
+ * `vinci-acceptance` declares
+ * `VerdictStatus = "VERIFIED_PASS" | "BLOCKED" | "CONDITIONAL"`
+ * (packages/protocol/src/types.ts) and nothing else can ever be issued.
+ *
+ * FAILED and CANCELLED are states of the verification *job*, not judgements
+ * about the work. A job that crashes or is cancelled produces no assessment at
+ * all — `AcceptanceJob.verdict` is optional precisely because of this.
+ *
+ * Modelling all five as one union is what lets a consumer write a switch arm
+ * for a value the producer cannot emit. `vinci-code`'s
+ * `remoteVerdictTaskState()` has exactly that shape today: its FAILED and
+ * CANCELLED arms are unreachable from a real Acceptance verdict.
+ *
+ * So the five names are preserved, and split across the two things they
+ * actually describe.
  */
-export const VERDICTS = [
-  "VERIFIED_PASS",
-  "CONDITIONAL",
-  "BLOCKED",
-  "FAILED",
-  "CANCELLED",
-] as const;
+export const VERDICT_STATUSES = ["VERIFIED_PASS", "CONDITIONAL", "BLOCKED"] as const;
 
-export type Verdict = (typeof VERDICTS)[number];
+/** What a verifier can actually issue. */
+export type VerdictStatus = (typeof VERDICT_STATUSES)[number];
+
+/**
+ * The outcome of asking for verification: either an assessment was issued, or
+ * the job ended without producing one.
+ *
+ * A consumer cannot read a status without first handling the case where there
+ * is none, which is the property that makes "no verdict" impossible to render
+ * as a pass (FR-6.4).
+ */
+export type VerificationOutcome =
+  | {
+      readonly kind: "issued";
+      readonly status: VerdictStatus;
+      /**
+       * The evaluated state has since changed (FR-7.4). A staled verdict stays
+       * visible as history and must not be represented as current.
+       */
+      readonly staled: boolean;
+    }
+  | {
+      readonly kind: "not-issued";
+      /** The job's own terminal state. Says nothing about the work itself. */
+      readonly reason: "FAILED" | "CANCELLED";
+    };
+
+/**
+ * Backwards-compatible alias. `Verdict` in the glossary (§7) means the
+ * assessment, which is `VerdictStatus`.
+ */
+export type Verdict = VerdictStatus;
 
 const TERMINAL_BY_RUN_STATE: Readonly<Record<RunState, TerminalState | null>> = {
   CREATED: null,
@@ -109,39 +147,36 @@ export function isTerminal(state: RunState): boolean {
 }
 
 /**
- * The terminal state implied by an Acceptance verdict, or `undefined` when the
- * verdict does not change the run's own state.
+ * The terminal state implied by a verification outcome, or `undefined` when the
+ * outcome does not change the run's own state.
  *
- * This is the behaviour vinci-code already ships in `remoteVerdictTaskState()`
- * (`vinci/extensions/lib/task-outcome.ts`), preserved exactly and moved here so
- * that Code and Acceptance cannot drift apart by hand-copied switch statement.
+ * This preserves the behaviour `vinci-code` already ships in
+ * `remoteVerdictTaskState()` (`vinci/extensions/lib/task-outcome.ts`) for every
+ * input that function can actually receive, and moves it here so Code and
+ * Acceptance cannot drift apart by hand-copied switch statement.
  *
- * The two `undefined` cases are deliberate and load-bearing:
- *  - a `CANCELLED` verdict says the *verification* was cancelled, which tells
- *    us nothing about the work itself;
- *  - a staled verdict (FR-7.4) is historical evidence and must not be
- *    represented as current, so callers must pass `staled: true` and get
- *    `undefined` rather than silently re-applying an outdated pass.
+ * `undefined` means "the run's locally-determined state remains authoritative":
+ *  - a staled verdict (FR-7.4) is history, not a current assessment;
+ *  - a job that FAILED or was CANCELLED tells us about the verification, not
+ *    about the work — the run is no more and no less done than it already was.
  *
- * In both cases the run's locally-determined state remains authoritative.
+ * Note what is absent: there is no input for which this returns `DONE` other
+ * than a fresh VERIFIED_PASS. That is the whole point (FR-6.4, §8.1).
  */
-export function terminalStateOfVerdict(
-  verdict: Verdict,
-  options: { readonly staled: boolean },
+export function terminalStateOfVerification(
+  outcome: VerificationOutcome,
 ): TerminalState | undefined {
-  if (options.staled) return undefined;
-  switch (verdict) {
+  if (outcome.kind === "not-issued") return undefined;
+  if (outcome.staled) return undefined;
+  switch (outcome.status) {
     case "VERIFIED_PASS":
       return "DONE";
     case "BLOCKED":
       return "BLOCKED";
     case "CONDITIONAL":
-    case "FAILED":
-      // A conditional verdict is not a pass. FR-7 requires that a run which
-      // skipped a required check reads as unverified rather than done.
+      // A conditional verdict is not a pass. FR-7's acceptance criterion: a run
+      // that skipped a required integration test must not read as verified.
       return "DONE_UNVERIFIED";
-    case "CANCELLED":
-      return undefined;
   }
 }
 
@@ -153,6 +188,6 @@ export function isTerminalState(value: unknown): value is TerminalState {
   return typeof value === "string" && (TERMINAL_STATES as readonly string[]).includes(value);
 }
 
-export function isVerdict(value: unknown): value is Verdict {
-  return typeof value === "string" && (VERDICTS as readonly string[]).includes(value);
+export function isVerdictStatus(value: unknown): value is VerdictStatus {
+  return typeof value === "string" && (VERDICT_STATUSES as readonly string[]).includes(value);
 }
