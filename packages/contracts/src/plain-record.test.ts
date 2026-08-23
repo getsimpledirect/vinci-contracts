@@ -442,6 +442,14 @@ describe("the invariant, stated once and checked over every construction", () =>
   // JSON-equivalence here, and stateful ones are checked for the property that
   // actually constrains them — that the input is read exactly once, which is
   // asserted directly against a single object above.
+  // The invariant is TWO-part and asymmetric. An earlier version of this helper
+  // asserted a single equivalence — same answer either way — which is false:
+  // a value JSON cannot carry (undefined, a function, NaN, +/-Infinity) is
+  // refused here while its JSON validates fine, because dropping it would mean
+  // a field vanishing between what the caller sent and what was checked.
+  //
+  //   SOUNDNESS: never accepts more than the JSON path would.
+  //   FIDELITY:  when it accepts, the value IS the JSON.
   const holdsFor = (build: () => unknown) => {
     const viaExotic = toPlainRecord(build());
     let plain: unknown;
@@ -451,7 +459,11 @@ describe("the invariant, stated once and checked over every construction", () =>
       plain = undefined;
     }
     const viaJson = plain === undefined ? { ok: false as const } : toPlainRecord(plain);
-    expect(viaExotic.ok).toBe(viaJson.ok);
+
+    // Soundness: accepting here requires the JSON path to accept too. Refusing
+    // where the JSON path accepts is permitted and is the fail-closed side.
+    if (viaExotic.ok) expect(viaJson.ok).toBe(true);
+    // Fidelity.
     if (viaExotic.ok && viaJson.ok) expect(viaExotic.value).toEqual(viaJson.value);
   };
 
@@ -688,5 +700,61 @@ describe("nested stateful hooks are called exactly once, counted directly", () =
     expect(inner).toBe(1);
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.value).toEqual({ a: { nested: 1 } });
+  });
+});
+
+describe("the asymmetry is deliberate, and only in the safe direction", () => {
+  // A review reported these as a violation of the guarantee. They are a
+  // violation of the guarantee AS IT WAS STATED — the statement was wrong, not
+  // the code. Refusing is stricter than the JSON path, which is the fail-closed
+  // side; the direction that would matter is accepting something the JSON path
+  // refuses, and that has no instances.
+  const cannotBeJson: [string, () => unknown][] = [
+    ["undefined", () => ({ a: undefined })],
+    ["a function", () => ({ a: () => 1 })],
+    ["NaN", () => ({ a: Number.NaN })],
+    ["Infinity", () => ({ a: Infinity })],
+    ["-Infinity", () => ({ a: -Infinity })],
+    ["a symbol value", () => ({ a: Symbol("s") })],
+    ["a bigint", () => ({ a: 1n })],
+  ];
+
+  it.each(cannotBeJson)("refuses %s rather than letting it vanish", (_label, build) => {
+    // Serializing would silently drop or null these, and the caller would be
+    // told a record was fine after a field they sent had disappeared.
+    expect(toPlainRecord(build()).ok).toBe(false);
+  });
+
+  it("never accepts anything the JSON path would refuse", () => {
+    // The soundness half, checked over every construction in this file's
+    // repertoire plus the non-JSON values above. This is the direction an
+    // attacker would need.
+    const everything: (() => unknown)[] = [
+      ...cannotBeJson.map(([, build]) => build),
+      () => ({ a: 1, b: [1, 2], c: { d: "x" } }),
+      () => Object.setPrototypeOf({ own: 1 }, { hidden: 2 }),
+      () => ({ get x() { return 7; } }),
+      () => ({ a: { toJSON: () => ({ z: 1 }) } }),
+      () => {
+        const arr: unknown[] & Record<string, unknown> = [1, 2] as never;
+        arr.evil = "x";
+        return { items: arr };
+      },
+      () => JSON.parse('{"a":1,"__proto__":{"p":1}}'),
+    ];
+
+    for (const build of everything) {
+      const direct = toPlainRecord(build());
+      if (!direct.ok) continue; // refusing is always permitted
+      let plain: unknown;
+      try {
+        plain = JSON.parse(JSON.stringify(build()));
+      } catch {
+        plain = undefined;
+      }
+      const viaJson = plain === undefined ? { ok: false as const } : toPlainRecord(plain);
+      expect(viaJson.ok, `accepted directly but not as JSON`).toBe(true);
+      if (viaJson.ok) expect(direct.value).toEqual(viaJson.value);
+    }
   });
 });
