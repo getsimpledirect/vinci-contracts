@@ -2,16 +2,19 @@ import { describe, expect, expectTypeOf, it } from "vitest";
 import {
   EXTERNAL_SIDE_EFFECT_CLASSES,
   POLICY_DECISION_SCHEMA_META,
+  POLICY_MANIFEST_SECTION_NAMES,
   POLICY_MANIFEST_SCHEMA_META,
   assertSchemaMetaComplete,
+  validatePolicyDecision,
   validatePolicyManifest,
   type CredentialPolicy,
   type PolicyDecision,
+  type PolicyId,
   type PolicyManifest,
 } from "./index.ts";
 
 const validManifest = {
-  policyId: "policy-test",
+  policyId: "policy-test" as PolicyId,
   version: 1,
   displayName: "Test policy",
   resources: {
@@ -60,6 +63,7 @@ const validManifest = {
     ],
   },
   external_side_effects: {
+    defaultAction: "require_approval",
     rules: EXTERNAL_SIDE_EFFECT_CLASSES.map((actionClass) => ({
       actionClass,
       approval: "required",
@@ -151,6 +155,23 @@ describe("policy schemas", () => {
 });
 
 describe("policy vocabulary", () => {
+  it("exposes every named manifest section without aliases", () => {
+    expect(POLICY_MANIFEST_SECTION_NAMES).toEqual([
+      "resources",
+      "filesystem",
+      "applications",
+      "network",
+      "credentials",
+      "external_side_effects",
+      "spend",
+      "runtime",
+      "retries",
+      "approvals",
+      "verification",
+      "retention",
+    ]);
+  });
+
   it("expresses every consequential side-effect class named by the requirements", () => {
     expect(EXTERNAL_SIDE_EFFECT_CLASSES).toEqual([
       "deployment",
@@ -178,6 +199,7 @@ describe("policy vocabulary", () => {
         readonly scopes: readonly string[];
         readonly revocable: true;
         readonly lifetime: "short_lived";
+        readonly expiresAt: string;
         readonly boundTo: { readonly kind: "capability"; readonly capability: string };
         readonly secret: string;
       }];
@@ -190,20 +212,45 @@ describe("policy decisions", () => {
   it("keeps denied and undetermined distinct while both carry fail-closed context", () => {
     const denied = {
       outcome: "denied",
-      request: { action: "deploy", description: "Deploy service", target: "production" },
+      request: {
+        action: "deploy",
+        description: "Deploy service",
+        target: "production",
+        requestedBy: { kind: "system", component: "test" },
+      },
       reason: { code: "explicit_deny", explanation: "Production deploys are denied" },
-      controllingPolicy: { policyId: "policy-test", version: 1 },
+      controllingPolicy: { policyId: "policy-test" as PolicyId, version: 1 },
       availableOptions: [{ kind: "change_request", description: "Target staging instead" }],
     } as const satisfies PolicyDecision;
     const undetermined = {
       outcome: "undetermined",
-      request: { action: "deploy", description: "Deploy service", target: "production" },
+      request: {
+        action: "deploy",
+        description: "Deploy service",
+        target: "production",
+        requestedBy: { kind: "system", component: "test" },
+      },
       reason: { code: "unknown_action", explanation: "No rule recognizes this deploy type" },
-      controllingPolicy: { policyId: "policy-test", version: 1 },
+      controllingPolicy: { policyId: "policy-test" as PolicyId, version: 1 },
       availableOptions: [{ kind: "request_policy_change", description: "Ask an owner to add a rule" }],
     } as const satisfies PolicyDecision;
 
     expect(denied.outcome).not.toBe(undetermined.outcome);
     expect([denied, undetermined].every((decision) => decision.availableOptions.length > 0)).toBe(true);
+  });
+
+  it("rejects a non-proceeding decision that omits next-step options", () => {
+    const result = validatePolicyDecision({
+      outcome: "undetermined",
+      request: {
+        action: "deploy",
+        description: "Deploy service",
+        requestedBy: { kind: "system", component: "test" },
+      },
+      reason: { code: "missing_context", explanation: "The target environment is unknown" },
+      controllingPolicy: { policyId: "policy-test", version: 1 },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues.some((issue) => issue.path === "/availableOptions")).toBe(true);
   });
 });
