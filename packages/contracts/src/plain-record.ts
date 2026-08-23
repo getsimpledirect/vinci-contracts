@@ -232,6 +232,18 @@ function normalize(
       }
       const descriptor = Object.getOwnPropertyDescriptor(object, key);
       if (descriptor === undefined) continue;
+      if (descriptor.enumerable === false) {
+        // Serialization drops these, so accepting one would mean a field
+        // vanishing between what the caller sent and what was validated.
+        issues.push(
+          issue(
+            `${path}/${escapePointer(key)}`,
+            "non_enumerable_property",
+            "a data record must not carry non-enumerable properties; they would be dropped rather than validated",
+          ),
+        );
+        continue;
+      }
       if (!("value" in descriptor)) {
         issues.push(
           issue(
@@ -274,30 +286,124 @@ function escapePointer(field: string): string {
   return field.replaceAll("~", "~0").replaceAll("/", "~1");
 }
 
+/**
+ * Maximum serialized size, checked before parsing.
+ *
+ * Bounds the work a hostile input can demand independently of MAX_KEYS and
+ * MAX_DEPTH, both of which are only enforceable once the data is already inert.
+ */
+const MAX_SERIALIZED_BYTES = 1_000_000;
+
+/**
+ * Types that carry no data and must not be silently dropped.
+ *
+ * `JSON.stringify` omits functions, symbols and undefined rather than
+ * complaining. Omission would mean a field vanishing between what the caller
+ * sent and what was validated, so the replacer flags them instead.
+ */
+function assertSerializableValue(value: unknown, found: string[]): void {
+  const type = typeof value;
+  if (type === "function" || type === "symbol" || type === "bigint" || type === "undefined") {
+    found.push(type);
+  }
+  if (type === "number" && !Number.isFinite(value as number)) found.push("non-finite number");
+}
+
 export function toPlainRecord(value: unknown, path = ""): ValidationResult<PlainRecord> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+  if (typeof value !== "object" || value === null) {
     return fail([issue(path, "not_object", "expected an object")]);
   }
+
+  // ── Pass 1: reflect, for precise errors. ──────────────────────────────────
+  //
+  // Runs against the ORIGINAL input and produces the diagnostics this
+  // repository's rules call for — no inherited fields, no accessors, no symbol
+  // keys, no extra array properties, no sparse arrays, no cycles. For an honest
+  // caller this is the whole story, and it runs BEFORE serialization so a
+  // getter is refused rather than invoked.
   const issues: ValidationIssue[] = [];
-  let normalized: PlainValue | undefined;
   try {
-    normalized = normalize(value, path, 0, new Set(), issues);
+    normalize(value, path, 0, new Set(), issues);
   } catch {
-    // Reflection on a Proxy runs user code: ownKeys, getOwnPropertyDescriptor
-    // and getPrototypeOf can all throw. Letting that escape turns a validation
-    // call into a crash, so a caller written to handle fail-closed results
-    // gets an exception instead. The message is not echoed — it is
-    // attacker-authored.
+    return fail([
+      issue(path, "hostile_object", "inspecting this value raised an error; a data record must be inert"),
+    ]);
+  }
+  if (issues.length > 0) return fail(issues);
+
+
+  // ── Pass 2: serialize once, for truth. ────────────────────────────────────
+  //
+  // Reflection cannot validate a Proxy, because reflection IS the Proxy. Seven
+  // rounds of hardening reflected over the input and each was defeated by a
+  // trap answering differently from what the check assumed. The last one is the
+  // proof: an array Proxy whose `ownKeys` returned only `length`, and whose
+  // `getOwnPropertyDescriptor` reported the real non-configurable descriptor
+  // with its value changed to 0, erased three elements. Both traps lied, and
+  // they lied CONSISTENTLY — so a cross-check between them agreed with itself.
+  // No amount of correlating one trap against another closes that, because the
+  // same object authors both answers.
+  //
+  // Serializing once and parsing the result removes the object from the picture
+  // entirely. A hostile input still gets to decide what it says, but it says it
+  // once: the data that is validated and the data that is returned are the same
+  // inert snapshot, so validation cannot be made to disagree with the record it
+  // produced. That divergence — not the lying itself — was every one of these
+  // defects.
+  //
+  // The checks below still run, on data that can no longer contain a prototype,
+  // an accessor, a proxy or a cycle. They are cheap on inert input and they are
+  // what enforces the repository's own rules: no `__proto__` key, no symbol
+  // key, bounded depth, bounded width, no sparse array.
+  const nonData: string[] = [];
+  let serialized: string;
+  try {
+    serialized = JSON.stringify(value, (_key, entry: unknown) => {
+      assertSerializableValue(entry, nonData);
+      return entry;
+    });
+  } catch {
+    // Cycles and BigInt throw here. Reflection on a Proxy also runs user code
+    // that may throw. The message is attacker-authored and is not echoed.
+    return fail([
+      issue(path, "not_serializable", "a data record must be inert and free of cycles"),
+    ]);
+  }
+
+  if (nonData.length > 0) {
     return fail([
       issue(
         path,
-        "hostile_object",
-        "inspecting this value raised an error; a data record must be inert",
+        "unsupported_value",
+        `a data record must not carry a value of type ${[...new Set(nonData)].sort().join(", ")}`,
       ),
     ]);
   }
-  if (issues.length > 0 || normalized === undefined) {
-    return fail(issues.length > 0 ? issues : [issue(path, "not_object", "expected an object")]);
+  if (serialized === undefined) {
+    return fail([issue(path, "not_object", "expected an object")]);
+  }
+  if (serialized.length > MAX_SERIALIZED_BYTES) {
+    return fail([
+      issue(path, "too_large", `a data record must serialize to under ${MAX_SERIALIZED_BYTES} bytes`),
+    ]);
+  }
+
+  let inert: unknown;
+  try {
+    inert = JSON.parse(serialized);
+  } catch {
+    return fail([issue(path, "not_serializable", "a data record must be inert")]);
+  }
+  if (typeof inert !== "object" || inert === null || Array.isArray(inert)) {
+    return fail([issue(path, "not_object", "expected an object")]);
+  }
+
+  const inertIssues: ValidationIssue[] = [];
+  const normalized = normalize(inert, path, 0, new Set(), inertIssues);
+  if (inertIssues.length > 0 || normalized === undefined) {
+    return fail(
+      inertIssues.length > 0 ? inertIssues : [issue(path, "not_object", "expected an object")],
+    );
   }
   return ok(normalized as PlainRecord);
 }

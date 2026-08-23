@@ -253,3 +253,80 @@ describe("an array's length is cross-checked, never trusted", () => {
     }
   });
 });
+
+describe("a Proxy cannot make validation disagree with the record it produced", () => {
+  it("is not fooled by two traps telling the same lie", () => {
+    // The eighth hole, and the one that settled the approach. `ownKeys`
+    // returned only ["length"] — legal, since configurable index properties may
+    // be omitted — and `getOwnPropertyDescriptor` returned the real
+    // non-configurable descriptor for `length` with its value changed to 0.
+    // Both traps lied CONSISTENTLY, so cross-checking one against the other
+    // agreed with itself, and three elements were silently erased.
+    //
+    // No amount of correlating traps closes that: the same object authors every
+    // answer. Reflection cannot validate a Proxy because reflection IS the
+    // Proxy.
+    const target = [1, 2, 3];
+    const realLength = Object.getOwnPropertyDescriptor(target, "length");
+    const liar = new Proxy(target, {
+      ownKeys() {
+        return ["length"];
+      },
+      getOwnPropertyDescriptor(t, k) {
+        return k === "length"
+          ? { ...(realLength as PropertyDescriptor), value: 0 }
+          : Reflect.getOwnPropertyDescriptor(t, k);
+      },
+    });
+
+    const result = toPlainRecord({ items: liar });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.items).toEqual([1, 2, 3]);
+  });
+
+  it("returns exactly what it validated, whatever a hostile input claimed", () => {
+    // This is the property that actually matters, and the one every previous
+    // defect broke. A hostile input still decides what it says — but it says it
+    // once, so the data checked and the data returned cannot diverge.
+    const liar = new Proxy([1, 2, 3], {
+      get(t, k, r) {
+        return k === "length" ? 1 : Reflect.get(t, k, r);
+      },
+    });
+    const result = toPlainRecord({ items: liar });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Whatever it claimed, the returned value is inert, frozen, and not the proxy.
+    expect(result.value.items).not.toBe(liar);
+    expect(Object.isFrozen(result.value.items)).toBe(true);
+    expect(JSON.parse(JSON.stringify(result.value.items))).toEqual(result.value.items);
+  });
+
+  it("still refuses an honest caller's accessor without invoking it", () => {
+    // The reflective pass runs FIRST, so a getter is refused rather than
+    // executed. Serializing first would have run it.
+    let reads = 0;
+    const withGetter = {
+      a: {
+        get x() {
+          reads += 1;
+          return 1;
+        },
+      },
+    };
+    const result = toPlainRecord(withGetter);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues[0]?.code).toBe("accessor_property");
+    expect(reads).toBe(0);
+  });
+
+  it("refuses a non-enumerable property rather than dropping it", () => {
+    // Serialization would drop it, which means a field vanishing between what
+    // the caller sent and what was validated.
+    const record = { a: 1 };
+    Object.defineProperty(record, "hidden", { value: "x", enumerable: false });
+    const result = toPlainRecord(record);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "non_enumerable_property")).toBe(true);
+  });
+});
