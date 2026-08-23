@@ -121,6 +121,43 @@ describe("statusIsSupportedBy is a gate, not a helper", () => {
     }
   });
 
+  it("refuses a hostile ARRAY, not just hostile entries", () => {
+    // The container, not the contents. A sparse array reports a non-zero
+    // length while holding nothing, and Array.prototype.every SKIPS holes — so
+    // length>0 plus .every() together still said yes. That is the vacuous pass
+    // arriving through a third door after being closed twice.
+    const ownEvery: unknown[] = [];
+    (ownEvery as { every: () => boolean }).every = () => true;
+    (ownEvery as { length: number }).length = 3;
+
+    const hostile: Array<[string, unknown]> = [
+      ["new Array(1)", new Array(1)],
+      ["new Array(5)", new Array(5)],
+      ["a sparse literal", [, ,]],
+      ["an array supplying its own every()", ownEvery],
+      ["a proxy throwing from length", new Proxy([], { get(t, k) { if (k === "length") throw new Error("len"); return (t as never)[k]; } })],
+      ["a proxy throwing from an index", new Proxy([{}], { get(t, k) { if (k === "0") throw new Error("idx"); return (t as never)[k]; } })],
+      ["a proxy throwing from gOPD", new Proxy([{}], { getOwnPropertyDescriptor() { throw new Error("gopd"); } })],
+      ["a huge claimed length", Object.assign([], { length: 2 ** 32 - 1 })],
+      ["a hole among real entries", Object.assign([{ status: "supported" }], { length: 3 })],
+    ];
+    for (const [label, results] of hostile) {
+      expect(() => statusIsSupportedBy("VERIFIED_PASS", results as never), label).not.toThrow();
+      expect(statusIsSupportedBy("VERIFIED_PASS", results as never), label).toBe(false);
+    }
+  });
+
+  it("still accepts a dense array of genuinely supported criteria", () => {
+    // Positive control for the traversal. Refusing every array would satisfy
+    // every case above.
+    expect(statusIsSupportedBy("VERIFIED_PASS", [
+      { status: "supported" }, { status: "supported" }, { status: "supported" },
+    ] as never)).toBe(true);
+    expect(statusIsSupportedBy("VERIFIED_PASS", [
+      { status: "supported" }, { status: "contradicted" },
+    ] as never)).toBe(false);
+  });
+
   it("refuses an entry whose status is an accessor or inherited", () => {
     // The plain `result.status` read this replaces had two defects. The throw
     // was reported by a reviewer; the inherited case is the one that

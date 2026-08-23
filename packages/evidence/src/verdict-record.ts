@@ -123,6 +123,8 @@ export function statusIsSupportedBy(
   // that `validateVerdictRecord` happens to call. It must not assume its caller
   // already validated anything: an external caller reaches it directly with
   // whatever it has, including a hostile array.
+  // Array.isArray is safe on a Proxy — it inspects the internal slot and runs
+  // no trap — so it is the one thing that may be asked before the traversal.
   if (!Array.isArray(criterionResults)) return false;
 
   // Establish the status is a status BEFORE applying status semantics.
@@ -132,52 +134,87 @@ export function statusIsSupportedBy(
   // returned TRUE. For a predicate named "is this status supported by these
   // criteria", answering true for a status that does not exist is the same
   // unearned-confidence failure as the vacuous pass, reached from the other
-  // side: garbage in, endorsement out. A caller checking a status it failed to
-  // validate was told yes.
+  // side: garbage in, endorsement out.
   if (!isVerdictStatus(status)) return false;
 
   if (status !== "VERIFIED_PASS") return true;
 
-  // The vacuous pass. `.every()` on an empty array is `true`, so the previous
-  // version certified a VERIFIED_PASS backed by ZERO criteria — the single most
-  // valuable record to forge, admitted by the most ordinary line of code in the
-  // file. "No criterion contradicted the work" and "the work was checked" are
-  // different statements, and only the second justifies a pass.
-  if (criterionResults.length === 0) return false;
+  return everyEntryIsSupported(criterionResults);
+}
 
-  return criterionResults.every((result) => {
+/**
+ * A verdict may not have more criteria than this.
+ *
+ * Not a real limit on verdicts — it is a refusal to walk an attacker-chosen
+ * length. A hostile object can report a length of 2^32-1 and this loop would
+ * run for hours. Fail closed instead.
+ */
+const MAX_CRITERIA = 10_000;
+
+/**
+ * Traverse the results WITHOUT calling anything the input supplied.
+ *
+ * `.every()` is not usable here, and the reasons stack up:
+ *
+ *   new Array(1)                     length 1, every() SKIPS the hole -> true
+ *   arr.every = () => true           our callback never runs -> true
+ *   Proxy with a throwing length/index trap  -> threw
+ *
+ * The first is the serious one. It is the vacuous pass again — VERIFIED_PASS
+ * with zero actual criterion objects — arriving through a third door after
+ * being closed twice, because a sparse array reports a non-zero length while
+ * containing nothing. A length check and an `.every()` together still say yes.
+ *
+ * So every index from 0 to length-1 must be an OWN DATA property. A hole fails
+ * (no descriptor), an accessor fails (no `value`), and an inherited element
+ * fails. Nothing the caller provided — no `every`, no getter, no trap — is ever
+ * invoked except reflective reads, which are wrapped narrowly.
+ */
+function everyEntryIsSupported(criterionResults: readonly unknown[]): boolean {
+  let length: unknown;
+  try {
+    length = (criterionResults as { readonly length?: unknown }).length;
+  } catch {
+    return false;
+  }
+  if (typeof length !== "number" || !Number.isInteger(length) || length < 0) return false;
+  // A pass backed by no criteria is not a pass. See the vacuous-pass note above.
+  if (length === 0 || length > MAX_CRITERIA) return false;
+
+  for (let index = 0; index < length; index += 1) {
+    let entry: PropertyDescriptor | undefined;
+    try {
+      entry = Object.getOwnPropertyDescriptor(criterionResults, index);
+    } catch {
+      return false;
+    }
+    // undefined => a hole. No "value" => an accessor. Both refuse.
+    if (entry === undefined || !("value" in entry)) return false;
+
+    const result: unknown = entry.value;
     if (typeof result !== "object" || result === null || Array.isArray(result)) return false;
 
     // Read the OWN data property, without ever invoking a getter.
     //
-    // Two defects lived in the plain `result.status` read this replaces, and
-    // the second is the dangerous one:
-    //
-    //   [{ get status() { throw } }]        -> threw, from a function whose
+    //   { get status() { throw } }          -> threw, from a function whose
     //                                          comment promises it does not
-    //   [Object.create({status:"supported"})] -> TRUE. An object with NO own
+    //   Object.create({status:"supported"}) -> TRUE. An object with NO own
     //                                          status, inheriting one from its
-    //                                          prototype, counted as a
-    //                                          supported criterion.
+    //                                          prototype, counted as supported.
     //
-    // The second one manufactures a pass. An attacker supplying criterion
-    // results does not need a supported criterion, only a prototype that
-    // claims one. getOwnPropertyDescriptor answers the question actually
-    // meant — does this object ITSELF carry status as data — and an accessor
-    // or an inherited value both fail it.
+    // The second manufactures a pass: an attacker needs not a supported
+    // criterion but a prototype that claims one.
     let descriptor: PropertyDescriptor | undefined;
     try {
-      // A Proxy can throw from its own getOwnPropertyDescriptor trap. Narrow
-      // catch: it wraps ONE read of caller-supplied data, not any logic of
-      // ours, so it cannot swallow a bug of our own the way a broad catch
-      // around the whole predicate would.
       descriptor = Object.getOwnPropertyDescriptor(result, "status");
     } catch {
       return false;
     }
     if (descriptor === undefined || !("value" in descriptor)) return false;
-    return descriptor.value === "supported";
-  });
+    if (descriptor.value !== "supported") return false;
+  }
+
+  return true;
 }
 
 /** Closed-shape check for one nested object: declared keys, nothing else. */
