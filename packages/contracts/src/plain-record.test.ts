@@ -178,3 +178,78 @@ describe("the normalizer does not reintroduce what it prevents", () => {
     if (result.ok) expect(result.value.items).toEqual([1, "two", { three: true }]);
   });
 });
+
+describe("an array's length is cross-checked, never trusted", () => {
+  it("refuses a Proxy that lies about length", () => {
+    // `length` was read through normal property access on every loop
+    // condition, so a Proxy reporting 0 over three elements normalized
+    // [1,2,3] to [] — silently emptying an array inside a record that then
+    // validated clean.
+    const liar = new Proxy([1, 2, 3], {
+      get(t, k, r) {
+        return k === "length" ? 0 : Reflect.get(t, k, r);
+      },
+      getOwnPropertyDescriptor(t, k) {
+        return k === "length"
+          ? { value: 0, writable: true, enumerable: false, configurable: false }
+          : Reflect.getOwnPropertyDescriptor(t, k);
+      },
+    });
+    const result = toPlainRecord({ items: liar });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "array_length_mismatch")).toBe(true);
+  });
+
+  it("is unaffected by a length that changes between reads", () => {
+    // Reading it twice truncated differently each time. It is now read once,
+    // from its descriptor, and only as a cross-check.
+    let reads = 0;
+    const shifty = new Proxy([1, 2, 3], {
+      get(t, k, r) {
+        if (k === "length") {
+          reads += 1;
+          return reads < 2 ? 3 : 0;
+        }
+        return Reflect.get(t, k, r);
+      },
+    });
+    const result = toPlainRecord({ items: shifty });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.items).toEqual([1, 2, 3]);
+  });
+
+  it("refuses an out-of-range numeric key", () => {
+    // The old regex accepted "4294967295", one past the largest index any
+    // array can hold, so the key was treated as an element and then dropped.
+    const arr = [1, 2];
+    Object.defineProperty(arr, "4294967295", { value: "smuggled", enumerable: true, configurable: true });
+    expect(toPlainRecord({ items: arr }).ok).toBe(false);
+  });
+
+  it("refuses a sparse array rather than reshaping it", () => {
+    // A 5,000,000-length array with one element set has one index key.
+    // Normalizing that to a single-element array silently discards what the
+    // caller believed it was validating.
+    const sparse = new Array(5_000_000);
+    sparse[0] = 1;
+    const result = toPlainRecord({ items: sparse });
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses an oversized record before walking it", () => {
+    const wide: Record<string, number> = {};
+    for (let i = 0; i < 10_001; i += 1) wide[`k${i}`] = i;
+    const result = toPlainRecord(wide);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "too_many_keys")).toBe(true);
+  });
+
+  it("still accepts ordinary and empty arrays", () => {
+    const result = toPlainRecord({ items: [1, "two", { three: true }], empty: [] });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.items).toEqual([1, "two", { three: true }]);
+      expect(result.value.empty).toEqual([]);
+    }
+  });
+});

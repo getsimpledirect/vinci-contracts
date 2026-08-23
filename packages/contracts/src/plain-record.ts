@@ -38,6 +38,30 @@ const PLAIN_PROTOTYPES: readonly (object | null)[] = [Object.prototype, null];
  */
 const MAX_DEPTH = 32;
 
+/**
+ * Hard cap on entries per object or array, checked BEFORE iterating.
+ *
+ * A hostile input can declare an enormous array cheaply — `new Array(1e9)` — and
+ * without this the validator walks it, accumulating one issue per hole until it
+ * exhausts memory. Refusing outright costs one comparison.
+ */
+const MAX_KEYS = 10_000;
+
+/**
+ * The numeric value of a canonical array index, or undefined.
+ *
+ * Canonical means the string round-trips: "01", "1.0", "+1" and " 1" are not
+ * indices. The previous regex also accepted 4294967295, which is one past the
+ * largest index any array can hold, so such a key was treated as an element and
+ * then silently dropped.
+ */
+function canonicalIndex(key: string): number | undefined {
+  if (!/^(0|[1-9][0-9]*)$/.test(key)) return undefined;
+  const index = Number(key);
+  if (!Number.isSafeInteger(index) || index >= 2 ** 32 - 1) return undefined;
+  return index;
+}
+
 function issue(path: string, code: string, message: string): ValidationIssue {
   return { path, code, message };
 }
@@ -82,17 +106,32 @@ function normalize(
   seen.add(object);
   try {
     if (Array.isArray(object)) {
-      // Walk the array's OWN keys, not just its indices. An array can carry
-      // extra properties — `arr.evil = "x"`, or a non-enumerable one — and
-      // iterating 0..length-1 dropped them silently. Silent dropping is data
-      // loss at best and a smuggling channel at worst.
-      for (const key of Reflect.ownKeys(object)) {
+      // `length` is deliberately NOT consulted.
+      //
+      // It was read through normal property access on every loop condition, so
+      // a Proxy could simply lie: reporting length 0 while its own keys held
+      // three elements normalized [1,2,3] to [], silently emptying an array
+      // inside a record that then validated. A length that changed between
+      // reads truncated differently again. Validating `length` more carefully
+      // would still be trusting a value the input controls, so it is removed
+      // from the trust base instead: the elements ARE the own index keys.
+      const keys = Reflect.ownKeys(object);
+      if (keys.length > MAX_KEYS) {
+        issues.push(
+          issue(path, "too_many_keys", `a data record must not carry more than ${MAX_KEYS} entries`),
+        );
+        return undefined;
+      }
+
+      const indices: number[] = [];
+      for (const key of keys) {
         if (typeof key === "symbol") {
           issues.push(issue(path, "symbol_key", "a data record must not carry symbol keys"));
           continue;
         }
         if (key === "length") continue;
-        if (!/^(0|[1-9][0-9]*)$/.test(key)) {
+        const index = canonicalIndex(key);
+        if (index === undefined) {
           issues.push(
             issue(
               `${path}/${escapePointer(key)}`,
@@ -100,25 +139,61 @@ function normalize(
               "an array must carry only its elements; extra properties are not part of the data",
             ),
           );
-        }
-      }
-      const out: PlainValue[] = [];
-      for (let i = 0; i < object.length; i += 1) {
-        // Index access on an array can hit an accessor too, so go through the
-        // descriptor rather than reading the element.
-        const descriptor = Object.getOwnPropertyDescriptor(object, i);
-        if (descriptor === undefined) {
-          issues.push(issue(`${path}/${i}`, "sparse_array", "a data record must not contain a sparse array"));
           continue;
         }
-        if (!("value" in descriptor)) {
+        indices.push(index);
+      }
+      if (issues.length > 0) return undefined;
+
+      // Elements must be a contiguous run from 0. A gap is a sparse array, and
+      // an out-of-range index (the old regex accepted 4294967295, which no
+      // array can hold) is not an element at all — both were dropped in
+      // silence, which changes the data a caller believes it validated.
+      // `length` is read ONCE, from its own data descriptor, and used only to
+      // cross-check what the index keys already said. It is never the source
+      // of truth: if it disagrees, the array is refused rather than trusted in
+      // either direction.
+      //
+      // This catches both halves of the problem at once. A Proxy claiming
+      // length 0 over three elements disagrees and is refused. So is a genuinely
+      // sparse array — `new Array(5_000_000)` with one element set has one index
+      // key and length 5000000, and normalizing it to a single-element array
+      // would silently discard what the caller believed it was validating.
+      const lengthDescriptor = Object.getOwnPropertyDescriptor(object, "length");
+      const declaredLength =
+        lengthDescriptor !== undefined && "value" in lengthDescriptor
+          ? lengthDescriptor.value
+          : undefined;
+      if (typeof declaredLength !== "number" || declaredLength !== indices.length) {
+        issues.push(
+          issue(
+            path,
+            "array_length_mismatch",
+            "an array's length must equal its element count; a sparse array or a disagreeing length is refused rather than silently reshaped",
+          ),
+        );
+        return undefined;
+      }
+
+      indices.sort((a, b) => a - b);
+      const out: PlainValue[] = [];
+      for (let i = 0; i < indices.length; i += 1) {
+        if (indices[i] !== i) {
+          issues.push(
+            issue(`${path}/${i}`, "sparse_array", "a data record must not contain a sparse array"),
+          );
+          return undefined;
+        }
+        const descriptor = Object.getOwnPropertyDescriptor(object, String(i));
+        if (descriptor === undefined || !("value" in descriptor)) {
           issues.push(
             issue(`${path}/${i}`, "accessor_property", "a data record must not use getters or setters"),
           );
-          continue;
+          return undefined;
         }
         const element = normalize(descriptor.value, `${path}/${i}`, depth + 1, seen, issues);
-        if (element !== undefined) out.push(element);
+        if (element === undefined) return undefined;
+        out.push(element);
       }
       return Object.freeze(out);
     }
@@ -142,8 +217,15 @@ function normalize(
     // an own property, so the snapshot ended up with inherited attacker data
     // that Object.keys could not see. The normalizer reintroduced the exact
     // inherited-field problem it exists to prevent.
+    const objectKeys = Reflect.ownKeys(object);
+    if (objectKeys.length > MAX_KEYS) {
+      issues.push(
+        issue(path, "too_many_keys", `a data record must not carry more than ${MAX_KEYS} entries`),
+      );
+      return undefined;
+    }
     const out: Record<string, PlainValue> = Object.create(null);
-    for (const key of Reflect.ownKeys(object)) {
+    for (const key of objectKeys) {
       if (typeof key === "symbol") {
         issues.push(issue(path, "symbol_key", "a data record must not carry symbol keys"));
         continue;
