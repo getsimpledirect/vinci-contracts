@@ -102,3 +102,79 @@ describe("toPlainRecord normalizes the whole record, not its top level", () => {
     expect(result.ok === false && result.issues[0]?.path).toBe("/a~1b~0c");
   });
 });
+
+describe("the normalizer does not reintroduce what it prevents", () => {
+  it('refuses a "__proto__" key parsed from JSON', () => {
+    // Building the snapshot with `{}` and `out[key] = value` invoked the
+    // __proto__ SETTER: the value became the snapshot's prototype rather than
+    // an own property, so the snapshot carried inherited attacker data that
+    // Object.keys could not see — the exact inherited-field problem this
+    // function exists to prevent, reintroduced by the function itself.
+    const parsed = JSON.parse('{"a":1,"__proto__":{"polluted":true}}') as Record<string, unknown>;
+    expect(Object.hasOwn(parsed, "__proto__")).toBe(true);
+
+    const result = toPlainRecord(parsed);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "forbidden_key")).toBe(true);
+  });
+
+  it("never pollutes the prototype of anything it returns", () => {
+    const result = toPlainRecord(JSON.parse('{"a":{"b":1}}'));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Null prototype: nothing is inherited, so an own-property check sees
+    // everything there is.
+    expect(Object.getPrototypeOf(result.value)).toBeNull();
+    expect(Object.getPrototypeOf(result.value.a)).toBeNull();
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("fails closed when reflection itself throws", () => {
+    // Reflection on a Proxy runs user code. Letting it escape turns a
+    // validation call into a crash, so a caller written for fail-closed
+    // results gets an exception instead of a refusal.
+    const hostile = new Proxy({}, {
+      ownKeys() {
+        throw new Error("trap escaped validation");
+      },
+    });
+    let result: ReturnType<typeof toPlainRecord> | undefined;
+    expect(() => {
+      result = toPlainRecord({ nested: hostile });
+    }).not.toThrow();
+    expect(result?.ok).toBe(false);
+    // The thrown message is attacker-authored and must not be echoed back.
+    expect(JSON.stringify(result)).not.toContain("trap escaped");
+  });
+
+  it.each([
+    ["getPrototypeOf", { getPrototypeOf() { throw new Error("x"); } }],
+    ["getOwnPropertyDescriptor", { getOwnPropertyDescriptor() { throw new Error("x"); } }],
+  ])("fails closed when the %s trap throws", (_label, handler) => {
+    const hostile = new Proxy({ a: 1 }, handler as ProxyHandler<object>);
+    expect(() => toPlainRecord({ nested: hostile })).not.toThrow();
+    expect(toPlainRecord({ nested: hostile }).ok).toBe(false);
+  });
+
+  it("refuses an array carrying properties that are not elements", () => {
+    // Iterating 0..length-1 dropped these silently. Silent dropping is data
+    // loss at best and a smuggling channel at worst.
+    const arr: unknown[] & Record<string, unknown> = [1, 2] as never;
+    arr.evil = "smuggled";
+    const result = toPlainRecord({ items: arr });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "array_extra_property")).toBe(true);
+  });
+
+  it("refuses a non-enumerable property on an array", () => {
+    const arr = [1, 2];
+    Object.defineProperty(arr, "hidden", { value: "smuggled", enumerable: false });
+    expect(toPlainRecord({ items: arr }).ok).toBe(false);
+  });
+
+  it("still accepts an ordinary array", () => {
+    const result = toPlainRecord({ items: [1, "two", { three: true }] });
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.items).toEqual([1, "two", { three: true }]);
+  });
+});

@@ -82,6 +82,26 @@ function normalize(
   seen.add(object);
   try {
     if (Array.isArray(object)) {
+      // Walk the array's OWN keys, not just its indices. An array can carry
+      // extra properties — `arr.evil = "x"`, or a non-enumerable one — and
+      // iterating 0..length-1 dropped them silently. Silent dropping is data
+      // loss at best and a smuggling channel at worst.
+      for (const key of Reflect.ownKeys(object)) {
+        if (typeof key === "symbol") {
+          issues.push(issue(path, "symbol_key", "a data record must not carry symbol keys"));
+          continue;
+        }
+        if (key === "length") continue;
+        if (!/^(0|[1-9][0-9]*)$/.test(key)) {
+          issues.push(
+            issue(
+              `${path}/${escapePointer(key)}`,
+              "array_extra_property",
+              "an array must carry only its elements; extra properties are not part of the data",
+            ),
+          );
+        }
+      }
       const out: PlainValue[] = [];
       for (let i = 0; i < object.length; i += 1) {
         // Index access on an array can hit an accessor too, so go through the
@@ -116,7 +136,13 @@ function normalize(
 
     // Reflect.ownKeys, not Object.keys: it includes non-enumerable and symbol
     // keys, which is exactly what an unknown-field check would otherwise miss.
-    const out: Record<string, PlainValue> = {};
+    // Null prototype, and assignment via defineProperty below. Building with
+    // `{}` and `out[key] = value` invoked the `__proto__` SETTER when a record
+    // carried that key: the value became the snapshot's prototype rather than
+    // an own property, so the snapshot ended up with inherited attacker data
+    // that Object.keys could not see. The normalizer reintroduced the exact
+    // inherited-field problem it exists to prevent.
+    const out: Record<string, PlainValue> = Object.create(null);
     for (const key of Reflect.ownKeys(object)) {
       if (typeof key === "symbol") {
         issues.push(issue(path, "symbol_key", "a data record must not carry symbol keys"));
@@ -135,8 +161,24 @@ function normalize(
         continue;
       }
       // Read exactly once, here. Nothing downstream touches the input again.
+      if (key === "__proto__") {
+        // Never legitimate in these records, and its presence is a strong
+        // signal of an attempt at prototype pollution. Refuse rather than
+        // quietly renaming or dropping it.
+        issues.push(
+          issue(`${path}/__proto__`, "forbidden_key", 'a data record must not carry a "__proto__" key'),
+        );
+        continue;
+      }
       const normalized = normalize(descriptor.value, `${path}/${escapePointer(key)}`, depth + 1, seen, issues);
-      if (normalized !== undefined) out[key] = normalized;
+      if (normalized !== undefined) {
+        Object.defineProperty(out, key, {
+          value: normalized,
+          enumerable: true,
+          writable: false,
+          configurable: false,
+        });
+      }
     }
     return Object.freeze(out);
   } finally {
@@ -155,7 +197,23 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
     return fail([issue(path, "not_object", "expected an object")]);
   }
   const issues: ValidationIssue[] = [];
-  const normalized = normalize(value, path, 0, new Set(), issues);
+  let normalized: PlainValue | undefined;
+  try {
+    normalized = normalize(value, path, 0, new Set(), issues);
+  } catch {
+    // Reflection on a Proxy runs user code: ownKeys, getOwnPropertyDescriptor
+    // and getPrototypeOf can all throw. Letting that escape turns a validation
+    // call into a crash, so a caller written to handle fail-closed results
+    // gets an exception instead. The message is not echoed — it is
+    // attacker-authored.
+    return fail([
+      issue(
+        path,
+        "hostile_object",
+        "inspecting this value raised an error; a data record must be inert",
+      ),
+    ]);
+  }
   if (issues.length > 0 || normalized === undefined) {
     return fail(issues.length > 0 ? issues : [issue(path, "not_object", "expected an object")]);
   }
