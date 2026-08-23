@@ -548,3 +548,37 @@ describe("the invariant, stated once and checked over every construction", () =>
     expect(result.ok).toBe(false);
   });
 });
+
+describe("the size cap is measured in real UTF-8 bytes", () => {
+  // The cap was enforced with String.length, which counts UTF-16 code units, so
+  // 800,000 code units of non-ASCII passed a one-million-BYTE limit at 1.6MB.
+  // These pin the accounting at the boundary for every encoding width.
+  it.each([
+    ["ASCII", "a"],
+    ["2-byte BMP", "é"],
+    ["3-byte BMP", "中"],
+    ["surrogate pair", "\u{1F600}"],
+    ["lone high surrogate", "\ud800"],
+    ["lone low surrogate", "\udc00"],
+    ["high surrogate then ASCII", "\ud800a"],
+  ])("never accepts more than the cap for %s", (_label, unit) => {
+    // Find the largest accepted repeat count, then confirm what it serializes
+    // to is genuinely within the byte cap rather than merely within a code-unit
+    // count. `toPlainRecord` is the thing under test; the byte measurement here
+    // is independent of it.
+    let low = 0;
+    let high = 1_200_000;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      if (toPlainRecord({ b: unit.repeat(mid) }).ok) low = mid;
+      else high = mid - 1;
+    }
+    const accepted = JSON.stringify({ b: unit.repeat(low) });
+    const bytes = new TextEncoder().encode(accepted).length;
+    expect(bytes).toBeLessThanOrEqual(1_000_000);
+
+    // And one more unit must tip it over, so the bound is tight rather than
+    // merely conservative.
+    expect(toPlainRecord({ b: unit.repeat(low + 1) }).ok).toBe(false);
+  });
+});

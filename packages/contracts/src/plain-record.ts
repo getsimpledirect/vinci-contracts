@@ -344,8 +344,20 @@ function utf8Length(text: string): number {
     if (code < 0x80) bytes += 1;
     else if (code < 0x800) bytes += 2;
     else if (code >= 0xd800 && code <= 0xdbff) {
-      bytes += 4;
-      i += 1; // low surrogate consumed with its pair
+      // Only treat this as a pair if a low surrogate actually follows.
+      //
+      // In practice the serialized string never contains a lone surrogate —
+      // JSON.stringify escapes those to six ASCII characters — so this branch
+      // sees only genuine pairs. Skipping the next unit unconditionally would
+      // still be a latent trap if this function were ever pointed at an
+      // unserialized string, and the check costs one comparison.
+      const next = i + 1 < text.length ? text.charCodeAt(i + 1) : 0;
+      if (next >= 0xdc00 && next <= 0xdfff) {
+        bytes += 4;
+        i += 1;
+      } else {
+        bytes += 3;
+      }
     } else bytes += 3;
   }
   return bytes;
