@@ -125,3 +125,41 @@ describe("a session is transport identity; a run is work identity", () => {
     expect(() => assertSchemaMetaComplete(SESSION_BINDING_SCHEMA_META)).not.toThrow();
   });
 });
+
+describe("an authority check refuses rather than throwing", () => {
+  // A thrown TypeError in an authority check is not fail-closed in practice: it
+  // is handled by whatever try/catch is upstream, and a broad catch that logs
+  // and continues means the check was skipped. A review marked the throwing
+  // version "correct boundary" — but the caller cannot tell "this role may not"
+  // from "this code broke", and only one is safe to proceed past.
+  it.each([
+    ["an invented role", "superuser"],
+    ["an empty string", ""],
+    ["null", null],
+    ["undefined", undefined],
+    ["a number", 123],
+    ["an object", {}],
+  ])("returns false for %s without throwing", (_label, role) => {
+    let result: boolean | undefined;
+    expect(() => {
+      result = mayIssue(role as never, "approve_pending_approval");
+    }).not.toThrow();
+    expect(result).toBe(false);
+  });
+
+  it("still answers correctly for every real role", () => {
+    for (const role of SESSION_ROLES) {
+      expect(typeof mayIssue(role as SessionRole, "pause")).toBe("boolean");
+    }
+    expect(mayIssue("owner", "pause")).toBe(true);
+    expect(mayIssue("viewer", "pause")).toBe(false);
+  });
+
+  it("never classifies an unknown command as tightening", () => {
+    // Tightening bypasses the approval path, so a wrong answer here is the
+    // dangerous direction.
+    for (const bogus of ["set_permission_mode", "grant_full_access", "", "escalate"]) {
+      expect(isTightening(bogus as never)).toBe(false);
+    }
+  });
+});

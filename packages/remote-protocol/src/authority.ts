@@ -85,8 +85,25 @@ const PERMITTED: Readonly<Record<SessionRole, readonly RemoteCommandKind[]>> = {
   viewer: [],
 };
 
+/**
+ * May a device in this role issue this command?
+ *
+ * Returns false for anything unrecognised — it does not throw.
+ *
+ * This is an authority check, and a thrown TypeError in an authority check is
+ * not fail-closed in practice. It gets handled by whatever try/catch is
+ * upstream, and the two usual outcomes are a crash in a request path or a
+ * broad catch that logs and continues — the second of which means the check was
+ * skipped. `false` is unambiguous: no authority, no exception to swallow.
+ *
+ * A review marked the throwing version "correct boundary". It is not: the
+ * caller cannot distinguish "this role may not" from "this code broke", and
+ * only one of those is safe to proceed past.
+ */
 export function mayIssue(role: SessionRole, command: RemoteCommandKind): boolean {
-  return PERMITTED[role].includes(command);
+  const permitted = PERMITTED[role];
+  if (permitted === undefined) return false;
+  return permitted.includes(command);
 }
 
 /**
@@ -97,7 +114,7 @@ export function mayIssue(role: SessionRole, command: RemoteCommandKind): boolean
  * hand-rolls that check will eventually disagree with this one.
  */
 export function isTightening(command: RemoteCommandKind): boolean {
-  return (TIGHTENING_COMMANDS as readonly string[]).includes(command);
+  return (TIGHTENING_COMMANDS as readonly string[]).includes(command as string);
 }
 
 /**
