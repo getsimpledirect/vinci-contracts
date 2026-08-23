@@ -4,8 +4,7 @@ import {
   type SchemaMeta,
   type Timestamp,
   type ValidationIssue,
-  type ValidationResult,
-} from "@vinci/contracts";
+  type ValidationResult, toPlainRecord } from "@vinci/contracts";
 import type { UserId } from "@vinci/contracts";
 import type { ClientType } from "./client-type.ts";
 import { isClientType } from "./client-type.ts";
@@ -57,6 +56,12 @@ function isTimestamp(value: unknown): value is Timestamp {
  * not rely on the store to catch an invalid value.
  */
 export function validateDevicePairing(value: unknown): ValidationResult<DevicePairing> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(value);
+  if (!plain.ok) return plain;
+  value = plain.value;
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return fail([{ path: "", code: "not_object", message: "device pairing must be an object" }]);
   }

@@ -4,12 +4,14 @@ import {
   VERDICT_STATUSES,
   type ValidationIssue,
   type ValidationResult,
+  toPlainRecord,
 } from "@vinci/contracts";
 import {
   EVIDENCE_KINDS,
   EVIDENCE_SOURCE_KINDS,
 } from "./evidence-kinds.ts";
 import type { EvidenceRecord } from "./evidence-record.ts";
+import { actorFieldsAreConsistent } from "@vinci/contracts";
 import { EVIDENCE_PROVENANCE_CASES, type EvidenceProvenance } from "./provenance.ts";
 import {
   VERDICT_STALENESS_TRIGGERS,
@@ -266,32 +268,26 @@ function validateAttestation(
         `evidence with ${String(object.provenance)} provenance must be attested by an actor of kind "${expected}", not "${String(actor.kind)}"`,
       );
     }
-    // An actor claiming one kind must not carry another kind's identity. A
-    // record with kind:"verifier", independent:true AND a workerId is a worker
-    // wearing a verifier's label, and it validated.
+    // An actor must carry exactly the fields its own kind permits.
     //
-    // What a schema can do here has a limit worth stating: it can reject a
-    // self-contradictory claim, but it cannot establish that the party which
-    // submitted the record IS the verifier it names. That requires
-    // authenticated issuer identity, which belongs to whatever accepts these
-    // records, not to a type. This check narrows the claim; it does not
-    // establish independence, and nothing here should be read as doing so.
-    const FOREIGN_IDENTITY_FIELDS: Readonly<Record<string, readonly string[]>> = {
-      worker: ["userId", "deviceId", "verifierId", "policyId", "component"],
-      system: ["userId", "deviceId", "workerId", "verifierId", "policyId"],
-      user: ["workerId", "verifierId", "policyId", "component"],
-      verifier: ["userId", "deviceId", "workerId", "policyId", "component"],
-      policy: ["userId", "deviceId", "workerId", "verifierId", "component"],
-    };
-    for (const foreign of FOREIGN_IDENTITY_FIELDS[String(actor.kind)] ?? []) {
-      if (Object.hasOwn(actor, foreign)) {
-        addIssue(
-          issues,
-          `${path}/actor/${foreign}`,
-          "actor_identity_mismatch",
-          `an actor of kind "${String(actor.kind)}" must not carry ${foreign}`,
-        );
-      }
+    // This was a hand-written list of FOREIGN fields per kind, and it omitted
+    // `independent` and `policyVersion` — so a worker could carry
+    // `independent: true` and assert its own independence. A denylist of
+    // foreign fields has that failure mode by construction; an allowlist of
+    // permitted ones, derived from the Actor union in @vinci/contracts, does
+    // not.
+    //
+    // What this still cannot do is establish that whoever submitted the record
+    // IS the actor it names. That needs authenticated issuer identity and
+    // belongs to whatever accepts these records. This narrows the claim; it
+    // does not establish independence.
+    if (!actorFieldsAreConsistent(actor)) {
+      addIssue(
+        issues,
+        `${path}/actor`,
+        "actor_identity_mismatch",
+        `an actor of kind "${String(actor.kind)}" carries a field that kind does not permit`,
+      );
     }
     if (object.provenance === "independent_verifier" && actor.independent !== true) {
       addIssue(
@@ -322,6 +318,12 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
 }
 
 export function validateEvidenceRecord(input: unknown): ValidationResult<EvidenceRecord> {
+  // Snapshot before inspecting: rejects prototypes carrying inherited
+  // fields, accessors that answer differently on each read, and symbol or
+  // non-enumerable keys that an unknown-field check would not see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   const object = objectValue(
@@ -383,6 +385,12 @@ function rejectPresentField(
 }
 
 export function validateVerdictAssessment(input: unknown): ValidationResult<VerdictAssessment> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   // VERDICT_ASSESSMENT_SCHEMA_META declares unknownFields: "reject", and this
@@ -419,6 +427,16 @@ export function validateVerdictAssessment(input: unknown): ValidationResult<Verd
   } else {
     requiredString(object.reason, "/reason", issues);
     enumArray(object.triggers, VERDICT_STALENESS_TRIGGERS, "/triggers", issues);
+    // A stale verdict that names no trigger records nothing about why it went
+    // stale, which defeats the point of keeping it visible as history.
+    if (Array.isArray(object.triggers) && object.triggers.length === 0) {
+      addIssue(
+        issues,
+        "/triggers",
+        "empty_staleness_triggers",
+        "a stale assessment must name at least one staleness trigger",
+      );
+    }
     rejectPresentField(object, "status", "/status", issues);
   }
 

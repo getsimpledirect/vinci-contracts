@@ -120,14 +120,18 @@ export type VerdictAssessment =
  */
 export function verdictAssessmentFromBoolean(
   status: VerdictStatus,
-  staled: boolean,
+  staleness: { readonly reason: string; readonly triggers: readonly VerdictStalenessTrigger[] } | null,
 ): VerdictAssessment {
-  if (!staled) {
+  // `staled: boolean` was the old second parameter, and a boolean cannot say
+  // why something went stale — so this fabricated `reason: "stale"` and
+  // `triggers: []`. FR-7.4 enumerates the staleness conditions precisely so a
+  // stale verdict stays useful as historical evidence; an empty trigger list
+  // records nothing, and "stale" is not the machine-readable reason the type's
+  // documentation promises.
+  //
+  // The caller knows what invalidated the verdict. It now has to say.
+  if (staleness === null) {
     return { kind: "current", status };
   }
-  return {
-    kind: "stale",
-    reason: "stale",
-    triggers: [],
-  };
+  return { kind: "stale", reason: staleness.reason, triggers: staleness.triggers };
 }

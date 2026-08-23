@@ -122,8 +122,10 @@ describe("independent revocability", () => {
     expect(okA.ok && okB.ok && okC.ok).toBe(true);
 
     // Revoke only A.
-    const revokedA = revoke((okA as { ok: true; value: CredentialIdentity }).value, "2026-08-23T00:00:00.000Z");
-    expect(revokedA.revokedAt).toBe("2026-08-23T00:00:00.000Z");
+    const revokedResult = revoke((okA as { ok: true; value: CredentialIdentity }).value, "2026-08-23T00:00:00.000Z");
+    expect(revokedResult.ok).toBe(true);
+    if (!revokedResult.ok) return;
+    expect(revokedResult.value.revokedAt).toBe("2026-08-23T00:00:00.000Z");
 
     // B and C are untouched — neither reference is affected, immutably.
     expect((okB as { ok: true; value: CredentialIdentity }).value.revokedAt).toBeNull();
@@ -496,7 +498,10 @@ describe("revoke does not undo the immutability validation established", () => {
     expect(validated.ok).toBe(true);
     if (!validated.ok) return;
 
-    const revoked = revoke(validated.value, "2026-08-23T00:00:00.000Z");
+    const revokedResult = revoke(validated.value, "2026-08-23T00:00:00.000Z");
+    expect(revokedResult.ok).toBe(true);
+    if (!revokedResult.ok) return;
+    const revoked = revokedResult.value;
 
     expect(Object.isFrozen(revoked)).toBe(true);
     expect(Object.isFrozen(revoked.scopes)).toBe(true);
@@ -517,9 +522,11 @@ describe("revoke does not undo the immutability validation established", () => {
     const validated = validateCredentialIdentity(worker());
     expect(validated.ok).toBe(true);
     if (!validated.ok) return;
-    const revoked = revoke(validated.value, "2026-08-23T00:00:00.000Z");
-    expect(revoked.scopes).not.toBe(validated.value.scopes);
-    expect([...revoked.scopes]).toEqual([...validated.value.scopes]);
+    const revokedResult = revoke(validated.value, "2026-08-23T00:00:00.000Z");
+    expect(revokedResult.ok).toBe(true);
+    if (!revokedResult.ok) return;
+    expect(revokedResult.value.scopes).not.toBe(validated.value.scopes);
+    expect([...revokedResult.value.scopes]).toEqual([...validated.value.scopes]);
   });
 
   it("still leaves the credential it was given untouched", () => {
@@ -529,5 +536,119 @@ describe("revoke does not undo the immutability validation established", () => {
     if (!validated.ok) return;
     revoke(validated.value, "2026-08-23T00:00:00.000Z");
     expect(validated.value.revokedAt).toBeNull();
+  });
+});
+
+describe("validation reads data, not live objects", () => {
+  // Three separate defects all came from validating a live JavaScript object
+  // rather than a data snapshot. Guards written against the reported input
+  // covered that input; the class was wider each time.
+  const fields = {
+    keyHash: "a".repeat(64),
+    prefix: "vinci_live_ab12",
+    clientType: "work",
+    createdAt: "2026-08-22T10:00:00.000Z",
+    revokedAt: null,
+  };
+
+  it("refuses a record whose kind and identity are inherited", () => {
+    // Object.hasOwn sees no own `kind`, so the dispatcher took the untagged
+    // path; the untagged-identity check also used Object.hasOwn, so it missed
+    // the inherited workerId too. Both halves of that fix used the predicate
+    // whose blind spot caused the bug.
+    const proto = { kind: "worker", workerId: "w-1" };
+    const inherited = Object.create(proto) as Record<string, unknown>;
+    Object.assign(inherited, fields, { scopes: ["inference", "acceptance"] });
+    // Object.assign copies as OWN properties, so build it the other way to
+    // actually exercise inheritance:
+    const truly = Object.create(proto) as Record<string, unknown>;
+    for (const [k, v] of Object.entries({ ...fields, scopes: ["inference", "acceptance"] })) {
+      truly[k] = v;
+    }
+    expect(Object.hasOwn(truly, "kind")).toBe(false);
+    expect(truly.kind).toBe("worker");
+
+    const result = validateCredentialIdentity(truly);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "not_plain_object")).toBe(true);
+  });
+
+  it("refuses an accessor that can answer differently each time it is read", () => {
+    // A scopes getter returning ["inference"] once and ["acceptance"] after
+    // was read three times in one validation: it validated clean and the
+    // returned credential carried acceptance.
+    let reads = 0;
+    const sneaky = {
+      ...fields,
+      get scopes() {
+        reads += 1;
+        return reads === 1 ? ["inference"] : ["acceptance"];
+      },
+    };
+    const result = validateCredentialIdentity(sneaky);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "accessor_property")).toBe(true);
+  });
+
+  it("refuses symbol keys", () => {
+    const withSymbol: Record<string | symbol, unknown> = { ...fields, scopes: ["inference"] };
+    withSymbol[Symbol("hidden")] = "secret";
+    expect(validateCredentialIdentity(withSymbol).ok).toBe(false);
+  });
+
+  it("sees a non-enumerable field rather than silently carrying it", () => {
+    const withHidden = { ...fields, scopes: ["inference"] };
+    Object.defineProperty(withHidden, "clientSecret", {
+      value: "s3cr3t",
+      enumerable: false,
+      writable: true,
+      configurable: true,
+    });
+    const result = validateCredentialIdentity(withHidden);
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(JSON.stringify(result.issues)).not.toContain("s3cr3t");
+  });
+
+  it("does not echo attacker-supplied data back in an error message", () => {
+    // Interpolating the value both leaks it into logs and hands control to a
+    // Symbol.toPrimitive that can throw out of validation.
+    const hostile = {
+      ...fields,
+      scopes: ["inference"],
+      kind: { [Symbol.toPrimitive]() { throw new Error("escaped validation"); } },
+    };
+    expect(() => validateCredentialIdentity(hostile)).not.toThrow();
+    const result = validateCredentialIdentity(hostile);
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("revoke validates the moment it records", () => {
+  const active = () => credential({ kind: "worker", workerId: "w-1" });
+
+  it("refuses a malformed revocation timestamp", () => {
+    // `at` was any string, so a malformed value could be written into the one
+    // field recording WHEN authority ended.
+    const validated = validateCredentialIdentity(active());
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    for (const bad of ["yesterday", "2026-02-29T00:00:00.000Z", "2026-08-23", ""]) {
+      expect(revoke(validated.value, bad).ok, bad).toBe(false);
+    }
+  });
+
+  it("accepts a canonical one", () => {
+    const validated = validateCredentialIdentity(active());
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    expect(revoke(validated.value, "2026-08-23T00:00:00.000Z").ok).toBe(true);
+  });
+});
+
+describe("device-auth agrees with its sibling packages on timestamps", () => {
+  it("refuses 2026-02-29, which is not a date", () => {
+    // This package was left on the wrong side of a disagreement its own commit
+    // described: the round-trip fix went to evidence and model-classes only.
+    expect(validateCredentialIdentity(credential({ createdAt: "2026-02-29T12:34:56.789Z" })).ok).toBe(false);
   });
 });

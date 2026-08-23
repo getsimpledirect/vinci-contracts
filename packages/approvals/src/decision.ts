@@ -6,7 +6,7 @@ import type {
   Timestamp,
   ValidationResult,
 } from "@vinci/contracts";
-import { fail, ok } from "@vinci/contracts";
+import { fail, ok, toPlainRecord } from "@vinci/contracts";
 import type { DeliveryState, EffectiveDeliveryState } from "./delivery.ts";
 import { isEffectiveDeliveryState } from "./delivery.ts";
 import type { GrantShape } from "./grant.ts";
@@ -185,6 +185,12 @@ function actorIdentity(actor: Actor): string {
 }
 
 export function validateApprovalDecision(input: unknown): ValidationResult<ApprovalDecision> {
+  // Snapshot before inspecting: rejects prototypes carrying inherited
+  // fields, accessors that answer differently on each read, and symbol or
+  // non-enumerable keys that an unknown-field check would not see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   if (!isObject(input)) return fail([issue("/", "invalid_type", "approval decision must be an object")]);
   if (typeof input.kind !== "string" || !(APPROVAL_DECISION_KINDS as readonly string[]).includes(input.kind)) {
     return fail([issue("/kind", "invalid_discriminator", "approval decision kind is not recognized")]);

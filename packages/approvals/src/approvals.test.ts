@@ -329,3 +329,16 @@ describe("delivery states must progress, not jump", () => {
     expect(isEffectiveDeliveryState(INITIAL_DELIVERY_STATE)).toBe(false);
   });
 });
+
+describe("the notification payload cannot be edited after projection", () => {
+  it("is frozen, so free text cannot be added back", () => {
+    // `reason?: never` and the brand are compile-time only. At runtime the
+    // object was plain and writable.
+    const payload = notificationSafeProjection(request);
+    expect(Object.isFrozen(payload)).toBe(true);
+    expect(() => {
+      (payload as unknown as Record<string, unknown>).reason = "SECRET ghp_16C7e42F";
+    }).toThrow();
+    expect(JSON.stringify(payload)).not.toContain("ghp_");
+  });
+});

@@ -4,6 +4,7 @@ import {
   EVIDENCE_RECORD_SCHEMA_META,
   VERDICT_ASSESSMENT_SCHEMA_META,
   isProvenanceConsistent,
+  verdictAssessmentFromBoolean,
   validateEvidenceRecord,
   validateVerdictAssessment,
 } from "./index.ts";
@@ -396,5 +397,75 @@ describe("an assessment carries only what it declares", () => {
   it("rejects a cross-arm field even when its value is undefined", () => {
     expect(validateVerdictAssessment({ kind: "stale", reason: "r", triggers: ["mutation_any"], status: undefined }).ok).toBe(false);
     expect(validateVerdictAssessment({ kind: "current", status: "VERIFIED_PASS", triggers: undefined }).ok).toBe(false);
+  });
+});
+
+describe("the helper and the validator cannot disagree", () => {
+  // The previous version of this test varied only the independence flag and
+  // declared the two functions equivalent. It passed while they diverged on
+  // foreign identity fields — a verifier carrying a workerId, where the helper
+  // said consistent and the validator refused.
+  //
+  // Vary everything: every provenance case against every actor shape,
+  // including the malformed ones.
+  const ACTORS = [
+    { kind: "worker", workerId: "w-1" },
+    { kind: "system", component: "runner" },
+    { kind: "user", userId: "u-1" },
+    { kind: "verifier", verifierId: "v-1", independent: true },
+    { kind: "verifier", verifierId: "v-1", independent: false },
+    // cross-contaminated shapes, one per arm
+    { kind: "worker", workerId: "w-1", independent: true },
+    { kind: "verifier", verifierId: "v-1", independent: true, workerId: "w-1" },
+    { kind: "user", userId: "u-1", policyVersion: 2 },
+    { kind: "system", component: "runner", verifierId: "v-1" },
+  ] as const;
+
+  const PROVENANCES = [
+    "worker_provided",
+    "system_observed",
+    "human_provided",
+    "independent_verifier",
+  ] as const;
+
+  it.each(PROVENANCES)("agrees with the validator for %s, across every actor shape", (provenance) => {
+    for (const actor of ACTORS) {
+      const viaValidator = validateEvidenceRecord({
+        ...validEvidenceRecord(),
+        attestation: { provenance, actor },
+      }).ok;
+      const viaHelper = isProvenanceConsistent(provenance, actor as never);
+      expect(viaHelper, `${provenance} + ${JSON.stringify(actor)}`).toBe(viaValidator);
+    }
+  });
+
+  it("refuses a worker that asserts its own independence", () => {
+    // The hand-written foreign-field list omitted `independent`.
+    const result = validateEvidenceRecord({
+      ...validEvidenceRecord(),
+      attestation: { provenance: "worker_provided", actor: { kind: "worker", workerId: "w-1", independent: true } },
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("a stale assessment must say why", () => {
+  it("refuses an empty trigger list", () => {
+    // FR-7.4 enumerates the staleness conditions so a stale verdict stays
+    // useful as history. Naming none records nothing.
+    expect(validateVerdictAssessment({ kind: "stale", reason: "r", triggers: [] }).ok).toBe(false);
+  });
+
+  it("no longer lets a caller fabricate a contentless staleness record", () => {
+    // The old signature took a boolean and invented reason:"stale", triggers:[].
+    const current = verdictAssessmentFromBoolean("VERIFIED_PASS", null);
+    expect(validateVerdictAssessment(current).ok).toBe(true);
+
+    const stale = verdictAssessmentFromBoolean("VERIFIED_PASS", {
+      reason: "the artifact digest changed after the verdict was issued",
+      triggers: ["artifact_digest_changed"],
+    });
+    expect(validateVerdictAssessment(stale).ok).toBe(true);
+    expect(stale.kind === "stale" && stale.triggers.length).toBeGreaterThan(0);
   });
 });

@@ -1,4 +1,4 @@
-import type { Actor } from "@vinci/contracts";
+import { actorFieldsAreConsistent, type Actor } from "@vinci/contracts";
 
 /**
  * Who vouches for this evidence. This is the FR-6.3 requirement to distinguish
@@ -62,6 +62,13 @@ export function isProvenanceConsistent(
   provenance: EvidenceProvenance,
   actor: Actor,
 ): boolean {
+  // Shares the field check with the validator rather than re-deriving a
+  // weaker version of it. These two answered differently for a verifier
+  // carrying a workerId — the helper said consistent, the validator refused —
+  // which made the helper an alternate, more permissive path to the same
+  // question. A test asserting they agree existed, and varied only the
+  // independence flag.
+  if (!actorFieldsAreConsistent(actor as unknown as Readonly<Record<string, unknown>>)) return false;
   switch (provenance) {
     case "worker_provided":
       return actor.kind === "worker";
@@ -71,10 +78,7 @@ export function isProvenanceConsistent(
       return actor.kind === "user";
     case "independent_verifier":
       // The independence flag is part of the invariant, not a detail beside
-      // it. This returned true for a verifier carrying `independent: false`,
-      // which made it an alternate path around the check in schema.ts —
-      // agreeing on the actor kind and disagreeing on the thing that matters.
-      // FR-7.3 permits a non-independent verifier and requires that it be
+      // it. FR-7.3 permits a non-independent verifier and requires that it be
       // DISCLOSED; evidence claiming independent-verifier provenance is the
       // opposite of disclosing it.
       return actor.kind === "verifier" && actor.independent === true;

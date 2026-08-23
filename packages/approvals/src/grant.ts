@@ -1,5 +1,5 @@
 import type { Actor, RunId, SchemaMeta, Timestamp, ValidationResult } from "@vinci/contracts";
-import { fail, ok } from "@vinci/contracts";
+import { fail, ok, toPlainRecord } from "@vinci/contracts";
 import {
   collectUnknownFields,
   isActor,
@@ -64,6 +64,12 @@ export const APPROVAL_GRANT_SCHEMA_META = {
 } as const satisfies SchemaMeta;
 
 export function validateGrantShape(input: unknown): ValidationResult<GrantShape> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   if (!isObject(input)) return fail([issue("/", "invalid_type", "grant shape must be an object")]);
   if (typeof input.kind !== "string" || !(GRANT_SHAPE_KINDS as readonly string[]).includes(input.kind)) {
     return fail([issue("/kind", "invalid_discriminator", "grant shape kind is not recognized")]);
@@ -117,6 +123,12 @@ export function validateGrantShape(input: unknown): ValidationResult<GrantShape>
 }
 
 export function validateApprovalGrant(input: unknown): ValidationResult<ApprovalGrant> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   if (!isObject(input)) return fail([issue("/", "invalid_type", "approval grant must be an object")]);
   const shape = validateGrantShape(input.shape);
   if (!shape.ok) return fail(shape.issues.map((entry) => ({ ...entry, path: `/shape${entry.path}` })));

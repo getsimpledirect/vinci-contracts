@@ -3,6 +3,7 @@ import {
   ok,
   type ValidationIssue,
   type ValidationResult,
+  toPlainRecord,
 } from "@vinci/contracts";
 import type { CustomerEndpointConfig } from "./customer-endpoint.ts";
 import type { FallbackRecord } from "./fallback.ts";
@@ -431,6 +432,12 @@ function validateFallbackRecordAt(
 }
 
 export function validateFallbackRecord(input: unknown): ValidationResult<FallbackRecord> {
+  // Snapshot before inspecting: rejects prototypes carrying inherited
+  // fields, accessors that answer differently on each read, and symbol or
+  // non-enumerable keys that an unknown-field check would not see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   validateFallbackRecordAt(input, "", issues, unknownFields);
@@ -525,6 +532,12 @@ function validateResolvedRoute(
 export function validateModelProvenanceRecord(
   input: unknown,
 ): ValidationResult<ModelProvenanceRecord> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   const object = objectValue(
@@ -687,6 +700,12 @@ function validateCredentials(value: unknown, issues: ValidationIssue[]): void {
 export function validateCustomerEndpointConfig(
   input: unknown,
 ): ValidationResult<CustomerEndpointConfig> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   const object = objectValue(
@@ -727,6 +746,12 @@ export function validateCustomerEndpointConfig(
 }
 
 export function validateResidencyRecord(input: unknown): ValidationResult<ResidencyRecord> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   const object = objectValue(

@@ -4,6 +4,7 @@ import {
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
+  toPlainRecord,
 } from "@vinci/contracts";
 import {
   POLICY_ALLOWED_REASON_CODES,
@@ -652,6 +653,12 @@ function validateRetention(value: unknown, issues: ValidationIssue[], unknown: U
 }
 
 export function validatePolicyManifest(input: unknown): ValidationResult<PolicyManifest> {
+  // Snapshot before inspecting: rejects prototypes carrying inherited
+  // fields, accessors that answer differently on each read, and symbol or
+  // non-enumerable keys that an unknown-field check would not see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   const fields = [
@@ -807,6 +814,12 @@ function validateDecisionOptions(
 }
 
 export function validatePolicyDecision(input: unknown): ValidationResult<PolicyDecision> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
   const object = objectValue(

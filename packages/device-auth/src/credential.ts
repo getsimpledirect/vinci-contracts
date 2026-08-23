@@ -1,5 +1,8 @@
 import {
   fail,
+  hasField,
+  toPlainRecord,
+  type PlainRecord,
   ok,
   type SchemaMeta,
   type Timestamp,
@@ -77,9 +80,15 @@ export type WorkerCredential = CredentialIdentity & {
  * Immutably mark a single credential revoked.
  *
  * Generic in the credential type so a revoked worker is still statically a
- * worker. Narrowing the return to `CredentialIdentity` discarded the variant
- * at the type level while the runtime object still carried `kind` and
- * `workerId`, so the type and the value disagreed about what the thing was.
+ * worker — but `revokedAt` is re-typed rather than carried through.
+ *
+ * Returning bare `T` was unsound in the dangerous direction. A caller writing
+ * the natural thing — `type ActiveCredential = CredentialIdentity & { revokedAt:
+ * null }`, meaning "not yet revoked" — got back a value the compiler believed
+ * had `revokedAt: null` while it held a Timestamp. `isRevoked(c) { return
+ * c.revokedAt !== null }` then constant-folds to false, so a revoked
+ * credential reads as active. For a function underpinning FR-9.3 and SR-4,
+ * that is the wrong way to be wrong.
  *
  * The result is frozen, and its scopes are cloned before freezing. The
  * previous implementation spread into a NEW object which was not frozen:
@@ -99,12 +108,25 @@ export type WorkerCredential = CredentialIdentity & {
 export function revoke<T extends CredentialIdentity>(
   identity: T,
   at: Timestamp = new Date().toISOString(),
-): T {
-  return Object.freeze({
-    ...identity,
-    scopes: Object.freeze([...identity.scopes]),
-    revokedAt: at,
-  }) as T;
+): ValidationResult<Omit<T, "revokedAt"> & { readonly revokedAt: Timestamp }> {
+  // `at` was accepted as any string, so a malformed timestamp could be written
+  // into the one field that records WHEN authority ended.
+  if (!isTimestamp(at)) {
+    return fail([
+      {
+        path: "/revokedAt",
+        code: "invalid_timestamp",
+        message: "expected an ISO-8601 UTC timestamp with millisecond precision",
+      },
+    ]);
+  }
+  return ok(
+    Object.freeze({
+      ...identity,
+      scopes: Object.freeze([...identity.scopes]),
+      revokedAt: at,
+    }) as Omit<T, "revokedAt"> & { readonly revokedAt: Timestamp },
+  );
 }
 
 /**
@@ -144,8 +166,24 @@ const ACCEPTANCE_FORBIDDEN_ISSUE: ValidationIssue = {
   message: "device and worker credentials may not hold the 'acceptance' scope",
 };
 
+/**
+ * ISO-8601 UTC with millisecond precision, and a date that actually exists.
+ *
+ * `Date.parse` alone normalises impossible dates rather than refusing them:
+ * "2026-02-29" becomes March 1 and validates, 2026 not being a leap year. The
+ * round-trip comparison is what makes the refusal real.
+ *
+ * evidence and model-classes already carried this check. The commit that added
+ * it there described the two packages disagreeing about what malformed means —
+ * and left this package on the wrong side of that disagreement.
+ */
 function isTimestamp(value: unknown): value is Timestamp {
-  return typeof value === "string" && !Number.isNaN(Date.parse(value));
+  return (
+    typeof value === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
+    && !Number.isNaN(Date.parse(value))
+    && new Date(value).toISOString() === value
+  );
 }
 
 /**
@@ -163,56 +201,51 @@ function isTimestamp(value: unknown): value is Timestamp {
  * secret itself.
  */
 export function validateCredentialIdentity(value: unknown): ValidationResult<CredentialIdentity> {
-  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-    const record = value as Record<string, unknown>;
-    // Object.hasOwn, not `kind !== undefined`. Those are different assertions:
-    // an absent property says nothing about the kind, while a present property
-    // holding `undefined` asserts that the kind IS undefined — which is not a
-    // kind. Treating the second as untagged sent it to base validation.
-    if (Object.hasOwn(record, "kind")) {
-      if (record.kind === "device") return validateDeviceCredential(value);
-      if (record.kind === "worker") return validateWorkerCredential(value);
-      return fail([
-        {
-          path: "/kind",
-          code: "unknown_credential_kind",
-          message: `unrecognised credential kind "${String(record.kind)}"; a credential is either a device credential, a worker credential, or untagged`,
-        },
-      ]);
-    }
-    // Genuinely untagged. It must not carry a variant's identity field:
-    // `workerId` and `deviceId` are in the known-field list so the tagged
-    // variants can use them, and that also let an UNTAGGED credential carry
-    // one — routing to base validation, silently dropping the identity, and
-    // keeping an `acceptance` scope the named variant may never hold.
-    //
-    // A record that names a worker is a worker credential. If it will not say
-    // so, it is refused rather than quietly demoted to something with weaker
-    // rules.
-    const issues: ValidationIssue[] = [];
-    for (const [field, variant] of [
-      ["workerId", "worker"],
-      ["deviceId", "device"],
-    ] as const) {
-      if (Object.hasOwn(record, field)) {
-        issues.push({
-          path: `/${field}`,
-          code: "untagged_variant_identity",
-          message: `an untagged credential must not carry ${field}; tag it with kind: "${variant}" so the ${variant} rules apply`,
-        });
-      }
-    }
-    if (issues.length > 0) return fail(issues);
+  // Snapshot first. Reading `value.kind` directly saw inherited properties
+  // that Object.hasOwn did not, so a prototype-tagged worker took the untagged
+  // path and kept the acceptance scope.
+  const plain = toPlainRecord(value);
+  if (!plain.ok) return plain;
+  const record = plain.value;
+
+  if (hasField(record, "kind")) {
+    if (record.kind === "device") return validateDeviceCredential(record);
+    if (record.kind === "worker") return validateWorkerCredential(record);
+    return fail([
+      {
+        path: "/kind",
+        code: "unknown_credential_kind",
+        // Deliberately does not echo the value. Interpolating attacker-supplied
+        // data into an error both leaks it into logs and hands control to a
+        // Symbol.toPrimitive that can throw out of validation.
+        message:
+          'unrecognised credential kind; a credential is a device credential, a worker credential, or untagged',
+      },
+    ]);
   }
-  return validateBaseCredential(value);
+
+  const issues: ValidationIssue[] = [];
+  for (const [field, variant] of [
+    ["workerId", "worker"],
+    ["deviceId", "device"],
+  ] as const) {
+    if (hasField(record, field)) {
+      issues.push({
+        path: `/${field}`,
+        code: "untagged_variant_identity",
+        message: `an untagged credential must not carry ${field}; tag it with kind: "${variant}" so the ${variant} rules apply`,
+      });
+    }
+  }
+  if (issues.length > 0) return fail(issues);
+
+  return validateBaseCredential(record);
 }
 
-
 function validateBaseCredential(value: unknown): ValidationResult<CredentialIdentity> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return fail([{ path: "", code: "not_object", message: "credential identity must be an object" }]);
-  }
-  const record = value as Record<string, unknown>;
+  const plain = toPlainRecord(value);
+  if (!plain.ok) return plain;
+  const record = plain.value;
   const issues: ValidationIssue[] = [];
   // D4 exception, matching /credentials in @vinci/policy: an unrecognised
   // field on a credential may BE the secret, and preserving it would carry
@@ -297,24 +330,26 @@ function validateBaseCredential(value: unknown): ValidationResult<CredentialIden
  * requires a concrete (non-null) `clientType` and a `deviceId`.
  */
 export function validateDeviceCredential(value: unknown): ValidationResult<DeviceCredential> {
-  const base = validateBaseCredential(value);
+  const plain = toPlainRecord(value);
+  if (!plain.ok) return plain;
+  const raw: PlainRecord = plain.value;
+  const base = validateBaseCredential(raw);
   if (!base.ok) return base;
   const known = base.value;
 
   const issues: ValidationIssue[] = [];
-  const raw = value as Record<string, unknown>;
   // Without this, `{ kind: "device", workerId: "w1" }` validated as a device
   // and `{ kind: "worker", deviceId: "d1" }` as a worker — each validator
   // rewrote the discriminator to the variant it produces, so the tag a caller
   // supplied was decorative. A record that says what it is has to be it.
-  if (raw.kind !== undefined && raw.kind !== "device") {
+  if (hasField(raw, "kind") && raw.kind !== "device") {
     issues.push({
       path: "/kind",
       code: "wrong_credential_kind",
       message: `expected a device credential, got kind "${String(raw.kind)}"`,
     });
   }
-  if (raw.workerId !== undefined) {
+  if (hasField(raw, "workerId")) {
     issues.push({
       path: "/workerId",
       code: "field_not_valid_for_kind",
@@ -331,7 +366,7 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
   if (known.scopes.some((s) => s === "acceptance")) {
     issues.push(ACCEPTANCE_FORBIDDEN_ISSUE);
   }
-  const deviceId = (value as Record<string, unknown>).deviceId;
+  const deviceId = raw.deviceId;
   if (typeof deviceId !== "string" || deviceId.length === 0) {
     issues.push({ path: "/deviceId", code: "required_field", message: "a device credential requires a deviceId" });
   }
@@ -387,20 +422,22 @@ export const CREDENTIAL_IDENTITY_SCHEMA_META: SchemaMeta = {
  * architectural principle 2 says it does not get to.
  */
 export function validateWorkerCredential(value: unknown): ValidationResult<WorkerCredential> {
-  const base = validateBaseCredential(value);
+  const plain = toPlainRecord(value);
+  if (!plain.ok) return plain;
+  const raw: PlainRecord = plain.value;
+  const base = validateBaseCredential(raw);
   if (!base.ok) return base;
   const known = base.value;
 
   const issues: ValidationIssue[] = [];
-  const raw = value as Record<string, unknown>;
-  if (raw.kind !== undefined && raw.kind !== "worker") {
+  if (hasField(raw, "kind") && raw.kind !== "worker") {
     issues.push({
       path: "/kind",
       code: "wrong_credential_kind",
       message: `expected a worker credential, got kind "${String(raw.kind)}"`,
     });
   }
-  if (raw.deviceId !== undefined) {
+  if (hasField(raw, "deviceId")) {
     issues.push({
       path: "/deviceId",
       code: "field_not_valid_for_kind",

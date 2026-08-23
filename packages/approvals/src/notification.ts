@@ -66,13 +66,18 @@ export function notificationSafeProjection(request: ApprovalRequest): Notificati
     timestamp: request.requestedAt,
     approvalDuration: describeGrant(request.grant),
   };
+  // Frozen. The unsafe fields are declared `?: never` and the result is
+  // branded, but both are compile-time only: at runtime a caller could simply
+  // assign `payload.reason = "ghp_..."` and put free text back into a push
+  // payload. That is the same brand-erased-at-runtime shape as a digest field
+  // validated as "a non-empty string".
   Object.defineProperty(projection, notificationSafeBrand, {
     value: true,
     enumerable: false,
     writable: false,
     configurable: false,
   });
-  return projection as NotificationSafeRequest;
+  return Object.freeze(projection) as NotificationSafeRequest;
 }
 
 function describeGrant(grant: GrantShape): SanitizedNotificationText {

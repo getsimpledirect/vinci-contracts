@@ -48,3 +48,40 @@ export type StateTransition<S extends string> = {
   readonly previousState: S | null;
   readonly nextState: S;
 };
+
+/**
+ * The exact fields each `Actor` arm may carry.
+ *
+ * Hand-listing which fields are FOREIGN to an arm was tried and was wrong
+ * twice: the list omitted `independent` and `policyVersion`, so a worker could
+ * carry `independent: true` and assert its own independence. An allowlist of
+ * what belongs cannot have that failure mode — a field is permitted only if it
+ * appears here.
+ *
+ * Kept beside the `Actor` union rather than in a consumer, so adding an arm and
+ * forgetting the field list is a type error rather than a silent hole.
+ */
+export const ACTOR_FIELDS: Readonly<Record<Actor["kind"], readonly string[]>> = {
+  user: ["kind", "userId", "deviceId"],
+  worker: ["kind", "workerId"],
+  policy: ["kind", "policyId", "policyVersion"],
+  system: ["kind", "component"],
+  verifier: ["kind", "verifierId", "independent"],
+};
+
+export function isActorKind(value: unknown): value is Actor["kind"] {
+  return typeof value === "string" && Object.hasOwn(ACTOR_FIELDS, value);
+}
+
+/**
+ * Does this record carry exactly the fields its own `kind` permits?
+ *
+ * Shared by anything that inspects an actor, so a predicate and a validator
+ * cannot answer differently — which they did: for a verifier carrying a
+ * `workerId`, one said consistent and the other refused.
+ */
+export function actorFieldsAreConsistent(actor: Readonly<Record<string, unknown>>): boolean {
+  if (!isActorKind(actor.kind)) return false;
+  const permitted = new Set(ACTOR_FIELDS[actor.kind]);
+  return Object.keys(actor).every((field) => permitted.has(field));
+}

@@ -250,9 +250,19 @@ describe("fail-closed validation and preservation", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
+      // Unknown field values keep their identity — the snapshot copies
+      // top-level references, so a newer producer's nested data survives a
+      // round trip through this consumer unchanged.
       expect(result.unknownFields["/futureEndpointProperty"]).toBe(futureValue);
-      expect(result.value).toBe(input);
       expect((result.value as typeof input).futureEndpointProperty).toBe(futureValue);
+
+      // But the validated record is NOT the caller's object. This previously
+      // asserted `toBe(input)`, i.e. that validation handed back the very
+      // object it was given — which leaves the caller holding a mutable
+      // reference to a "validated" record. That is the same defect class as a
+      // credential sharing its scopes array with the input it validated.
+      expect(result.value).not.toBe(input);
+      expect(result.value).toEqual(input);
     }
   });
 });

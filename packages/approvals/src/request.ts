@@ -17,7 +17,7 @@ import type {
   WorkerId,
   WorkspaceId,
 } from "@vinci/contracts";
-import { fail, isConsequentialActionClass, ok } from "@vinci/contracts";
+import { fail, isConsequentialActionClass, ok, toPlainRecord } from "@vinci/contracts";
 import type { GrantShape } from "./grant.ts";
 import { validateGrantShape } from "./grant.ts";
 import {
@@ -102,6 +102,12 @@ const REQUEST_FIELDS = [
 ] as const;
 
 export function validateApprovalRequest(input: unknown): ValidationResult<ApprovalRequest> {
+  // Snapshot before inspecting: rejects prototypes carrying inherited
+  // fields, accessors that answer differently on each read, and symbol or
+  // non-enumerable keys that an unknown-field check would not see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   if (!isObject(input)) return fail([issue("/", "invalid_type", "approval request must be an object")]);
   const stringFields = [
     "approvalId",

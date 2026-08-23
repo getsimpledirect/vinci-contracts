@@ -1,5 +1,5 @@
 import type { Actor, RunId, SchemaMeta, Timestamp, ValidationResult } from "@vinci/contracts";
-import { fail, ok } from "@vinci/contracts";
+import { fail, ok, toPlainRecord } from "@vinci/contracts";
 import { collectActorUnknownFields } from "./request.ts";
 import {
   collectUnknownFields,
@@ -30,6 +30,12 @@ export const RUN_ACTION_SCHEMA_META = {
 } as const satisfies SchemaMeta;
 
 export function validateRunAction(input: unknown): ValidationResult<RunAction> {
+  // Snapshot before inspecting: refuses prototypes carrying inherited fields,
+  // accessors that can answer differently on each read, and symbol or
+  // non-enumerable keys an unknown-field check would never see.
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
   if (!isObject(input)) return fail([issue("/", "invalid_type", "run action must be an object")]);
   if (typeof input.kind !== "string" || !(RUN_ACTION_KINDS as readonly string[]).includes(input.kind)) {
     return fail([issue("/kind", "invalid_discriminator", "run action kind is not recognized")]);
