@@ -45,3 +45,70 @@ describe("canonicalize produces a stable identity", () => {
     }
   });
 });
+
+describe("the canonical byte output is pinned, not merely deterministic", () => {
+  /**
+   * Golden vectors. These exist because a mutation survived the rest of this
+   * file: REVERSING the key comparator kept the encoder perfectly
+   * deterministic, perfectly stable, and self-consistent, so every
+   * property-based test above still passed while the bytes on the wire had
+   * changed completely.
+   *
+   * That mutation is not hypothetical. `canonicalize` is what `receiptDigest`
+   * hashes. A comparator that silently flipped would change the digest of every
+   * record in existence: previously-issued receipts would fail verification,
+   * and an independent implementation written from the documented rule would
+   * disagree with this one about what a receipt says — which is the whole thing
+   * the canonical encoding was introduced to prevent.
+   *
+   * Properties cannot catch this. Only bytes can. Each expected string below
+   * was checked by hand against the documented rule (keys ascending by UTF-16
+   * code unit, arrays order-preserving) rather than copied from the output,
+   * which would have pinned whatever the code happened to do.
+   */
+  const GOLDEN: ReadonlyArray<readonly [string, unknown, string]> = [
+    [
+      // "10" sorts BEFORE "2": the rule is code unit, not numeric. Uppercase
+      // before underscore before lowercase, per ASCII.
+      "mixed key order, sorted by code unit and not numerically",
+      { b: 1, a: 2, C: 3, _: 4, "10": 5, "2": 6 },
+      '{"10":5,"2":6,"C":3,"_":4,"a":2,"b":1}',
+    ],
+    [
+      "arrays preserve order while nested object keys are sorted",
+      { z: [3, 1, 2], a: [{ b: 1, a: 2 }] },
+      '{"a":[{"a":2,"b":1}],"z":[3,1,2]}',
+    ],
+    [
+      // A (0x41) < à (0xE0) < é (0xE9).
+      "non-ASCII keys sort by code unit, and quotes/backslashes escape",
+      { "é": 'a"b', A: "\\", "à": 1 },
+      '{"A":"\\\\","à":1,"é":"a\\"b"}',
+    ],
+    [
+      "empty object, empty array, null and empty string all survive distinctly",
+      { a: {}, b: [], c: null, d: "" },
+      '{"a":{},"b":[],"c":null,"d":""}',
+    ],
+    [
+      // -0 normalizes to 0, so a receipt cannot carry two encodings of zero.
+      "numeric formatting, including negative zero and exponent form",
+      { a: 0, b: -0, c: 1e21, d: 0.1, e: -5 },
+      '{"a":0,"b":0,"c":1e+21,"d":0.1,"e":-5}',
+    ],
+  ];
+
+  for (const [label, input, expected] of GOLDEN) {
+    it(`encodes ${label} to exactly the pinned bytes`, () => {
+      expect(canonicalize(input)).toBe(expected);
+    });
+  }
+
+  it("pins the digest-relevant property: reordering input keys changes nothing", () => {
+    // The companion to the golden vectors. Together they say the encoding
+    // depends on the key SET and not on insertion order, AND that the resulting
+    // order is this specific one.
+    expect(canonicalize({ a: 1, b: 2 })).toBe(canonicalize({ b: 2, a: 1 }));
+    expect(canonicalize({ a: 1, b: 2 })).toBe('{"a":1,"b":2}');
+  });
+});
