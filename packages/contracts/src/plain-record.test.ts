@@ -506,9 +506,14 @@ describe("the invariant, stated once and checked over every construction", () =>
       let n = 0;
       return { a: { toJSON() { n += 1; return { call: n }; } } };
     }],
-  ])("gives %s exactly one chance to speak", (_label, build) => {
-    // The testable property for a stateful input is not JSON-equivalence — it
-    // has no stable JSON — but that the second answer never happens.
+  ])("reads the ROOT of %s exactly once", (_label, build) => {
+    // Scope note, because this test used to claim more than it observed: the
+    // counter here wraps the ROOT object's ownKeys. It says nothing about a
+    // nested toJSON or getter, and the toJSON row would have passed even if
+    // toJSON were called twice. Those are counted directly in the tests below.
+    //
+    // What this does establish, for a stateful input that has no stable JSON to
+    // compare against, is that the root's second answer never happens.
     let reads = 0;
     const counted = new Proxy(build() as object, {
       ownKeys(t) {
@@ -580,5 +585,108 @@ describe("the size cap is measured in real UTF-8 bytes", () => {
     // And one more unit must tip it over, so the bound is tight rather than
     // merely conservative.
     expect(toPlainRecord({ b: unit.repeat(low + 1) }).ok).toBe(false);
+  });
+});
+
+describe("nested stateful hooks are called exactly once, counted directly", () => {
+  // These count the hook itself rather than the root's ownKeys. The
+  // parameterized test above wraps the root, so it cannot see a nested hook
+  // being called twice — it would have passed regardless.
+
+  it("calls a stateful toJSON once, and keeps what that call returned", () => {
+    let calls = 0;
+    const record = {
+      a: {
+        toJSON() {
+          calls += 1;
+          return { call: calls };
+        },
+      },
+    };
+
+    const result = toPlainRecord(record);
+    expect(calls).toBe(1);
+    expect(result.ok).toBe(true);
+    // Binds the VALUE, not just the count: a second call would return
+    // { call: 2 }, so asserting the exact first-call value fails if the hook
+    // ever runs twice and the later answer wins.
+    if (result.ok) expect(result.value).toEqual({ a: { call: 1 } });
+  });
+
+  it("calls a stateful getter once, and keeps what that call returned", () => {
+    let calls = 0;
+    const record = {
+      a: {
+        get x() {
+          calls += 1;
+          return calls;
+        },
+      },
+    };
+
+    const result = toPlainRecord(record);
+    expect(calls).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual({ a: { x: 1 } });
+  });
+
+  it("calls each hook once when several are present at different depths", () => {
+    let shallow = 0;
+    let deep = 0;
+    const record = {
+      a: {
+        toJSON() {
+          shallow += 1;
+          return { depth: "shallow", call: shallow };
+        },
+      },
+      b: {
+        c: {
+          d: {
+            get x() {
+              deep += 1;
+              return deep;
+            },
+          },
+        },
+      },
+    };
+
+    const result = toPlainRecord(record);
+    expect(shallow).toBe(1);
+    expect(deep).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value).toEqual({
+        a: { depth: "shallow", call: 1 },
+        b: { c: { d: { x: 1 } } },
+      });
+    }
+  });
+
+  it("calls a toJSON that returns another stateful object once at each level", () => {
+    // A toJSON returning an object with its own getter: both must run once,
+    // and the record must hold the first answer from each.
+    let outer = 0;
+    let inner = 0;
+    const record = {
+      a: {
+        toJSON() {
+          outer += 1;
+          return {
+            get nested() {
+              inner += 1;
+              return inner;
+            },
+          };
+        },
+      },
+    };
+
+    const result = toPlainRecord(record);
+    expect(outer).toBe(1);
+    expect(inner).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual({ a: { nested: 1 } });
   });
 });
