@@ -74,16 +74,37 @@ export type WorkerCredential = CredentialIdentity & {
 };
 
 /**
- * Immutably mark a single credential revoked. Both self-revoke and
- * dashboard-revoke set `revokedAt`. Because this returns a new object and
- * never mutates its input, revoking one credential cannot affect any other —
- * credentials are fully independent, each owning its own `revokedAt`.
+ * Immutably mark a single credential revoked.
+ *
+ * Generic in the credential type so a revoked worker is still statically a
+ * worker. Narrowing the return to `CredentialIdentity` discarded the variant
+ * at the type level while the runtime object still carried `kind` and
+ * `workerId`, so the type and the value disagreed about what the thing was.
+ *
+ * The result is frozen, and its scopes are cloned before freezing. The
+ * previous implementation spread into a NEW object which was not frozen:
+ * the scopes array it carried was still frozen, so a push failed, but the
+ * whole property could be reassigned to `["acceptance"]`. That is the same
+ * whole-array-replacement hole freezing was introduced to close, reached by a
+ * second path — and reached on a credential that has just been revoked, which
+ * is the worst moment for its authority to become editable.
+ *
+ * Cloning matters as well as freezing. Sharing one array between the original
+ * and the revoked copy leaves a single object behind two records, where the
+ * original's freeze is the only thing protecting both.
+ *
+ * Because this returns a new object and never mutates its input, revoking one
+ * credential cannot affect any other (FR-9.3, SR-4).
  */
-export function revoke(
-  identity: CredentialIdentity,
+export function revoke<T extends CredentialIdentity>(
+  identity: T,
   at: Timestamp = new Date().toISOString(),
-): CredentialIdentity {
-  return { ...identity, revokedAt: at };
+): T {
+  return Object.freeze({
+    ...identity,
+    scopes: Object.freeze([...identity.scopes]),
+    revokedAt: at,
+  }) as T;
 }
 
 /**
@@ -143,18 +164,45 @@ function isTimestamp(value: unknown): value is Timestamp {
  */
 export function validateCredentialIdentity(value: unknown): ValidationResult<CredentialIdentity> {
   if (typeof value === "object" && value !== null && !Array.isArray(value)) {
-    const kind = (value as Record<string, unknown>).kind;
-    if (kind === "device") return validateDeviceCredential(value);
-    if (kind === "worker") return validateWorkerCredential(value);
-    if (kind !== undefined) {
+    const record = value as Record<string, unknown>;
+    // Object.hasOwn, not `kind !== undefined`. Those are different assertions:
+    // an absent property says nothing about the kind, while a present property
+    // holding `undefined` asserts that the kind IS undefined — which is not a
+    // kind. Treating the second as untagged sent it to base validation.
+    if (Object.hasOwn(record, "kind")) {
+      if (record.kind === "device") return validateDeviceCredential(value);
+      if (record.kind === "worker") return validateWorkerCredential(value);
       return fail([
         {
           path: "/kind",
           code: "unknown_credential_kind",
-          message: `unrecognised credential kind "${String(kind)}"; a credential is either a device credential, a worker credential, or untagged`,
+          message: `unrecognised credential kind "${String(record.kind)}"; a credential is either a device credential, a worker credential, or untagged`,
         },
       ]);
     }
+    // Genuinely untagged. It must not carry a variant's identity field:
+    // `workerId` and `deviceId` are in the known-field list so the tagged
+    // variants can use them, and that also let an UNTAGGED credential carry
+    // one — routing to base validation, silently dropping the identity, and
+    // keeping an `acceptance` scope the named variant may never hold.
+    //
+    // A record that names a worker is a worker credential. If it will not say
+    // so, it is refused rather than quietly demoted to something with weaker
+    // rules.
+    const issues: ValidationIssue[] = [];
+    for (const [field, variant] of [
+      ["workerId", "worker"],
+      ["deviceId", "device"],
+    ] as const) {
+      if (Object.hasOwn(record, field)) {
+        issues.push({
+          path: `/${field}`,
+          code: "untagged_variant_identity",
+          message: `an untagged credential must not carry ${field}; tag it with kind: "${variant}" so the ${variant} rules apply`,
+        });
+      }
+    }
+    if (issues.length > 0) return fail(issues);
   }
   return validateBaseCredential(value);
 }

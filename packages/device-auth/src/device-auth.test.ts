@@ -434,3 +434,100 @@ describe("variant validation cannot be bypassed", () => {
     }
   });
 });
+
+describe("an untagged credential cannot smuggle a variant identity", () => {
+  // Class B again, and introduced by the fix for Class B: workerId and
+  // deviceId were added to the known-field list so the reject-unknowns rule
+  // would permit them on tagged variants. That also permitted them on an
+  // UNTAGGED credential, which routes to base validation and never sees the
+  // variant's scope rules.
+  //
+  // The result was a validated credential that silently dropped the identity
+  // it was handed and kept the `acceptance` scope a worker or device may
+  // never hold.
+  const smuggled = (o: Record<string, unknown>) =>
+    credential({ scopes: ["inference", "acceptance"], ...o });
+
+  it.each([
+    ["workerId with no kind", { workerId: "w-1" }],
+    ["deviceId with no kind", { deviceId: "d-1" }],
+    ["workerId with kind explicitly undefined", { kind: undefined, workerId: "w-1" }],
+    ["deviceId with kind explicitly undefined", { kind: undefined, deviceId: "d-1" }],
+  ])("refuses %s", (_label, extra) => {
+    expect(validateCredentialIdentity(smuggled(extra)).ok).toBe(false);
+  });
+
+  it("distinguishes an absent kind from an own kind holding undefined", () => {
+    // `kind === undefined` was treated as untagged even when the property was
+    // present. Those are different assertions: one says nothing about the
+    // kind, the other says the kind is undefined, which is not a kind.
+    const withOwnUndefined = { ...credential(), kind: undefined };
+    expect(Object.hasOwn(withOwnUndefined, "kind")).toBe(true);
+    expect(validateCredentialIdentity(withOwnUndefined).ok).toBe(false);
+
+    const withoutKind = credential();
+    expect(Object.hasOwn(withoutKind, "kind")).toBe(false);
+    expect(validateCredentialIdentity(withoutKind).ok).toBe(true);
+  });
+
+  it("still accepts a genuinely untagged credential with no variant identity", () => {
+    // The fix must not make the generic form unusable — a manually issued
+    // developer key is untagged by design.
+    expect(validateCredentialIdentity(credential()).ok).toBe(true);
+  });
+});
+
+describe("revoke does not undo the immutability validation established", () => {
+  // revoke() spread into a NEW object, which was unfrozen. The scopes array it
+  // carried was still frozen, so a push failed — but the whole property could
+  // be reassigned to ["acceptance"]. That is the same whole-array-replacement
+  // hole the freeze was added to close, reached by a second path, on a
+  // credential that has just been revoked.
+  const worker = () =>
+    credential({ kind: "worker", workerId: "w-1", scopes: ["inference"] });
+  const device = () =>
+    credential({ kind: "device", deviceId: "d-1", scopes: ["inference"] });
+
+  it.each([
+    ["worker", worker, "workerId", "w-1"],
+    ["device", device, "deviceId", "d-1"],
+  ])("keeps a revoked %s credential frozen and identified", (_l, make, idField, idValue) => {
+    const validated = validateCredentialIdentity(make());
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    const revoked = revoke(validated.value, "2026-08-23T00:00:00.000Z");
+
+    expect(Object.isFrozen(revoked)).toBe(true);
+    expect(Object.isFrozen(revoked.scopes)).toBe(true);
+    // The variant survives revocation — a revoked worker is still a worker.
+    expect((revoked as Record<string, unknown>).kind).toBe(_l);
+    expect((revoked as Record<string, unknown>)[idField]).toBe(idValue);
+    expect(revoked.revokedAt).toBe("2026-08-23T00:00:00.000Z");
+
+    expect(() => {
+      (revoked as { scopes: readonly string[] }).scopes = ["acceptance"];
+    }).toThrow();
+    expect(revoked.scopes).not.toContain("acceptance");
+  });
+
+  it("does not share the scopes array with the credential it revoked", () => {
+    // Sharing the reference means one array behind two records; freezing the
+    // original is then the only thing standing between them.
+    const validated = validateCredentialIdentity(worker());
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    const revoked = revoke(validated.value, "2026-08-23T00:00:00.000Z");
+    expect(revoked.scopes).not.toBe(validated.value.scopes);
+    expect([...revoked.scopes]).toEqual([...validated.value.scopes]);
+  });
+
+  it("still leaves the credential it was given untouched", () => {
+    // Independent revocability (FR-9.3) rests on revoke never mutating input.
+    const validated = validateCredentialIdentity(worker());
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+    revoke(validated.value, "2026-08-23T00:00:00.000Z");
+    expect(validated.value.revokedAt).toBeNull();
+  });
+});
