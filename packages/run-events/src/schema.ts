@@ -259,7 +259,7 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
           issue(
             `/payload/${key}`,
             "field_not_allowed",
-            `"${key}" is not a field of ${record.type}; payload fields are allowlisted so content has nowhere to go`,
+            `"${key}" is not a field of ${record.type}; payload fields are allowlisted per event type`,
           ),
         );
       }

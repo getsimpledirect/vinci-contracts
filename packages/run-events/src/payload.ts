@@ -76,11 +76,24 @@ type FieldSpec = {
  * as a denylist of secret-ish field names, and the same failure.
  *
  * An allowlist cannot fail that way. `prompt` is not a field of any event type,
- * so there is nowhere to put one. Adding a field means adding it here, in the
- * open, where the question "can this carry content?" is asked once.
+ * so adding one means adding it here, in the open, where the question "can this
+ * carry content?" is asked once.
  *
- * `id` and `digest` values are shape-checked at validation, so an identifier
- * cannot be a paragraph.
+ * WHAT THIS DOES NOT DO, stated because the opposite was claimed here before.
+ *
+ * It does not put content beyond reach. `id` values are shape-checked — a
+ * bounded length and a restricted alphabet — and that stops free-form prose,
+ * not token-shaped content. Verified: an AWS key id, a GitHub personal access
+ * token, a base64 blob and dotted pseudo-prose all satisfy the identifier shape
+ * and are accepted; only whitespace and length over 128 are refused.
+ *
+ * So a producer that puts a secret in `questionId` succeeds. What the schema
+ * enforces is that there is no FIELD whose purpose is to carry content, that
+ * every field's kind and alphabet are constrained, and that enumerated fields
+ * are closed sets. Whether an identifier is genuinely an identifier is a
+ * producer-side property — identifier issuance and authenticity are a separate
+ * trust boundary that no regex here can establish, and inventing one that
+ * appeared to would be worse than saying so.
  */
 export const PAYLOAD_FIELDS = {
   "run.created": {

@@ -37,7 +37,7 @@ const valid = (o: Record<string, unknown> = {}): RunEvent => {
   return result.value;
 };
 
-describe("the payload allowlist gives content nowhere to go", () => {
+describe("the payload allowlist bounds where content can appear", () => {
   it("declares fields for every event type", () => {
     expect(payloadSpecIsComplete()).toBe(true);
     expect(Object.keys(PAYLOAD_FIELDS).sort()).toEqual([...RUN_EVENT_TYPES].sort());
@@ -375,5 +375,57 @@ describe("idempotency compares events, never a supplied digest", () => {
     const seen: SeenEvent = a;
     expect(Object.hasOwn(seen, "digest")).toBe(false);
     expect(seen).toBe(a);
+  });
+});
+
+describe("what identifier shape-checking actually enforces", () => {
+  // This replaces a claim that content has nowhere to go. It does not: an
+  // identifier is bounded in length and alphabet, which excludes free-form
+  // prose and not token-shaped content. These tests assert the property that
+  // holds, so nobody reads the suite as proving the stronger one.
+  const question = (value: string) => ({
+    schemaVersion: 1,
+    eventId: "evt-1",
+    runId: "run-1",
+    sequence: 1,
+    type: "run.question",
+    actor,
+    occurredAt: AT,
+    idempotencyKey: "key-1",
+    traceId: "trace-1",
+    payload: { questionId: { kind: "id", value } },
+  });
+
+  it.each([
+    ["whitespace", "What is the database password"],
+    ["a newline", "line one\nline two"],
+    ["a tab", "a\tb"],
+    ["over 128 characters", "a".repeat(129)],
+    ["an empty value", ""],
+  ])("refuses an identifier containing %s", (_label, value) => {
+    expect(validateRunEvent(question(value)).ok).toBe(false);
+  });
+
+  it("ACCEPTS token-shaped content, which is the limit of this mechanism", () => {
+    // Deliberately asserting the weakness. If a future change makes these
+    // refuse, that is a real improvement and this test should be updated
+    // knowingly — not a silent tightening nobody notices.
+    for (const tokenShaped of [
+      "AKIAIOSFODNN7EXAMPLE",
+      "ghp_16C7e42F292c6912E7710c838347Ae178B4a",
+      "aGVsbG8gd29ybGQgc2VjcmV0",
+      "What.is.the.database.password",
+    ]) {
+      expect(validateRunEvent(question(tokenShaped)).ok, tokenShaped).toBe(true);
+    }
+  });
+
+  it("still refuses a field that exists only to carry content", () => {
+    // The part that IS enforced: no field whose purpose is content.
+    const withPrompt = {
+      ...question("q-1"),
+      payload: { questionId: { kind: "id", value: "q-1" }, prompt: { kind: "id", value: "anything" } },
+    };
+    expect(validateRunEvent(withPrompt).ok).toBe(false);
   });
 });

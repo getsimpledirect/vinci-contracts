@@ -135,9 +135,24 @@ checked for its ability to FAIL before it is trusted.
   visible.
 - **Event payloads carrying free text.** DR-3 forbids prompts, responses, files,
   memories, evidence content and secrets in operational telemetry; FR-2.3 says
-  content-minimized. This is the same defect the approvals notification had, and
-  takes the same fix: the payload cannot hold free text, rather than being
-  scrubbed of it.
+  content-minimized. Same defect as the approvals notification, same fix: no
+  field exists whose purpose is to carry content, rather than content being
+  scrubbed out of one that does.
+
+  **The bound, stated honestly.** This reduces the surface; it does not close
+  it. Identifier fields are shape-checked — bounded to 128 characters and a
+  restricted alphabet — which stops free-form prose and not token-shaped
+  content. Verified against the implementation: an AWS key id, a GitHub personal
+  access token, a base64 blob and dotted pseudo-prose all satisfy the identifier
+  shape; only whitespace and over-length are refused.
+
+  A producer that writes a secret into `questionId` therefore succeeds. What is
+  enforced is that no field is *for* content, that every field's kind and
+  alphabet are constrained, and that enumerated fields are closed sets. Whether
+  an identifier is genuinely an identifier depends on how the producer issues
+  identifiers, which is a separate trust boundary. No pattern available here can
+  establish it, and writing one that appeared to would be worse than recording
+  the limit.
 - **Ordering and idempotency asserted in a comment.** FR-2.3 requires events be
   idempotent, ordered within a run, append-only after acceptance, and safe to
   replay. Each is a property something must enforce or the schema must make
