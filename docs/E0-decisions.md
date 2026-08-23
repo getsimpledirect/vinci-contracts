@@ -131,6 +131,13 @@ there may be secret material, and preserving it puts a secret inside a record
 that FR-6.5 exports and SR-3 says must never carry secrets. Here preserving is
 strictly worse than dropping, and dropping is worse than refusing the policy.
 
+**What "preserved" means.** Unknown fields round-trip by VALUE, not by
+reference. Validation normalizes its input into a deep, frozen snapshot, so a
+validated record shares no object with the input it validated. That distinction
+is not pedantic: retaining the caller's nested objects meant a validated record
+could be changed after validation by mutating what was handed in, and a test
+asserted that identity-sharing as though it were the guarantee.
+
 The second exception was found by review, not by design. The credential section
 originally excluded secrets with a denylist of twelve field names, which passed
 `clientSecret`, `secretAccessKey`, `connectionString` and every name a future

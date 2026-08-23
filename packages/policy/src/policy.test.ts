@@ -148,8 +148,8 @@ describe("policy schemas", () => {
         "/futureTopLevel": future,
         "/network/futureNetworkRule": future,
       });
-      expect(result.unknownFields["/futureTopLevel"]).toBe(future);
-      expect(result.unknownFields["/network/futureNetworkRule"]).toBe(future);
+      expect(result.unknownFields["/futureTopLevel"]).toEqual(future);
+      expect(result.unknownFields["/network/futureNetworkRule"]).toEqual(future);
     }
   });
 });

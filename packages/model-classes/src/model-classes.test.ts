@@ -250,11 +250,13 @@ describe("fail-closed validation and preservation", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      // Unknown field values keep their identity — the snapshot copies
-      // top-level references, so a newer producer's nested data survives a
-      // round trip through this consumer unchanged.
-      expect(result.unknownFields["/futureEndpointProperty"]).toBe(futureValue);
-      expect((result.value as typeof input).futureEndpointProperty).toBe(futureValue);
+      // Unknown field VALUES round-trip; their references deliberately do not.
+      // Normalization is deep, so a validated record shares no object with the
+      // input it validated. Retaining the caller's nested reference is what
+      // let a validated record change meaning after validation.
+      expect(result.unknownFields["/futureEndpointProperty"]).toEqual(futureValue);
+      expect(result.unknownFields["/futureEndpointProperty"]).not.toBe(futureValue);
+      expect((result.value as typeof input).futureEndpointProperty).toEqual(futureValue);
 
       // But the validated record is NOT the caller's object. This previously
       // asserted `toBe(input)`, i.e. that validation handed back the very

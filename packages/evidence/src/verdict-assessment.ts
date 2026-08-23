@@ -1,4 +1,5 @@
-import type { VerdictStatus } from "@vinci/contracts";
+import type { ValidationResult, VerdictStatus } from "@vinci/contracts";
+import { validateVerdictAssessment } from "./schema.ts";
 
 /**
  * Staleness trigger: why a verdict is no longer current.
@@ -121,17 +122,21 @@ export type VerdictAssessment =
 export function verdictAssessmentFromBoolean(
   status: VerdictStatus,
   staleness: { readonly reason: string; readonly triggers: readonly VerdictStalenessTrigger[] } | null,
-): VerdictAssessment {
-  // `staled: boolean` was the old second parameter, and a boolean cannot say
-  // why something went stale — so this fabricated `reason: "stale"` and
-  // `triggers: []`. FR-7.4 enumerates the staleness conditions precisely so a
-  // stale verdict stays useful as historical evidence; an empty trigger list
-  // records nothing, and "stale" is not the machine-readable reason the type's
-  // documentation promises.
+): ValidationResult<VerdictAssessment> {
+  // Returns a validated result rather than a bare value, because it could
+  // otherwise manufacture what its own validator refuses: `{ reason: "",
+  // triggers: [] }` constructed cleanly and then failed validateVerdictAssessment.
+  // A constructor that can produce invalid values is a second, unchecked way
+  // into the type — the same shape as a helper implementing a weaker invariant
+  // than the validator beside it.
   //
-  // The caller knows what invalidated the verdict. It now has to say.
-  if (staleness === null) {
-    return { kind: "current", status };
-  }
-  return { kind: "stale", reason: staleness.reason, triggers: staleness.triggers };
+  // Running the result through the validator also clones and freezes it, so it
+  // cannot share the caller's triggers array. That mattered: emptying the
+  // caller's array afterwards emptied the assessment's, turning a valid record
+  // into one recording no reason for staleness.
+  const candidate =
+    staleness === null
+      ? { kind: "current", status }
+      : { kind: "stale", reason: staleness.reason, triggers: [...staleness.triggers] };
+  return validateVerdictAssessment(candidate);
 }

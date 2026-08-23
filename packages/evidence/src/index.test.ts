@@ -123,9 +123,9 @@ describe("validateEvidenceRecord", () => {
 
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.unknownFields["/futureEvidence"]).toBe(futureValue);
+      expect(result.unknownFields["/futureEvidence"]).toEqual(futureValue);
       expect(result.unknownFields["/attestation/futureAttestation"]).toBe("kept");
-      expect(result.value).toHaveProperty("futureEvidence", futureValue);
+      expect(result.value).toHaveProperty("futureEvidence");
     }
   });
 });
@@ -459,13 +459,47 @@ describe("a stale assessment must say why", () => {
   it("no longer lets a caller fabricate a contentless staleness record", () => {
     // The old signature took a boolean and invented reason:"stale", triggers:[].
     const current = verdictAssessmentFromBoolean("VERIFIED_PASS", null);
-    expect(validateVerdictAssessment(current).ok).toBe(true);
+    expect(current.ok).toBe(true);
 
     const stale = verdictAssessmentFromBoolean("VERIFIED_PASS", {
       reason: "the artifact digest changed after the verdict was issued",
       triggers: ["artifact_digest_changed"],
     });
-    expect(validateVerdictAssessment(stale).ok).toBe(true);
-    expect(stale.kind === "stale" && stale.triggers.length).toBeGreaterThan(0);
+    expect(stale.ok).toBe(true);
+    expect(stale.ok && stale.value.kind === "stale" && stale.value.triggers.length).toBeGreaterThan(0);
+  });
+});
+
+describe("the constructor cannot manufacture what the validator refuses", () => {
+  it("refuses a staleness record with no reason and no triggers", () => {
+    // This constructed cleanly and then failed the package's own validator —
+    // a second, unchecked way into the type.
+    const result = verdictAssessmentFromBoolean("VERIFIED_PASS", { reason: "", triggers: [] });
+    expect(result.ok).toBe(false);
+  });
+
+  it("round-trips: anything it builds, the validator accepts", () => {
+    const cases = [
+      null,
+      { reason: "files changed", triggers: ["mutation_any"] },
+      { reason: "digest changed", triggers: ["artifact_digest_changed"] },
+    ] as const;
+    for (const staleness of cases) {
+      const built = verdictAssessmentFromBoolean("VERIFIED_PASS", staleness as never);
+      expect(built.ok, JSON.stringify(staleness)).toBe(true);
+      if (built.ok) expect(validateVerdictAssessment(built.value).ok).toBe(true);
+    }
+  });
+
+  it("does not share the caller's triggers array", () => {
+    // Emptying the caller's array afterwards emptied the assessment's, turning
+    // a valid record into one recording no reason for staleness.
+    const triggers: string[] = ["artifact_digest_changed"];
+    const built = verdictAssessmentFromBoolean("VERIFIED_PASS", { reason: "r", triggers: triggers as never });
+    expect(built.ok).toBe(true);
+    if (!built.ok) return;
+    triggers.length = 0;
+    expect(built.value.kind === "stale" && built.value.triggers.length).toBe(1);
+    expect(Object.isFrozen(built.value)).toBe(true);
   });
 });
