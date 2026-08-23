@@ -10,7 +10,7 @@ import {
   EVIDENCE_SOURCE_KINDS,
 } from "./evidence-kinds.ts";
 import type { EvidenceRecord } from "./evidence-record.ts";
-import { EVIDENCE_PROVENANCE_CASES } from "./provenance.ts";
+import { EVIDENCE_PROVENANCE_CASES, type EvidenceProvenance } from "./provenance.ts";
 import {
   VERDICT_STALENESS_TRIGGERS,
   type VerdictAssessment,
@@ -141,10 +141,17 @@ function timestamp(value: unknown, path: string, issues: ValidationIssue[]): val
     addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
     return false;
   }
+  // The round-trip is the load-bearing part. Date.parse normalises impossible
+  // dates rather than rejecting them, so "2026-02-29T12:34:56.789Z" — a date
+  // that does not exist, 2026 not being a leap year — parses to March 1 and
+  // passes both the shape and the NaN check. model-classes and approvals both
+  // carry this comparison; evidence did not, so the two packages disagreed
+  // about what a malformed timestamp is.
   if (
     typeof value !== "string"
     || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
     || Number.isNaN(Date.parse(value))
+    || new Date(value).toISOString() !== value
   ) {
     addIssue(issues, path, "invalid_timestamp", "expected an ISO-8601 UTC timestamp with millisecond precision");
     return false;
@@ -231,8 +238,60 @@ function validateAttestation(
   const path = "/attestation";
   const object = objectValue(value, path, ["provenance", "actor"], issues, unknownFields);
   if (!object) return;
-  enumValue(object.provenance, EVIDENCE_PROVENANCE_CASES, `${path}/provenance`, issues);
+  const provenanceValid = enumValue(
+    object.provenance,
+    EVIDENCE_PROVENANCE_CASES,
+    `${path}/provenance`,
+    issues,
+  );
   validateActor(object.actor, `${path}/actor`, issues, unknownFields);
+
+  // Provenance and actor were validated as two independent enums, which made
+  // the pairing between them meaningless: a worker could claim
+  // `independent_verifier` provenance, and a verifier explicitly flagged
+  // `independent: false` could too. Both were accepted.
+  //
+  // That is the one thing this vocabulary exists to prevent. Architectural
+  // principle 2 says the worker does not issue its own verdict, and FR-6.3
+  // requires receipts to distinguish worker-provided from independent-verifier
+  // evidence. Neither holds if the record can simply assert the distinction.
+  if (provenanceValid && isJsonObject(object.actor)) {
+    const actor = object.actor;
+    const expected = ACTOR_KIND_FOR_PROVENANCE[object.provenance as EvidenceProvenance];
+    if (actor.kind !== expected) {
+      addIssue(
+        issues,
+        `${path}/actor/kind`,
+        "provenance_actor_mismatch",
+        `evidence with ${String(object.provenance)} provenance must be attested by an actor of kind "${expected}", not "${String(actor.kind)}"`,
+      );
+    }
+    if (object.provenance === "independent_verifier" && actor.independent !== true) {
+      addIssue(
+        issues,
+        `${path}/actor/independent`,
+        "verifier_not_independent",
+        "evidence cannot claim independent-verifier provenance from a verifier that is not independent; FR-7.3 requires that non-independence be disclosed, not hidden",
+      );
+    }
+  }
+}
+
+/**
+ * Which actor kind may vouch for each provenance case.
+ *
+ * The mapping was previously stated in a comment on EVIDENCE_PROVENANCE_CASES
+ * and enforced nowhere.
+ */
+const ACTOR_KIND_FOR_PROVENANCE: Readonly<Record<EvidenceProvenance, string>> = {
+  worker_provided: "worker",
+  system_observed: "system",
+  human_provided: "user",
+  independent_verifier: "verifier",
+};
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function validateEvidenceRecord(input: unknown): ValidationResult<EvidenceRecord> {
@@ -271,6 +330,28 @@ export function validateEvidenceRecord(input: unknown): ValidationResult<Evidenc
   return ok(input as EvidenceRecord, unknownFields);
 }
 
+/**
+ * Reject a field belonging to a different arm of a discriminated union.
+ *
+ * Silently ignoring it is not equivalent: the value survives into the record
+ * and is readable by anything that does not know it should not be there.
+ */
+function rejectPresentField(
+  object: Record<string, unknown>,
+  field: string,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (Object.hasOwn(object, field) && object[field] !== undefined) {
+    addIssue(
+      issues,
+      path,
+      "field_not_valid_for_kind",
+      `${field} does not belong on this kind of assessment and must not be carried`,
+    );
+  }
+}
+
 export function validateVerdictAssessment(input: unknown): ValidationResult<VerdictAssessment> {
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
@@ -286,11 +367,21 @@ export function validateVerdictAssessment(input: unknown): ValidationResult<Verd
     return fail(issues);
   }
 
+  // Each arm must reject the OTHER arm's fields, not merely ignore them.
+  //
+  // Both arms previously shared one known-field list, so a stale assessment
+  // could carry `status: "VERIFIED_PASS"` and validate. The value round-tripped
+  // intact, which means every downstream reader saw a live pass sitting inside
+  // a record whose whole purpose is to say the pass is no longer current
+  // (FR-7.4). The discriminant said stale; the payload said verified.
   if (object.kind === "current") {
     enumValue(object.status, VERDICT_STATUSES, "/status", issues);
+    rejectPresentField(object, "reason", "/reason", issues);
+    rejectPresentField(object, "triggers", "/triggers", issues);
   } else {
     requiredString(object.reason, "/reason", issues);
     enumArray(object.triggers, VERDICT_STALENESS_TRIGGERS, "/triggers", issues);
+    rejectPresentField(object, "status", "/status", issues);
   }
 
   if (issues.length > 0) return fail(issues);

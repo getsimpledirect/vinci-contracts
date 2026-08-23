@@ -50,7 +50,7 @@ of existing records is required.
 
 `vinci-code` already implements verdict→state collapse in
 `remoteVerdictTaskState()` (`vinci/extensions/lib/task-outcome.ts`). That
-function becomes `terminalStateOfVerdict()` here and is imported rather than
+function becomes `terminalStateOfVerification()` here and is imported rather than
 reimplemented, so Code and Acceptance cannot drift apart by hand-copied switch
 statement. Its existing behaviour is preserved exactly, including the two cases
 that return "no change": a `CANCELLED` verdict and a staled record both leave

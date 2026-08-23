@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { assertSchemaMetaComplete } from "@vinci/contracts";
 import {
+  EVIDENCE_RECORD_SCHEMA_META,
+  VERDICT_ASSESSMENT_SCHEMA_META,
   validateEvidenceRecord,
   validateVerdictAssessment,
 } from "./index.ts";
@@ -201,6 +204,120 @@ describe("validateVerdictAssessment", () => {
     if (result.ok) {
       expect(result.unknownFields["/futureAssessment"]).toBe(futureValue);
       expect(result.value).toHaveProperty("futureAssessment", futureValue);
+    }
+  });
+});
+
+describe("a worker cannot vouch for itself as an independent verifier", () => {
+  // Architectural principle 2: the worker does not issue its own verdict.
+  // FR-6.3: receipts must distinguish worker-provided from independent-verifier
+  // evidence. Neither holds if a record can simply assert the distinction —
+  // provenance and actor were validated as two unrelated enums, so nothing
+  // connected the claim to who actually made it.
+  const record = (attestation: unknown) => ({ ...validEvidenceRecord(), attestation });
+
+  it("refuses independent-verifier provenance from a worker", () => {
+    const result = validateEvidenceRecord(
+      record({ provenance: "independent_verifier", actor: { kind: "worker", workerId: "worker-1" } }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "provenance_actor_mismatch")).toBe(true);
+  });
+
+  it("refuses independent-verifier provenance from a verifier that is not independent", () => {
+    // FR-7.3 allows the same model to work and verify, but requires the product
+    // to DISCLOSE that the verifier is not independent. Letting the record
+    // claim independence hides exactly what must be disclosed.
+    const result = validateEvidenceRecord(
+      record({
+        provenance: "independent_verifier",
+        actor: { kind: "verifier", verifierId: "v-1", independent: false },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "verifier_not_independent")).toBe(true);
+  });
+
+  it("accepts an actually independent verifier", () => {
+    expect(
+      validateEvidenceRecord(
+        record({
+          provenance: "independent_verifier",
+          actor: { kind: "verifier", verifierId: "v-1", independent: true },
+        }),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it("pairs every provenance case with exactly one actor kind", () => {
+    const pairs = [
+      ["worker_provided", { kind: "worker", workerId: "w-1" }],
+      ["system_observed", { kind: "system", component: "runner" }],
+      ["human_provided", { kind: "user", userId: "u-1" }],
+      ["independent_verifier", { kind: "verifier", verifierId: "v-1", independent: true }],
+    ] as const;
+    for (const [provenance, actor] of pairs) {
+      expect(validateEvidenceRecord(record({ provenance, actor })).ok, provenance).toBe(true);
+    }
+    // and every mismatched pairing is refused
+    for (const [provenance] of pairs) {
+      for (const [, actor] of pairs) {
+        const result = validateEvidenceRecord(record({ provenance, actor }));
+        const matches = pairs.find(([p]) => p === provenance)?.[1] === actor;
+        expect(result.ok, `${provenance} with ${actor.kind}`).toBe(matches);
+      }
+    }
+  });
+});
+
+describe("a stale assessment cannot carry a live pass", () => {
+  it("refuses a stale assessment that also has a status", () => {
+    // The discriminant said stale; the payload said VERIFIED_PASS, and the
+    // value round-tripped intact for any reader that did not know to ignore it.
+    const result = validateVerdictAssessment({
+      kind: "stale",
+      status: "VERIFIED_PASS",
+      reason: "files changed",
+      triggers: ["mutation_any"],
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "field_not_valid_for_kind")).toBe(true);
+  });
+
+  it("refuses a current assessment carrying staleness fields", () => {
+    const result = validateVerdictAssessment({
+      kind: "current",
+      status: "VERIFIED_PASS",
+      reason: "files changed",
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("timestamps", () => {
+  it("refuses a date that does not exist", () => {
+    // 2026 is not a leap year. Date.parse normalises this to March 1 rather
+    // than rejecting it, so the round-trip comparison is what catches it —
+    // and is what makes evidence agree with model-classes and approvals.
+    const result = validateEvidenceRecord({
+      ...validEvidenceRecord(),
+      recordedAt: "2026-02-29T12:34:56.789Z",
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "invalid_timestamp")).toBe(true);
+  });
+
+  it("still accepts a real one", () => {
+    expect(validateEvidenceRecord(validEvidenceRecord()).ok).toBe(true);
+  });
+});
+
+describe("schema metadata", () => {
+  it("answers the six questions for every schema this package exports", () => {
+    // The evidence package was the only one without a meta conformance test,
+    // and VerdictAssessment had no SchemaMeta at all.
+    for (const meta of [EVIDENCE_RECORD_SCHEMA_META, VERDICT_ASSESSMENT_SCHEMA_META]) {
+      expect(() => assertSchemaMetaComplete(meta)).not.toThrow();
     }
   });
 });

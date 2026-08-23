@@ -42,3 +42,24 @@ export const EVIDENCE_RECORD_SCHEMA_META: SchemaMeta = {
    */
   migration: "none",
 };
+
+/**
+ * VerdictAssessment is an exported, validated schema and had no SchemaMeta at
+ * all, which made D3's claim — "a new schema cannot be added without answering
+ * all six questions" — false for the one schema most directly concerned with
+ * whether something may be called verified.
+ */
+export const VERDICT_ASSESSMENT_SCHEMA_META: SchemaMeta = {
+  id: "vinci.verdict-assessment",
+  version: 1,
+  compatibility: "additive-only",
+  /**
+   * Rejected, not preserved. An assessment is the record that decides whether
+   * a UI may say "Verified" (FR-6.4), and an unrecognised field on it could
+   * carry a stale pass into a reader that does not know to ignore it — the
+   * same reason the stale and current arms now refuse each other's fields.
+   */
+  unknownFields: "reject",
+  malformedData: "fail-closed",
+  migration: "none",
+};
