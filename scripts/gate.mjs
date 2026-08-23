@@ -12,7 +12,7 @@
  * check, and is reported as a gate failure in its own right.
  */
 import { execSync } from "node:child_process";
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -50,14 +50,35 @@ const packages = readdirSync(join(root, "packages")).filter((d) =>
 );
 for (const pkg of packages) {
   const src = join(root, "packages", pkg, "src");
-  const hasTest =
-    existsSync(src) && readdirSync(src).some((f) => f.endsWith(".test.ts"));
-  if (!hasTest) {
+  const testFiles =
+    existsSync(src) ? readdirSync(src).filter((f) => f.endsWith(".test.ts")) : [];
+  if (testFiles.length === 0) {
     console.error(`  ${pkg}: no test file — the suite passing says nothing about it`);
     failed = true;
-  } else {
-    console.log(`  ${pkg}: covered`);
+    continue;
   }
+
+  // A file of skipped tests is not coverage.
+  //
+  // The previous check asked only whether a *.test.ts file EXISTED, so a
+  // package whose every test was `it.skip` reported as covered while asserting
+  // nothing — the same shape as the vacuous tests this gate exists to prevent,
+  // one level up. A reviewer listed this as untested and it was.
+  const live = testFiles.some((file) => {
+    const source = readFileSync(join(root, "packages", pkg, "src", file), "utf8");
+    // An it/test call that is NOT .skip/.todo, and not commented out at line start.
+    return source
+      .split("\n")
+      .some((line) => /^\s*(it|test)\s*\(/.test(line) && !/^\s*(\/\/|\*)/.test(line));
+  });
+  if (!live) {
+    console.error(
+      `  ${pkg}: every test is skipped or absent — a file of it.skip asserts nothing`,
+    );
+    failed = true;
+    continue;
+  }
+  console.log(`  ${pkg}: covered`);
 }
 
 console.log("\n─── gate ───");

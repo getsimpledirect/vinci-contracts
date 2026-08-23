@@ -49,6 +49,46 @@ for (const dir of readdirSync(packagesDir)) {
   // remote-protocol devDependency passed this check. A layering violation is a
   // violation whichever section declares it: the import compiles either way,
   // and a test importing upward couples the layers as firmly as source does.
+  // SOURCE imports, not just manifest entries.
+  //
+  // The layer rule was enforced against declared dependencies alone, so an
+  // import that no manifest mentions was invisible: workspace hoisting resolves
+  // `@vinci/receipts` from any package whether or not that package declares it,
+  // and the build succeeds. A reviewer listed this as untested and it was.
+  //
+  // Two distinct failures are reported here. An upward import is a layering
+  // violation. An import of a package the manifest does not declare is a
+  // different bug -- it works only by accident of hoisting, and breaks the
+  // moment the package is consumed on its own.
+  // `dir`, not `name`: the directory is "contracts", the package name is
+  // "@vinci/contracts". Using the name pointed at packages/@vinci/contracts/src,
+  // which does not exist, so existsSync was false and this entire scan silently
+  // did nothing while the check reported OK. Caught only by mutation testing.
+  const srcDir = join(packagesDir, dir, "src");
+  if (existsSync(srcDir)) {
+    for (const file of readdirSync(srcDir)) {
+      if (!file.endsWith(".ts")) continue;
+      const source = readFileSync(join(srcDir, file), "utf8");
+      // Import/export ... from "@vinci/x", and dynamic import("@vinci/x").
+      const seen = new Set();
+      for (const m of source.matchAll(/(?:from|import)\s*\(?\s*["']@vinci\/([a-z0-9-]+)["']/g)) {
+        seen.add(`@vinci/${m[1]}`);
+      }
+      for (const dep of seen) {
+        if (!layerOf.has(dep)) {
+          errors.push(`${name}/src/${file}: imports unknown contract package ${dep}`);
+          continue;
+        }
+        if (layerOf.get(dep) >= own) {
+          errors.push(
+            `${name}/src/${file}: imports ${dep} (layer ${layerOf.get(dep)}) from layer ${own}. `
+              + "Imports must point strictly downward.",
+          );
+        }
+      }
+    }
+  }
+
   const declaredDeps = {
     ...manifest.dependencies,
     ...manifest.devDependencies,
