@@ -6,7 +6,6 @@ import {
   RUN_EVENT_TYPES,
   canonicalize,
   eventDigest,
-  eventIdentity,
   payloadSpecIsComplete,
   validateRunEvent,
   verifyAppend,
@@ -201,8 +200,7 @@ describe("canonicalization and identity", () => {
 });
 
 describe("appending to the log", () => {
-  const seenWith = (e: RunEvent): Map<string, SeenEvent> =>
-    new Map([[e.idempotencyKey, eventIdentity(e)]]);
+  const seenWith = (e: RunEvent): Map<string, SeenEvent> => new Map([[e.idempotencyKey, e]]);
 
   it("accepts a contiguous first and second event", () => {
     const first = valid();
@@ -343,5 +341,39 @@ describe("the payload type is wired to the event, not merely derived beside it",
     // them, so the pair was incoherent.
     expect(RUN_EVENT_SCHEMA_META.unknownFields).toBe("reject");
     expect(RUN_EVENT_SCHEMA_META.compatibility).toBe("frozen");
+  });
+});
+
+describe("idempotency compares events, never a supplied digest", () => {
+  it("cannot be told that two different events are the same", () => {
+    // The map used to carry { event, digest } with the digest supplied by the
+    // caller, so storing event A under B's key with B's digest made B validate
+    // as a retry of A: a real event discarded and success reported. A digest
+    // left stale by a mutation had the same shape.
+    const a = valid({ eventId: "evt-A" });
+    const b = valid({ eventId: "evt-B" });
+    expect(eventDigest(a)).not.toBe(eventDigest(b));
+
+    // The map now holds events. There is nothing in it to get wrong, and the
+    // closest a caller can come to the old attack is filing A under B's key —
+    // which is a conflict, not a retry.
+    const misfiled = new Map<string, SeenEvent>([[b.idempotencyKey, a]]);
+    const verdict = verifyAppend(null, b, misfiled);
+    expect(verdict.kind).toBe("reject");
+    expect(verdict.kind === "reject" && verdict.rejection.reason).toBe("idempotency_conflict");
+  });
+
+  it("still recognises a genuine retry", () => {
+    const a = valid();
+    expect(verifyAppend(null, a, new Map([[a.idempotencyKey, a]])).kind).toBe("duplicate");
+  });
+
+  it("derives both sides of the comparison, so SeenEvent carries no digest", () => {
+    // A structural check, not a behavioural one: if a digest field returns to
+    // this type, a caller can assert identity again.
+    const a = valid();
+    const seen: SeenEvent = a;
+    expect(Object.hasOwn(seen, "digest")).toBe(false);
+    expect(seen).toBe(a);
   });
 });

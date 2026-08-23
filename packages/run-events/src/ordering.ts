@@ -33,25 +33,20 @@ export type AppendVerdict =
   | { readonly kind: "reject"; readonly rejection: AppendRejection };
 
 /**
- * An event already accepted into the log, for idempotency comparison.
+ * An event already accepted into the log.
  *
- * Carries the full event rather than a summary, so identity is compared against
- * what actually happened rather than against fields someone chose to keep.
- */
-export type SeenEvent = { readonly event: RunEvent; readonly digest: string };
-
-/**
- * Identity of an event for retry comparison.
+ * The event itself, with no digest beside it. An earlier version carried
+ * `{ event, digest }`, and the digest was supplied by the caller — so a caller
+ * could store event A under key B with B's digest, and B then validated as a
+ * retry of A. A real event discarded, success reported. A stale digest left
+ * behind after a mutation has exactly the same shape.
  *
- * An earlier draft keyed idempotency on the key alone and stored only a
- * sequence, so the same key on a DIFFERENT run, or with a different type,
- * actor, payload or timestamp, was silently accepted as a retry — discarding a
- * real event and reporting success. A retry has to be the same event, not
- * merely the same label.
+ * That defeated the point of computing the candidate's digest internally: one
+ * side of the comparison was still asserted rather than demonstrated. There is
+ * now nothing to assert — both digests are derived here, from the events
+ * themselves, at comparison time.
  */
-export function eventIdentity(event: RunEvent): SeenEvent {
-  return { event, digest: eventDigest(event) };
-}
+export type SeenEvent = RunEvent;
 
 /**
  * May `candidate` be appended after `previous`?
@@ -59,7 +54,8 @@ export function eventIdentity(event: RunEvent): SeenEvent {
  * `previous` is null for the first event in a run, which must have sequence 1.
  * `seen` maps idempotency keys to the events already recorded under them, for
  * THIS run only — the caller scopes the map, and the run check below catches it
- * if they did not.
+ * if they did not. The map holds events, not summaries or digests: there is
+ * deliberately nothing in it for a caller to get wrong.
  *
  * The candidate's identity is computed HERE, not supplied. An earlier draft
  * took a caller-provided digest, which let a caller assert that two different
@@ -82,12 +78,12 @@ export function verifyAppend(
 
   const existing = seen.get(candidate.idempotencyKey);
   if (existing !== undefined) {
-    // Whole-event comparison, sequence included. Anything that differs at all
-    // is a different event wearing the same key.
-    const sameEvent = existing.digest === eventDigest(candidate);
+    // Both digests derived here, from the events themselves. Neither side of
+    // this comparison is anything the caller told us.
+    const sameEvent = eventDigest(existing) === eventDigest(candidate);
     return sameEvent
-      ? { kind: "duplicate", existingSequence: existing.event.sequence }
-      : { kind: "reject", rejection: { reason: "idempotency_conflict", sequence: existing.event.sequence } };
+      ? { kind: "duplicate", existingSequence: existing.sequence }
+      : { kind: "reject", rejection: { reason: "idempotency_conflict", sequence: existing.sequence } };
   }
 
   if (previous === null) {
