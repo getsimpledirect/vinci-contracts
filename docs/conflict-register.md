@@ -172,3 +172,167 @@ requirements' language (§7) and the user-facing concept. A repository storing
 arm. The mapping is explicit because three encodings of one concept is how the
 "stale organization context authorizes current access" failure in FR-9.4
 happens.
+
+---
+
+## C8 — Names this repository must not claim naively
+
+**Status: open. Constrains adoption, not the schemas themselves.**
+
+Reported by exploration of `vinci-work`, `vinci-chat` and `vinci-mobile`. Each
+of these identifiers already exists, with a different meaning, in a repository
+that would import the shared package of the same name:
+
+| Identifier | Already means |
+| --- | --- |
+| `TokenScope` | `"owner"\|"collaborator"\|"viewer"` in `vinci-work/apps/server`, **and** `["client","host","activity"]` in `vinci-work/ee`. Two incompatible definitions in one repository. |
+| `ApprovalMode` | `"standard"\|"cautious"\|"trusted"` in the desktop settings panel, **and** `"manual"\|"auto"` in the desktop server. Also two, also one repository. |
+| `ApprovalRequest` | The remote-collaborator queue record in `vinci-work/apps/server/src/types.ts`. |
+| `Actor` | `{ type: "remote"\|"host" }` in `vinci-work/apps/server` — narrower than, and incompatible with, the `Actor` in `@vinci/contracts`. |
+| `CodeArtifact`, `ArtifactItem`, `FoglioArtifact`, `SharedArtifact` | Four existing artifact models across `vinci-chat`, `vinci-work` and `vinci-mobile`. |
+| `Step`, `AgentRole`, `ReloadEvent` | Existing harness and event types in `vinci-chat` / `vinci-work`. |
+
+Two of these are worth noting for what they say about the current state: both
+`TokenScope` and `ApprovalMode` are *already* defined twice, incompatibly,
+inside a single repository. The drift this repository exists to stop is not only
+between repositories.
+
+Adoption should import shared types under an explicit alias rather than
+expecting a bare name to be free.
+
+---
+
+## C9 — "class" and "tier" are already load-bearing, and mean two things
+
+**Status: open. Belongs to `@vinci/model-classes`.**
+
+Reported by exploration of `vinci-chat` and `vinci-work`.
+
+`class` is `vinci-chat`'s canonical word for a model tier: `ClassConfig`,
+`config/classes.yaml`, `classId`, `resolveClassId()`, a `/app/classes` page, and
+reserved class ids (`forte`, `fortissimo`, `vision`, `mezzo`). A package named
+`@vinci/model-classes` lands directly on top of a live registry.
+
+`tier` is worse, because it already means two incompatible things:
+
+- `vinci-work` `INFERENCE_TIERS = ["tier1","tier2"]` — an **entitlement** level.
+- `vinci-chat` `ClassConfig.tier?: number` — a **capability** rank.
+
+A shared `tier` field would silently mean billing to one repository and
+capability to the other. The shared package should avoid the bare word.
+
+---
+
+## C10 — The same application is called `work` and `desktop`
+
+**Status: open. Constrains `@vinci/device-auth`.**
+
+Reported by exploration of `vinci-chat`: `CLIENT_ALLOWLIST` and the
+`client_type` DB CHECK constraints use `work`, while `MODEL_SURFACES` uses
+`desktop`, for the same application. The customer-facing name is Vinci Desktop.
+
+The database constraint is the binding one: `client_type` is checked against
+`('work','code')`, so a shared type emitting `desktop` would be rejected at
+write time. A source comment in that schema notes that renaming `work` to
+`desktop` is intended as a deliberate expand/contract migration.
+
+So the shared type must keep `work` as the stored value and treat "Desktop" as
+display text, until that migration happens. Renaming it in a contract package
+first would break writes.
+
+---
+
+## C11 — Four approve/deny alphabets, in one repository
+
+**Status: open. Belongs to `@vinci/approvals`.**
+
+Reported by exploration of `vinci-work`. All four are live:
+
+- the permission modal replies `"once" | "always" | "reject"`;
+- the server's approval service replies `"allow" | "deny"`;
+- the approval-mode policy uses `"ask" | "allow" | "deny"`;
+- diagnostics use `"allowed" | "approval-required" | "denied" | "unspecified"`.
+
+Any shared vocabulary contradicts at least three of them. The FR-5.3 set
+(approve once / approve narrower / deny) is closest to the modal's, which is
+also the one a user actually sees.
+
+---
+
+## C12 — Desktop does not launch Vinci Code
+
+**Status: open. Not a conflict — a missing foundation.**
+
+Reported by exploration of `vinci-work`, and consistent with a repository-wide
+search: the string `vinci-code` does not appear anywhere in `vinci-work`. The
+agent process it launches is `opencode`, alongside its own `openwork-server`.
+
+§15 requires `vinci-work` to "launch and manage Vinci Code worker" and E1's exit
+gate depends on it. That integration is greenfield, not an adaptation. Worth
+knowing before E1 is scheduled as though it were incremental.
+
+`vinci-work` does have a real worker lifecycle in its enterprise tree
+(`WorkerStatus = ["provisioning","healthy","failed","stopped"]`), which is the
+natural thing for `@vinci/worker-protocol` to reconcile with.
+
+---
+
+## C13 — `@vinci/policy` lands on an existing policy subsystem
+
+**Status: open. Constrains adoption in `vinci-work`.**
+
+Reported by exploration of `vinci-work`: there is already a desktop-policy
+subsystem — `DesktopPolicyKey`, `DesktopPolicyDocument`,
+`desktopPolicyValueSchema`, a `/v1/desktop-policies` API, an editor screen and a
+database table — plus a `PermissionPolicy = "ask"|"allow"|"deny"`. `vinci-chat`
+separately has `RolePolicy` and `RoleTierPolicy`.
+
+These are MDM-style device policies, not run-authority policies. Both are
+legitimate and they are not the same thing. The shared package should say so
+explicitly, because "policy" reading as either one is how a device setting ends
+up believed to constrain a run.
+
+---
+
+## C14 — Three run-state alphabets, and `waiting` already means something
+
+**Status: resolved for new code; existing states need mapping at adoption.**
+
+Reported by exploration of the three client repositories:
+
+| Repository | Run status vocabulary |
+| --- | --- |
+| `vinci-work` | `"idle"\|"thinking"\|"responding"\|"error"\|"compacting"\|"waiting"` (UI), `"idle"\|"busy"\|"retry"` (engine wire) |
+| `vinci-chat` | `'submitted'\|'streaming'\|'ready'\|'error'`, and `'running'\|'done'` for code runs |
+| `vinci-mobile` | untyped `string`; observed `'thinking'\|'searching'\|'researching'` |
+
+`vinci-work`'s `"waiting"` already means "blocked on a permission or question" —
+precisely the role `WAITING_FOR_APPROVAL` plays in `RunState`, spelled
+differently and in a different case.
+
+None of these describe a governed run; they describe a chat turn or an engine
+connection. They are not prior art for `RunState` and should not be widened into
+it. They do need an explicit mapping wherever a surface starts reporting runs.
+
+One useful accident: `DONE_UNVERIFIED`, `WAITING_FOR_APPROVAL` and
+`VERIFIED_PASS` appear nowhere in these three repositories, and every existing
+status union is lowercase. The SCREAMING_SNAKE convention inherited from
+Acceptance is therefore collision-free, if stylistically foreign.
+
+---
+
+## C15 — There is no policy contract to reconcile with
+
+**Status: open. `@vinci/policy` is greenfield.**
+
+Verified here: `vinci-acceptance/packages/policy-engine/src/index.ts` contains
+exactly one line, `export const PACKAGE_NAME = "policy-engine";`. No policy
+record, no sections, no decision result, no reason codes.
+
+`Verdict.policyVersion` is a free-form string, currently stamped
+`"wave0e-stub-v1"` by the deterministic evaluator.
+
+So the policy manifest has no incumbent vocabulary constraining it — unusually
+for this work, it can be designed from the requirements rather than negotiated
+against something shipping. The constraint is C13: it must not be confused with
+`vinci-work`'s device policies.
