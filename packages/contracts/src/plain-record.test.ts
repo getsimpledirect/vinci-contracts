@@ -429,14 +429,19 @@ describe("the aggregate size bound is enforced during traversal", () => {
 
 describe("the invariant, stated once and checked over every construction", () => {
   // Eleven cycles of defects in this boundary all had one shape: the decision
-  // depended on HOW an object was built, not on what it said. Refusing exotic
-  // constructions was the wrong lever — it needed a second read, and the second
-  // read was itself the hole.
+  // depended on HOW an object was built, not on what it said.
   //
-  // The property below is the one that matters, and it is checkable rather than
-  // enumerable: validating a value gives the same answer as validating the JSON
-  // that value serializes to. If those ever differ, construction affected the
-  // outcome, and the class is back.
+  // A note on what this can and cannot test. `holdsFor` builds the value twice —
+  // once to validate, once to serialize for comparison — which is fine for a
+  // STATELESS construction and meaningless for a stateful one, since two builds
+  // produce two objects each with fresh state, and comparing their first reads
+  // proves nothing. An earlier version of this test mixed both kinds and was
+  // vacuous for exactly the constructions that motivated it.
+  //
+  // So they are separated: stateless constructions are checked for
+  // JSON-equivalence here, and stateful ones are checked for the property that
+  // actually constrains them — that the input is read exactly once, which is
+  // asserted directly against a single object above.
   const holdsFor = (build: () => unknown) => {
     const viaExotic = toPlainRecord(build());
     let plain: unknown;
@@ -452,10 +457,6 @@ describe("the invariant, stated once and checked over every construction", () =>
 
   it.each([
     ["a nested inherited field", () => ({ n: Object.setPrototypeOf({ own: 1 }, { hidden: 2 }) })],
-    ["a getter", () => {
-      let i = 0;
-      return { get x() { i += 1; return i; } };
-    }],
     ["a symbol key", () => {
       const o: Record<string | symbol, unknown> = { a: 1 };
       o[Symbol("s")] = 2;
@@ -482,7 +483,12 @@ describe("the invariant, stated once and checked over every construction", () =>
         }),
       };
     }],
-    ["a proxy whose ownKeys changes between reads", () => {
+  ])("holds for %s (stateless)", (_label, build) => {
+    holdsFor(build as () => unknown);
+  });
+
+  it.each([
+    ["an unstable ownKeys", () => {
       let n = 0;
       return new Proxy({ a: 1, b: "SMUGGLED" }, {
         ownKeys: () => {
@@ -492,7 +498,53 @@ describe("the invariant, stated once and checked over every construction", () =>
         getOwnPropertyDescriptor: (t, k) => Object.getOwnPropertyDescriptor(t, k),
       });
     }],
-  ])("holds for %s", (_label, build) => {
-    holdsFor(build as () => unknown);
+    ["a stateful getter", () => {
+      let n = 0;
+      return { a: { get x() { n += 1; return n; } } };
+    }],
+    ["a stateful toJSON", () => {
+      let n = 0;
+      return { a: { toJSON() { n += 1; return { call: n }; } } };
+    }],
+  ])("gives %s exactly one chance to speak", (_label, build) => {
+    // The testable property for a stateful input is not JSON-equivalence — it
+    // has no stable JSON — but that the second answer never happens.
+    let reads = 0;
+    const counted = new Proxy(build() as object, {
+      ownKeys(t) {
+        reads += 1;
+        return Reflect.ownKeys(t);
+      },
+    });
+    const result = toPlainRecord(counted);
+    expect(reads).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(JSON.stringify(result.value)).not.toContain("SMUGGLED");
+  });
+
+  it("measures the size cap in bytes, as its name says", () => {
+    // 800,000 code units of non-ASCII is 1.6MB of UTF-8. A code-unit check
+    // accepted it while the constant and the error both said bytes.
+    const emoji = "\u{1F600}".repeat(400_000);
+    expect(emoji.length).toBeLessThan(1_000_000);
+    const result = toPlainRecord({ blob: emoji });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues[0]?.code).toBe("too_large");
+  });
+
+  it("refuses a huge prebuilt key list, though not before materializing it", () => {
+    // Documents a known limit rather than a guarantee. JSON.stringify
+    // materializes a Proxy's ownKeys list before the replacer runs once, so the
+    // cost is paid before any bound is consulted. Counting the keys first would
+    // mean reading the input twice, and a second read is what let a Proxy put an
+    // uninspected field into a validated record — a worse trade than this
+    // resource cost.
+    const keys = Array.from({ length: 50_000 }, (_, i) => `k${i}`);
+    const p = new Proxy({}, {
+      ownKeys: () => keys,
+      getOwnPropertyDescriptor: () => ({ value: 1, enumerable: true, configurable: true }),
+    });
+    const result = toPlainRecord(p);
+    expect(result.ok).toBe(false);
   });
 });

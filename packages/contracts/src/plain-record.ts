@@ -310,6 +310,18 @@ const MAX_SERIALIZED_BYTES = 1_000_000;
  * exceeded, which bounds the work *this code* performs regardless of what the
  * input claims.
  *
+ * It also does not bound work JSON.stringify does before the replacer runs at
+ * all. A Proxy returning two million prebuilt ownKeys costs the materialization
+ * of that list — measured 843ms and 184MB — before any counter is touched.
+ *
+ * Counting the keys first was tried and reverted. It required reading ownKeys
+ * before serialization, which is a second read of the input, and a second read
+ * is precisely what let a Proxy put an uninspected field into a validated
+ * record. It also only reduced the cost to 605ms and 86MB — still linear, since
+ * counting a list means materializing it. Trading the one-read property for a
+ * partial resource mitigation is a bad exchange: the first is soundness, the
+ * second is a limit that was never going to hold against a trap anyway.
+ *
  * It does not bound the work a trap does before returning. A `get` handler is
  * free to loop or allocate without ever yielding control, and no replacer can
  * interrupt it. Defending against that needs a timeout or a separate execution
@@ -318,6 +330,26 @@ const MAX_SERIALIZED_BYTES = 1_000_000;
  * arbitrary Proxy work.
  */
 const MAX_NODES = 200_000;
+
+/**
+ * UTF-8 byte length, without assuming a Node Buffer.
+ *
+ * `String.prototype.length` counts UTF-16 code units, which undercounts every
+ * non-ASCII character — the cap is named in bytes and must be measured in them.
+ */
+function utf8Length(text: string): number {
+  let bytes = 0;
+  for (let i = 0; i < text.length; i += 1) {
+    const code = text.charCodeAt(i);
+    if (code < 0x80) bytes += 1;
+    else if (code < 0x800) bytes += 2;
+    else if (code >= 0xd800 && code <= 0xdbff) {
+      bytes += 4;
+      i += 1; // low surrogate consumed with its pair
+    } else bytes += 3;
+  }
+  return bytes;
+}
 
 /** Distinguishes our own abort from a genuine serialization error. */
 const ABORT = Symbol("vinci.normalize.abort");
@@ -442,7 +474,12 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
   if (serialized === undefined) {
     return fail([issue(path, "not_object", "expected an object")]);
   }
-  if (serialized.length > MAX_SERIALIZED_BYTES) {
+  // The during-traversal budget counts UTF-16 code units, which is a valid
+  // LOWER bound on UTF-8 bytes and so bounds the work without over-rejecting.
+  // It is not the contract: the constant says bytes, and 800,000 code units of
+  // non-ASCII is 1.6MB of UTF-8 — accepted under a code-unit check. The exact
+  // byte length is therefore enforced here, once, on the finished string.
+  if (utf8Length(serialized) > MAX_SERIALIZED_BYTES) {
     return fail([
       issue(path, "too_large", `a data record must serialize to under ${MAX_SERIALIZED_BYTES} bytes`),
     ]);
