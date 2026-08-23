@@ -8,7 +8,7 @@
  * point — the layering is a decision, so it should fail the build.
  */
 import { readdirSync, readFileSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
+import { join, dirname, resolve, relative as relativePath } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -24,6 +24,32 @@ const LAYERS = [
 
 const layerOf = new Map();
 LAYERS.forEach((names, i) => names.forEach((n) => layerOf.set(n, i)));
+
+/**
+ * Every TypeScript source file under a directory, RECURSIVELY.
+ *
+ * The scan used to call readdirSync once and filter on ".ts", which silently
+ * skipped subdirectories: a directory entry does not end in ".ts", so it was
+ * dropped by the same line that selected files. An upward import in
+ * src/lib/anything.ts passed the whole gate. No package has a nested src
+ * directory today, which is exactly why nobody noticed — the check was correct
+ * for the tree that existed and wrong for the first one that grows a folder.
+ *
+ * Extensions beyond .ts are included because tsc compiles them and the scan
+ * exists to see what tsc sees.
+ */
+function sourceFilesUnder(root, prefix = "") {
+  const out = [];
+  for (const entry of readdirSync(join(root, prefix), { withFileTypes: true })) {
+    const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      out.push(...sourceFilesUnder(root, rel));
+      continue;
+    }
+    if (/\.(ts|tsx|mts|cts)$/.test(entry.name)) out.push(rel);
+  }
+  return out;
+}
 
 const errors = [];
 
@@ -76,12 +102,16 @@ for (const dir of readdirSync(packagesDir)) {
   // did nothing while the check reported OK. Caught only by mutation testing.
   const srcDir = join(packagesDir, dir, "src");
   if (existsSync(srcDir)) {
-    for (const file of readdirSync(srcDir)) {
-      if (!file.endsWith(".ts")) continue;
+    for (const file of sourceFilesUnder(srcDir)) {
       const source = readFileSync(join(srcDir, file), "utf8");
       // Import/export ... from "@vinci/x", and dynamic import("@vinci/x").
       const seen = new Set();
-      for (const m of source.matchAll(/(?:from|import)\s*\(?\s*["']@vinci\/([a-z0-9-]+)["']/g)) {
+      // `from`, `import(...)` and `require(...)`. A subpath specifier such as
+      // "@vinci/contracts/dist/x" is captured too — the package boundary is
+      // what the layer rule is about, not the file inside it.
+      for (const m of source.matchAll(
+        /(?:from|import|require)\s*\(?\s*["']@vinci\/([a-z0-9-]+)(?:\/[^"']*)?["']/g,
+      )) {
         seen.add(`@vinci/${m[1]}`);
       }
       for (const dep of seen) {
@@ -125,10 +155,22 @@ for (const dir of readdirSync(packagesDir)) {
       // back to a package name via its manifest, so a renamed directory cannot
       // silently escape the check.
       for (const ref of tsconfig.references ?? []) {
-        const refDir = String(ref.path ?? "").replace(/^\.\.\//, "").replace(/\/$/, "");
+        // Resolve the reference properly rather than string-stripping "../".
+        //
+        // An ABSOLUTE reference path was previously reported as "not a package
+        // here", which failed closed but said something false: it IS a package,
+        // just referenced absolutely. A wrong message is not a harmless
+        // cosmetic — it sends the next reader looking for a missing package
+        // instead of at the layering violation actually in front of them.
+        const refPath = String(ref.path ?? "");
+        const resolved = resolve(join(packagesDir, dir), refPath);
+        const relative = relativePath(packagesDir, resolved);
+        const refDir = relative.split(/[\\/]/)[0];
         const refManifest = join(packagesDir, refDir, "package.json");
-        if (!existsSync(refManifest)) {
-          errors.push(`${name}: tsconfig references ${ref.path}, which is not a package here`);
+        if (relative.startsWith("..") || refDir === "" || !existsSync(refManifest)) {
+          errors.push(
+            `${name}: tsconfig references ${refPath}, which does not resolve to a package in this repository`,
+          );
           continue;
         }
         const refName = JSON.parse(readFileSync(refManifest, "utf8")).name;
