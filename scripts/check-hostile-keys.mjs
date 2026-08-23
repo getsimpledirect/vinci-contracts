@@ -114,42 +114,66 @@ const AUTHORITY_GUARDS = [
     export: "isGrantStrictlyNarrower",
     label: "isGrantStrictlyNarrower(a, b)",
     call: (fn, hostile) => fn(hostile, hostile),
-    control: () => true,
+    control: (fn) =>
+      fn({ kind: "deny" }, { kind: "allow-automatically" }) === true
+      && fn({ kind: "allow-automatically" }, { kind: "deny" }) === false,
   },
   {
     pkg: "approvals",
     export: "isDecisionEffective",
     label: "isDecisionEffective(decision)",
     call: (fn, hostile) => fn(hostile),
-    control: () => true,
+    control: (fn) =>
+      fn({ deliveryState: { kind: "accepted-by-governor" } }) === true
+      && fn({ deliveryState: { kind: "queued-locally" } }) === false,
   },
   {
     pkg: "approvals",
     export: "canAdvanceDelivery",
     label: "canAdvanceDelivery(a, b)",
     call: (fn, hostile) => fn(hostile, hostile),
-    control: () => true,
+    control: (fn) =>
+      fn("queued-locally", "delivered") === true
+      && fn("acted-upon-by-worker", "queued-locally") === false,
   },
   {
     pkg: "approvals",
     export: "isEffectiveDeliveryState",
     label: "isEffectiveDeliveryState(state)",
     call: (fn, hostile) => fn(hostile),
-    control: () => true,
+    control: (fn) =>
+      fn({ kind: "accepted-by-governor" }) === true
+      && fn({ kind: "queued-locally" }) === false,
   },
   {
     pkg: "contracts",
     export: "isOrganizationWorkspace",
     label: "isOrganizationWorkspace(value)",
     call: (fn, hostile) => fn(hostile),
-    control: () => true,
+    control: (fn) =>
+      fn({ kind: "organization", organizationId: "o", workspaceId: "w" }) === true
+      && fn({ kind: "personal", workspaceId: "w" }) === false,
   },
   {
     pkg: "contracts",
     export: "terminalStateOfVerification",
     label: "terminalStateOfVerification(value)",
     call: (fn, hostile) => fn(hostile),
-    control: () => true,
+    control: (fn) =>
+      fn({ kind: "not-issued", reason: "FAILED" }) === undefined
+      && fn({ kind: "issued", staled: false, status: "VERIFIED_PASS" }) !== undefined,
+  },
+  {
+    pkg: "contracts",
+    export: "plainActor",
+    label: "plainActor(actor)",
+    call: (fn, hostile) => fn(hostile),
+    // A snapshot function answers with null or an object, never `true`, so the
+    // never-true probe alone would be satisfied by a function that always
+    // returned null. The control pins both directions.
+    control: (fn) =>
+      fn({ kind: "worker", workerId: "w" })?.kind === "worker"
+      && fn({ kind: "verifier", verifierId: "v", workerId: "w" }) === null,
   },
   {
     pkg: "evidence",
@@ -203,11 +227,12 @@ const AUTHORITY_GUARDS = [
  * reviewable edit rather than a deletion nobody notices.
  */
 const REQUIRED_GUARDS = [
-  "mayIssue",
-  "statusIsSupportedBy",
-  "actorFieldsAreConsistent",
-  "countsAgainstSubmittedWork",
-  "isProvenanceConsistent",
+  "remote-protocol.mayIssue",
+  "evidence.statusIsSupportedBy",
+  "contracts.actorFieldsAreConsistent",
+  "contracts.plainActor",
+  "evidence.countsAgainstSubmittedWork",
+  "evidence.isProvenanceConsistent",
 ];
 
 /**
@@ -225,12 +250,12 @@ const REQUIRED_GUARDS = [
  * a matter of deleting lines rather than remembering.
  */
 const MAY_STILL_THROW = new Set([
-  "isGrantStrictlyNarrower",
-  "isDecisionEffective",
-  "canAdvanceDelivery",
-  "isEffectiveDeliveryState",
-  "isOrganizationWorkspace",
-  "terminalStateOfVerification",
+  "approvals.isGrantStrictlyNarrower",
+  "approvals.isDecisionEffective",
+  "approvals.canAdvanceDelivery",
+  "approvals.isEffectiveDeliveryState",
+  "contracts.isOrganizationWorkspace",
+  "contracts.terminalStateOfVerification",
 ]);
 
 /**
@@ -411,7 +436,7 @@ for (const guard of AUTHORITY_GUARDS) {
       failed = true;
     }
     // The robustness property, waivable only via MAY_STILL_THROW.
-    if (threw !== undefined && !MAY_STILL_THROW.has(guard.export)) {
+    if (threw !== undefined && !MAY_STILL_THROW.has(`${guard.pkg}.${guard.export}`)) {
       console.error(`  ${guard.label} on ${shape}: THREW: ${threw} — a guard must refuse, not throw`);
       failed = true;
     }
@@ -419,7 +444,11 @@ for (const guard of AUTHORITY_GUARDS) {
 }
 
 // --- the registry must not silently shrink ---------------------------------
-const registered = new Set(AUTHORITY_GUARDS.map((g) => g.export));
+// Package-QUALIFIED, because two packages may export the same name. A bare
+// name meant registering (or waiving) one package's export silently covered
+// another's — the same identity confusion that lets a check claim coverage it
+// does not have.
+const registered = new Set(AUTHORITY_GUARDS.map((g) => `${g.pkg}.${g.export}`));
 for (const name of REQUIRED_GUARDS) {
   if (!registered.has(name)) {
     console.error(`  ${name} is required to be an authority guard but is not in the registry`);
@@ -435,7 +464,7 @@ for (const pkg of packages) {
   for (const [name, value] of Object.entries(mod)) {
     if (typeof value !== "function") continue;
     if (/^validate/.test(name)) continue;
-    if (registered.has(name)) continue;
+    if (registered.has(`${pkg}.${name}`)) continue;
     if (Object.hasOwn(NOT_AUTHORITY_GUARDS, `${pkg}.${name}`)) continue;
     console.error(
       `  ${pkg}.${name} is exported but neither probed nor listed in NOT_AUTHORITY_GUARDS — `

@@ -80,51 +80,79 @@ export function isActorKind(value: unknown): value is Actor["kind"] {
  * cannot answer differently — which they did: for a verifier carrying a
  * `workerId`, one said consistent and the other refused.
  */
-export function actorFieldsAreConsistent(actor: Readonly<Record<string, unknown>>): boolean {
-  // Everything below reads OWN DATA properties only, and the reason is the
-  // attack this function exists to stop, working again one level up:
-  //
-  //   Object.create({ kind: "verifier", verifierId: "v", independent: true })
-  //
-  // has NO own keys. Object.keys returns [], so "every own field is permitted"
-  // was vacuously true, and the actor was judged consistent — while
-  // `actor.independent` still read back as true to everything downstream. The
-  // same claim written as an own key is correctly refused. Moving it to the
-  // prototype was enough to reverse the answer.
-  //
-  // That is precisely what this function replaced a denylist to prevent: a
-  // worker asserting its own independence.
-  if (typeof actor !== "object" || actor === null || Array.isArray(actor)) return false;
-
-  let kind: PropertyDescriptor | undefined;
-  try {
-    kind = Object.getOwnPropertyDescriptor(actor, "kind");
-  } catch {
-    return false;
-  }
-  // No descriptor => inherited or absent. No "value" => an accessor, which can
-  // answer differently on a later read than it does here.
-  if (kind === undefined || !("value" in kind)) return false;
-  if (!isActorKind(kind.value)) return false;
-
-  const permitted = new Set(ACTOR_FIELDS[kind.value]);
+/**
+ * One inert, own-data copy of an actor — or null if it is not a consistent one.
+ *
+ * THE POINT IS THAT THERE IS ONE READ. Callers must decide from the returned
+ * snapshot and never touch the original again, because a Proxy can serve two
+ * different views of itself:
+ *
+ *   const target = { kind: "worker", workerId: "w" };
+ *   new Proxy(target, {
+ *     get: (t, p) => (p === "kind" ? "verifier" : p === "independent" ? true
+ *                                              : Reflect.get(t, p)),
+ *     getOwnPropertyDescriptor: Reflect.getOwnPropertyDescriptor,  // honest
+ *     ownKeys: Reflect.ownKeys,                                    // honest
+ *   })
+ *
+ * Reflection saw an honest worker and said "consistent". The very next
+ * property read said "independent verifier", and a worker was authorized to
+ * vouch for its own output — the one thing the evidence layer must never
+ * permit. Descriptor-based checking did not defeat this; it only moved which
+ * lens was lied to.
+ *
+ * This is the E0 lesson about `toPlainRecord`, arriving one layer up: you
+ * cannot validate a Proxy by reflecting on it, because the reflection IS the
+ * Proxy. The only defence is to stop asking — take one copy and work from it.
+ */
+export function plainActor(
+  actor: Readonly<Record<string, unknown>>,
+): Readonly<Record<string, unknown>> | null {
+  if (typeof actor !== "object" || actor === null || Array.isArray(actor)) return null;
 
   let fields: string[];
   try {
     fields = Object.keys(actor);
   } catch {
-    return false;
+    return null;
   }
+
+  // Copy every own data property ONCE, before anything is judged. A trap that
+  // changes its answer between reads gets one chance to speak, and whatever it
+  // said is what both the check and the decision will see.
+  const snapshot: Record<string, unknown> = Object.create(null);
   for (const field of fields) {
-    if (!permitted.has(field)) return false;
-    // A permitted field carried as an accessor is not data either.
     let descriptor: PropertyDescriptor | undefined;
     try {
       descriptor = Object.getOwnPropertyDescriptor(actor, field);
     } catch {
-      return false;
+      return null;
     }
-    if (descriptor === undefined || !("value" in descriptor)) return false;
+    // No descriptor => vanished between ownKeys and this read. No "value" =>
+    // an accessor, which may answer differently next time. Both refuse.
+    if (descriptor === undefined || !("value" in descriptor)) return null;
+    snapshot[field] = descriptor.value;
   }
-  return true;
+
+  // Everything below reads the SNAPSHOT. `actor` is never touched again.
+  const kind = snapshot.kind;
+  if (!isActorKind(kind)) return null;
+  const permitted = new Set(ACTOR_FIELDS[kind]);
+  for (const field of Object.keys(snapshot)) {
+    if (!permitted.has(field)) return null;
+  }
+  return Object.freeze(snapshot);
 }
+
+/**
+ * Does this record carry exactly the fields its own `kind` permits?
+ *
+ * A boolean convenience over {@link plainActor}. Prefer plainActor wherever the
+ * answer is followed by a DECISION about the same actor: this returns only
+ * yes/no, so a caller that then re-reads the original re-opens the two-view
+ * hole described above.
+ */
+export function actorFieldsAreConsistent(actor: Readonly<Record<string, unknown>>): boolean {
+  return plainActor(actor) !== null;
+}
+

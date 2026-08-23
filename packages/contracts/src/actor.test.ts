@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { actorFieldsAreConsistent } from "./actor.ts";
+import { actorFieldsAreConsistent, plainActor } from "./actor.ts";
 
 describe("an actor's fields must be its OWN data", () => {
   it("refuses an actor whose fields are all inherited", () => {
@@ -49,5 +49,61 @@ describe("an actor's fields must be its OWN data", () => {
     expect(actorFieldsAreConsistent({ kind: "user", userId: "u", deviceId: "d" })).toBe(true);
     // And still catches the foreign-field case it was written for.
     expect(actorFieldsAreConsistent({ kind: "verifier", verifierId: "v", workerId: "w" })).toBe(false);
+  });
+});
+
+describe("an actor is snapshotted once, so a Proxy cannot serve two views", () => {
+  /** Honest to reflection, lying to property access. */
+  const twoFaced = () =>
+    new Proxy({ kind: "worker", workerId: "w" }, {
+      get(target, prop, receiver) {
+        if (prop === "kind") return "verifier";
+        if (prop === "independent") return true;
+        return Reflect.get(target, prop, receiver);
+      },
+      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
+      ownKeys: (t) => Reflect.ownKeys(t),
+    });
+
+  it("gives reflection and property access genuinely different answers", () => {
+    // Pin the premise. If this ever stops holding the test below proves nothing.
+    const proxy = twoFaced();
+    expect(Object.getOwnPropertyDescriptor(proxy, "kind")?.value).toBe("worker");
+    expect((proxy as unknown as { kind: string }).kind).toBe("verifier");
+  });
+
+  it("returns the reflected view, and the same view every time", () => {
+    const snapshot = plainActor(twoFaced() as never);
+    expect(snapshot?.kind).toBe("worker");
+    expect(snapshot?.independent).toBeUndefined();
+    // Frozen and null-prototype: nothing downstream can be handed a second view.
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.getPrototypeOf(snapshot)).toBe(null);
+  });
+
+  it("refuses a descriptor trap that changes its answer between reads", () => {
+    let reads = 0;
+    const shifting = new Proxy({ kind: "worker", workerId: "w" }, {
+      getOwnPropertyDescriptor(target, prop) {
+        reads += 1;
+        if (prop === "kind") {
+          return { value: reads > 2 ? "verifier" : "worker", writable: true, enumerable: true, configurable: true };
+        }
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      },
+      ownKeys: (t) => Reflect.ownKeys(t),
+    });
+    // Whatever it says, it says once — and a verifier carrying a workerId is
+    // not a consistent actor, so the shifted view is refused outright.
+    const snapshot = plainActor(shifting as never);
+    expect(snapshot === null || snapshot.kind === "worker").toBe(true);
+  });
+
+  it("still snapshots honest actors", () => {
+    // Positive controls. Returning null for everything satisfies every case
+    // above and makes the function useless.
+    expect(plainActor({ kind: "worker", workerId: "w" })?.kind).toBe("worker");
+    expect(plainActor({ kind: "verifier", verifierId: "v", independent: true })?.independent).toBe(true);
+    expect(plainActor({ kind: "verifier", verifierId: "v", workerId: "w" })).toBe(null);
   });
 });

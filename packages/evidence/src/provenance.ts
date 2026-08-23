@@ -1,4 +1,4 @@
-import { actorFieldsAreConsistent, type Actor } from "@vinci/contracts";
+import { plainActor, type Actor } from "@vinci/contracts";
 
 /**
  * Who vouches for this evidence. This is the FR-6.3 requirement to distinguish
@@ -68,20 +68,26 @@ export function isProvenanceConsistent(
   // which made the helper an alternate, more permissive path to the same
   // question. A test asserting they agree existed, and varied only the
   // independence flag.
-  if (!actorFieldsAreConsistent(actor as unknown as Readonly<Record<string, unknown>>)) return false;
+  // Snapshot ONCE, then decide from the snapshot. The previous version checked
+  // consistency by reflection and then authorized from fresh `actor.kind` /
+  // `actor.independent` reads, so a Proxy served an honest worker to the check
+  // and an independent verifier to the decision — and was authorized as one.
+  const snapshot = plainActor(actor as unknown as Readonly<Record<string, unknown>>);
+  if (snapshot === null) return false;
+
   switch (provenance) {
     case "worker_provided":
-      return actor.kind === "worker";
+      return snapshot.kind === "worker";
     case "system_observed":
-      return actor.kind === "system";
+      return snapshot.kind === "system";
     case "human_provided":
-      return actor.kind === "user";
+      return snapshot.kind === "user";
     case "independent_verifier":
       // The independence flag is part of the invariant, not a detail beside
       // it. FR-7.3 permits a non-independent verifier and requires that it be
       // DISCLOSED; evidence claiming independent-verifier provenance is the
       // opposite of disclosing it.
-      return actor.kind === "verifier" && actor.independent === true;
+      return snapshot.kind === "verifier" && snapshot.independent === true;
     default:
       // An unrecognised provenance is not consistent with anything.
       //

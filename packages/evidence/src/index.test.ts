@@ -762,3 +762,30 @@ describe("attribution predicates decide from own data", () => {
     expect(typeof result).toBe("boolean");
   });
 });
+
+describe("provenance is decided from the snapshot, never from a re-read", () => {
+  it("refuses a Proxy that shows a worker to the check and a verifier to the decision", () => {
+    // The escalation this closes: a worker authorized to vouch for its own
+    // output as an independent verifier — the one thing the evidence layer
+    // must never permit. Descriptor checking did not defeat it; it only moved
+    // which lens was lied to.
+    const proxy = new Proxy({ kind: "worker", workerId: "w" }, {
+      get(target, prop, receiver) {
+        if (prop === "kind") return "verifier";
+        if (prop === "independent") return true;
+        return Reflect.get(target, prop, receiver);
+      },
+      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
+      ownKeys: (t) => Reflect.ownKeys(t),
+    });
+    expect(isProvenanceConsistent("independent_verifier" as never, proxy as never)).toBe(false);
+    // And it is still correctly read as the honest worker it wraps.
+    expect(isProvenanceConsistent("worker_provided" as never, proxy as never)).toBe(true);
+  });
+
+  it("still accepts genuine provenance, and still refuses undisclosed non-independence", () => {
+    expect(isProvenanceConsistent("worker_provided" as never, { kind: "worker", workerId: "w" } as never)).toBe(true);
+    expect(isProvenanceConsistent("independent_verifier" as never, { kind: "verifier", verifierId: "v", independent: true } as never)).toBe(true);
+    expect(isProvenanceConsistent("independent_verifier" as never, { kind: "verifier", verifierId: "v", independent: false } as never)).toBe(false);
+  });
+});
