@@ -19,6 +19,7 @@ import {
   validateCredentialIdentity,
   validateDeviceCredential,
   validateDevicePairing,
+  validateWorkerCredential,
   type CredentialIdentity,
   type DeviceScope,
   type KeyHash,
@@ -344,5 +345,38 @@ describe("device pairing digests", () => {
 
   it("accepts a real digest, so the fix does not break the legitimate case", () => {
     expect(validateDevicePairing(pairing()).ok).toBe(true);
+  });
+});
+
+describe("a worker credential cannot hold the acceptance scope either", () => {
+  const workerCredential = (overrides: Record<string, unknown> = {}) =>
+    credential({ kind: "worker", workerId: "wkr-1", ...overrides });
+
+  it("refuses the acceptance scope on a worker credential", () => {
+    // The prohibition existed only in the WorkerCredential type's scopes
+    // narrowing, which is erased the moment data arrives from outside — the
+    // only place credentials come from. A worker holding this scope can
+    // certify its own work, which architectural principle 2 forbids.
+    const result = validateWorkerCredential(
+      workerCredential({ scopes: ["inference", "acceptance"] }),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts the scopes a worker may legitimately hold", () => {
+    expect(validateWorkerCredential(workerCredential()).ok).toBe(true);
+  });
+
+  it("requires a workerId", () => {
+    const { workerId: _dropped, ...withoutId } = workerCredential();
+    expect(validateWorkerCredential(withoutId).ok).toBe(false);
+  });
+
+  it("freezes its scopes, so acceptance cannot be added after validation", () => {
+    const result = validateWorkerCredential(workerCredential());
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(() => (result.value.scopes as string[]).push("acceptance")).toThrow();
+    }
   });
 });

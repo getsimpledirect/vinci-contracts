@@ -108,6 +108,7 @@ const KNOWN_CREDENTIAL_FIELDS = new Set([
   // device credential.
   "kind",
   "deviceId",
+  "workerId",
   "keyHash",
   "prefix",
   "clientType",
@@ -276,3 +277,53 @@ export const CREDENTIAL_IDENTITY_SCHEMA_META: SchemaMeta = {
   malformedData: "fail-closed",
   migration: "none",
 };
+
+/**
+ * Validates a worker credential, and enforces the same `acceptance`-scope
+ * prohibition at runtime that device credentials get.
+ *
+ * The prohibition previously lived only in the WorkerCredential type's `scopes`
+ * narrowing and a comment saying "a worker must not certify its own
+ * verification work either". A type narrowing is erased the moment data arrives
+ * from outside, which is the only place credentials come from — so untrusted
+ * JSON claiming to be a worker credential with `scopes: ["acceptance"]` passed
+ * cleanly through validateCredentialIdentity.
+ *
+ * The reason it matters is the same one behind the evidence provenance check:
+ * a worker holding the acceptance scope can certify its own work, and
+ * architectural principle 2 says it does not get to.
+ */
+export function validateWorkerCredential(value: unknown): ValidationResult<WorkerCredential> {
+  const base = validateCredentialIdentity(value);
+  if (!base.ok) return base;
+  const known = base.value;
+
+  const issues: ValidationIssue[] = [];
+  if (known.scopes.some((s) => s === "acceptance")) {
+    issues.push(ACCEPTANCE_FORBIDDEN_ISSUE);
+  }
+  const workerId = (value as Record<string, unknown>).workerId;
+  if (typeof workerId !== "string" || workerId.length === 0) {
+    issues.push({
+      path: "/workerId",
+      code: "required_field",
+      message: "a worker credential requires a workerId",
+    });
+  }
+
+  if (issues.length > 0) return fail(issues);
+
+  return ok(
+    {
+      kind: "worker",
+      workerId: workerId as WorkerId,
+      keyHash: known.keyHash,
+      prefix: known.prefix,
+      clientType: known.clientType,
+      scopes: Object.freeze([...known.scopes]) as readonly DeviceScope[],
+      createdAt: known.createdAt,
+      revokedAt: known.revokedAt,
+    },
+    {},
+  );
+}
