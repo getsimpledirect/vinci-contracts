@@ -263,9 +263,10 @@ also the one a user actually sees.
 
 **Status: open. Not a conflict — a missing foundation.**
 
-Reported by exploration of `vinci-work`, and consistent with a repository-wide
-search: the string `vinci-code` does not appear anywhere in `vinci-work`. The
-agent process it launches is `opencode`, alongside its own `openwork-server`.
+Verified here by repository-wide search: the string `vinci-code` does not appear
+anywhere in `vinci-work` — not in source, config, or documentation. The agent
+process it launches is `opencode` (`RuntimeServiceName = "openwork-server" |
+"opencode"`, `apps/orchestrator/src/cli.ts:208`).
 
 §15 requires `vinci-work` to "launch and manage Vinci Code worker" and E1's exit
 gate depends on it. That integration is greenfield, not an adaptation. Worth
