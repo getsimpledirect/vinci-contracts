@@ -79,7 +79,24 @@ for (const name of readdirSync(root)) {
   // clean-checkout worktree — the exact environment the acceptance rule
   // requires — because `.git` was a file there and a directory here. A check
   // that depends on how the tree was made is not checking the tree.
-  if (name === ".git") continue;
+  if (name === ".git") {
+    // Accepted as a directory (ordinary clone) or a regular non-symlink file
+    // (worktree gitdir pointer). Anything else — a symlink, a socket — is
+    // refused, because the previous line of this check exists to stop a symlink
+    // occupying a privileged name, and exempting one name from that would
+    // reintroduce the hole one commit after closing it.
+    //
+    // Its CONTENTS are deliberately not parsed. Whether a gitdir pointer is
+    // well-formed is git's business, a malformed one breaks every git command
+    // long before this gate runs, and a malformed .git is not a loose script at
+    // the root — which is the only thing this check is about. Validating it
+    // here would add a parsing surface to answer a question nobody asked.
+    if (!entry.isDirectory() && !entry.isFile()) {
+      console.error(`  .git: neither a directory nor a regular file — repository metadata is malformed`);
+      failed = true;
+    }
+    continue;
+  }
 
   if (!entry.isFile() || entry.isSymbolicLink()) {
     console.error(`  ${name}: not a regular file (symlink or special file) — the root holds real files only`);
