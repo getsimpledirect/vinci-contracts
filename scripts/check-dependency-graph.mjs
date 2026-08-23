@@ -27,6 +27,16 @@ LAYERS.forEach((names, i) => names.forEach((n) => layerOf.set(n, i)));
 
 const errors = [];
 
+/**
+ * Every direct edge observed, from any mechanism, as name -> Set(names).
+ * Used for the transitive check below.
+ */
+const edges = new Map();
+function recordEdge(from, to) {
+  if (!edges.has(from)) edges.set(from, new Set());
+  edges.get(from).add(to);
+}
+
 for (const dir of readdirSync(packagesDir)) {
   const manifestPath = join(packagesDir, dir, "package.json");
   if (!existsSync(manifestPath)) continue;
@@ -79,11 +89,73 @@ for (const dir of readdirSync(packagesDir)) {
           errors.push(`${name}/src/${file}: imports unknown contract package ${dep}`);
           continue;
         }
+        recordEdge(name, dep);
         if (layerOf.get(dep) >= own) {
           errors.push(
             `${name}/src/${file}: imports ${dep} (layer ${layerOf.get(dep)}) from layer ${own}. `
               + "Imports must point strictly downward.",
           );
+        }
+      }
+    }
+  }
+
+  // TSCONFIG EDGES: project references and path aliases.
+  //
+  // Both are real build edges that neither the manifest scan nor the source
+  // scan can see, and `references` is not hypothetical — eight of nine packages
+  // use it today. A reference makes tsc build the target and puts its types on
+  // the import path, so an upward reference couples the layers exactly as
+  // firmly as a dependency does, while declaring nothing in package.json.
+  //
+  // `paths` aliases are empty everywhere today. They are checked anyway,
+  // because the cost of checking is a few lines and the cost of not checking is
+  // that the first alias anyone adds is unexamined.
+  const tsconfigPath = join(packagesDir, dir, "tsconfig.json");
+  if (existsSync(tsconfigPath)) {
+    let tsconfig;
+    try {
+      tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8"));
+    } catch {
+      errors.push(`${name}: tsconfig.json is not parseable JSON`);
+      tsconfig = null;
+    }
+    if (tsconfig) {
+      // A reference path is relative, e.g. "../contracts". Map the directory
+      // back to a package name via its manifest, so a renamed directory cannot
+      // silently escape the check.
+      for (const ref of tsconfig.references ?? []) {
+        const refDir = String(ref.path ?? "").replace(/^\.\.\//, "").replace(/\/$/, "");
+        const refManifest = join(packagesDir, refDir, "package.json");
+        if (!existsSync(refManifest)) {
+          errors.push(`${name}: tsconfig references ${ref.path}, which is not a package here`);
+          continue;
+        }
+        const refName = JSON.parse(readFileSync(refManifest, "utf8")).name;
+        if (!layerOf.has(refName)) {
+          errors.push(`${name}: tsconfig references unknown contract package ${refName}`);
+          continue;
+        }
+        recordEdge(name, refName);
+        if (layerOf.get(refName) >= own) {
+          errors.push(
+            `${name}: tsconfig references ${refName} (layer ${layerOf.get(refName)}) from layer ${own}. `
+              + "Project references must point strictly downward.",
+          );
+        }
+      }
+
+      for (const [alias, targets] of Object.entries(tsconfig.compilerOptions?.paths ?? {})) {
+        for (const target of targets) {
+          const match = /packages\/([a-z0-9-]+)\//.exec(String(target));
+          const aliasedName = match ? `@vinci/${match[1]}` : String(alias).replace(/\/\*$/, "");
+          if (!layerOf.has(aliasedName)) continue;
+          if (layerOf.get(aliasedName) >= own) {
+            errors.push(
+              `${name}: tsconfig path alias ${alias} -> ${target} reaches ${aliasedName} `
+                + `(layer ${layerOf.get(aliasedName)}) from layer ${own}. Aliases must point strictly downward.`,
+            );
+          }
         }
       }
     }
@@ -101,6 +173,7 @@ for (const dir of readdirSync(packagesDir)) {
       errors.push(`${name}: depends on unknown contract package ${dep}`);
       continue;
     }
+    recordEdge(name, dep);
     const depLayer = layerOf.get(dep);
     if (depLayer >= own) {
       errors.push(
@@ -108,6 +181,50 @@ for (const dir of readdirSync(packagesDir)) {
           `Dependencies must point strictly downward; see docs/E0-decisions.md D2.`,
       );
     }
+  }
+}
+
+/**
+ * TRANSITIVE reachability, not just direct edges.
+ *
+ * The direct rule already implies this. If every edge satisfies
+ * layer(to) < layer(from), then along any path the layer strictly decreases at
+ * each step, so the start's layer exceeds the end's — by induction on path
+ * length, every reachable pair points downward. Cycles are impossible for the
+ * same reason: one would require a layer to be strictly less than itself.
+ *
+ * It is checked anyway, and not from distrust of the arithmetic. That
+ * conclusion holds only if the direct check SEES every edge, and this
+ * repository has now found four separate edge mechanisms — dependencies,
+ * devDependencies and friends, source imports, and tsconfig references — three
+ * of which were invisible when first looked for. The closure runs over whatever
+ * edges were actually observed, so a future missed mechanism surfaces as a
+ * violation rather than as silence.
+ *
+ * It also turns an argument into a test. A proof in a comment is exactly the
+ * kind of thing that stays in the comment after the code beneath it changes.
+ */
+for (const [from, directTargets] of edges) {
+  const ownLayer = layerOf.get(from);
+  if (ownLayer === undefined) continue;
+  const seen = new Set();
+  const queue = [...directTargets];
+  while (queue.length > 0) {
+    const next = queue.shift();
+    if (seen.has(next)) continue;
+    seen.add(next);
+    if (next === from) {
+      errors.push(`${from}: reachable from itself — the package graph has a cycle`);
+      continue;
+    }
+    const nextLayer = layerOf.get(next);
+    if (nextLayer !== undefined && nextLayer >= ownLayer) {
+      errors.push(
+        `${from} (layer ${ownLayer}) transitively reaches ${next} (layer ${nextLayer}). `
+          + "Reachability must point strictly downward.",
+      );
+    }
+    for (const onward of edges.get(next) ?? []) queue.push(onward);
   }
 }
 
