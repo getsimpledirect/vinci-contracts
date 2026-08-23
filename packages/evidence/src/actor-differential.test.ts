@@ -10,14 +10,14 @@ import { validateEvidenceRecord } from "./schema.ts";
  *
  *   { get kind() { return "worker"; }, workerId: "w" }
  *
- * which plainActor REJECTS and validateEvidenceRecord ACCEPTS. Both are right
- * for their own contract, and the promise was the thing that was wrong. They
- * receive different things: plainActor is handed a raw, possibly-live object
- * and must refuse an accessor, because an accessor can answer differently on
- * the read after the one that was checked. validateEvidenceRecord snapshots
- * through toPlainRecord first, which serializes the getter exactly once and
- * then validates inert data — so by the time it decides, the accessor is gone
- * and what remains is honest.
+ * which plainActor then REJECTED and validateEvidenceRecord ACCEPTED, because
+ * the two used different read disciplines — one walked descriptors, the other
+ * snapshotted through toPlainRecord.
+ *
+ * That divergence is now GONE rather than documented: plainActor defers to
+ * toPlainRecord, so both see the value serialization captures, and an accessor
+ * is accepted by both. Serialization invokes the getter exactly once and stores
+ * the result as data, so there is no later read for it to answer differently.
  *
  * The property that actually protects anything is DIRECTIONAL. A helper
  * stricter than the validator costs a caller a rejection. A helper looser than

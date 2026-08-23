@@ -211,13 +211,6 @@ export function plainActor(
 /**
  * Does this record carry exactly the fields its own `kind` permits?
  *
- * Shared by anything that inspects an actor, so a predicate and a validator
- * cannot answer differently — which they did: for a verifier carrying a
- * `workerId`, one said consistent and the other refused.
- */
-/**
- * Does this record carry exactly the fields its own `kind` permits?
- *
  * A boolean convenience over {@link plainActor}. Prefer plainActor wherever the
  * answer is followed by a DECISION about the same actor: this returns only
  * yes/no, so a caller that then re-reads the original re-opens the two-view

@@ -341,30 +341,39 @@ const NOT_AUTHORITY_GUARDS = {
 };
 
 /**
- * Guards that snapshot their input through toPlainRecord before judging it.
+ * Per-entry waivers and yes-detection.
  *
- * For these, an ACCESSOR is not hostile input. Serialization invokes the getter
- * exactly once and captures the result as data; the snapshot is inert and the
- * original object is never consulted again, so there is no second read for a
- * getter to answer differently. Accepting it is correct, and is what the
- * validator does with the same value.
+ * Both of these were keyed by `pkg.export`, which is not a unique identity:
+ * AUTHORITY_GUARDS holds TWO entries for evidence.isProvenanceConsistent, one
+ * feeding hostile input to the PROVENANCE argument and one to the ACTOR
+ * argument. An accessor-shaped object is legitimate only in the actor position,
+ * yet a name-keyed waiver excused both — so a regression returning true for an
+ * object-valued PROVENANCE would have been concealed by a waiver written for a
+ * different argument entirely. Identity is now the entry's unique `label`.
  *
- * The distinction is per-guard and not global, which is the whole reason this
- * is a list rather than a corpus edit: the same accessor shape IS hostile to
- * statusIsSupportedBy, which is handed a raw array and reads it directly.
- * Deleting the shape from the corpus to make this file green would have
- * silently dropped that coverage.
+ * `isYes` exists because "granted a yes" is not always `=== true`. plainActor
+ * returns a snapshot object or null, so the `value === true` check could never
+ * fire for it and its nineteen hostile probes were INERT — running, passing,
+ * and testing nothing. For that guard a yes is a non-null snapshot.
  */
-const SNAPSHOTTING_GUARDS = new Set([
-  "contracts.plainActor",
-  "contracts.actorFieldsAreConsistent",
-  "evidence.isProvenanceConsistent",
-]);
+const YES_IS_NON_NULL = new Set(["plainActor(actor)"]);
 
-/** Shapes a snapshotting guard may legitimately accept. */
-const LEGITIMATE_FOR_SNAPSHOTTING = new Set([
-  "an object whose kind is an accessor",
-]);
+/**
+ * label -> hostile shapes that guard may legitimately accept.
+ *
+ * An accessor is not hostile to a guard that snapshots through toPlainRecord:
+ * serialization invokes the getter exactly once and stores the result as data,
+ * so there is no second read for it to answer differently, and the validator
+ * accepts the same value. The waiver is per-ARGUMENT-POSITION, never per name.
+ */
+const LEGITIMATE_SHAPES = {
+  "plainActor(actor)": ["an object whose kind is an accessor"],
+  "actorFieldsAreConsistent(actor)": ["an object whose kind is an accessor"],
+  "isProvenanceConsistent('worker_provided', actor)": ["an object whose kind is an accessor"],
+  // Deliberately absent: "isProvenanceConsistent(provenance, actor)", whose
+  // hostile input lands in the PROVENANCE argument, where an object is never
+  // legitimate.
+};
 
 /** Hostile scalars, arrays and prototype tricks a guard must survive. */
 function hostileValues() {
@@ -474,11 +483,12 @@ for (const guard of AUTHORITY_GUARDS) {
     // THE AUTHORITY PROPERTY: hostile input must never yield a yes. Waived
     // ONLY where the shape is not actually hostile to that guard — see
     // SNAPSHOTTING_GUARDS. Never waived for a shape that can lie twice.
-    const legitimate =
-      SNAPSHOTTING_GUARDS.has(`${guard.pkg}.${guard.export}`)
-      && LEGITIMATE_FOR_SNAPSHOTTING.has(shape);
-    if (threw === undefined && value === true && !legitimate) {
-      console.error(`  ${guard.label} on ${shape}: RETURNED TRUE — hostile input granted a yes`);
+    const legitimate = (LEGITIMATE_SHAPES[guard.label] ?? []).includes(shape);
+    const grantedYes = YES_IS_NON_NULL.has(guard.label)
+      ? value !== null && value !== undefined
+      : value === true;
+    if (threw === undefined && grantedYes && !legitimate) {
+      console.error(`  ${guard.label} on ${shape}: granted a yes (${JSON.stringify(value)}) — hostile input must be refused`);
       failed = true;
     }
     // The robustness property, waivable only via MAY_STILL_THROW.
@@ -486,6 +496,24 @@ for (const guard of AUTHORITY_GUARDS) {
       console.error(`  ${guard.label} on ${shape}: THREW: ${threw} — a guard must refuse, not throw`);
       failed = true;
     }
+  }
+}
+
+// --- entry labels must be unique, since waivers are keyed by them ---
+const labelCounts = new Map();
+for (const guard of AUTHORITY_GUARDS) {
+  labelCounts.set(guard.label, (labelCounts.get(guard.label) ?? 0) + 1);
+}
+for (const [label, count] of labelCounts) {
+  if (count > 1) {
+    console.error(`  duplicate guard label ${JSON.stringify(label)} (x${count}) — waivers are keyed by label`);
+    failed = true;
+  }
+}
+for (const label of Object.keys(LEGITIMATE_SHAPES)) {
+  if (!labelCounts.has(label)) {
+    console.error(`  LEGITIMATE_SHAPES names ${JSON.stringify(label)}, which is not a registered guard label`);
+    failed = true;
   }
 }
 
