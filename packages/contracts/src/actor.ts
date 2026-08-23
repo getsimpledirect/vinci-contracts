@@ -81,7 +81,50 @@ export function isActorKind(value: unknown): value is Actor["kind"] {
  * `workerId`, one said consistent and the other refused.
  */
 export function actorFieldsAreConsistent(actor: Readonly<Record<string, unknown>>): boolean {
-  if (!isActorKind(actor.kind)) return false;
-  const permitted = new Set(ACTOR_FIELDS[actor.kind]);
-  return Object.keys(actor).every((field) => permitted.has(field));
+  // Everything below reads OWN DATA properties only, and the reason is the
+  // attack this function exists to stop, working again one level up:
+  //
+  //   Object.create({ kind: "verifier", verifierId: "v", independent: true })
+  //
+  // has NO own keys. Object.keys returns [], so "every own field is permitted"
+  // was vacuously true, and the actor was judged consistent — while
+  // `actor.independent` still read back as true to everything downstream. The
+  // same claim written as an own key is correctly refused. Moving it to the
+  // prototype was enough to reverse the answer.
+  //
+  // That is precisely what this function replaced a denylist to prevent: a
+  // worker asserting its own independence.
+  if (typeof actor !== "object" || actor === null || Array.isArray(actor)) return false;
+
+  let kind: PropertyDescriptor | undefined;
+  try {
+    kind = Object.getOwnPropertyDescriptor(actor, "kind");
+  } catch {
+    return false;
+  }
+  // No descriptor => inherited or absent. No "value" => an accessor, which can
+  // answer differently on a later read than it does here.
+  if (kind === undefined || !("value" in kind)) return false;
+  if (!isActorKind(kind.value)) return false;
+
+  const permitted = new Set(ACTOR_FIELDS[kind.value]);
+
+  let fields: string[];
+  try {
+    fields = Object.keys(actor);
+  } catch {
+    return false;
+  }
+  for (const field of fields) {
+    if (!permitted.has(field)) return false;
+    // A permitted field carried as an accessor is not data either.
+    let descriptor: PropertyDescriptor | undefined;
+    try {
+      descriptor = Object.getOwnPropertyDescriptor(actor, field);
+    } catch {
+      return false;
+    }
+    if (descriptor === undefined || !("value" in descriptor)) return false;
+  }
+  return true;
 }

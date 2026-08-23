@@ -99,6 +99,17 @@ const AUTHORITY_GUARDS = [
       && fn("VERIFIED_PASS", []) === false,
   },
   {
+    pkg: "contracts",
+    export: "actorFieldsAreConsistent",
+    label: "actorFieldsAreConsistent(actor)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) =>
+      fn({ kind: "worker", workerId: "w" }) === true
+      && fn({ kind: "verifier", verifierId: "v", independent: true }) === true
+      && fn({ kind: "verifier", verifierId: "v", workerId: "w" }) === false
+      && fn({ kind: "worker", workerId: "w", independent: true }) === false,
+  },
+  {
     pkg: "evidence",
     export: "statusIsSupportedBy",
     label: "statusIsSupportedBy(status, [supported])",
@@ -135,6 +146,10 @@ function hostileValues() {
     ["a proxy array with throwing length", new Proxy([], { get(t, k) { if (k === "length") throw new Error("len"); return t[k]; } })],
     ["a proxy array with throwing gOPD", new Proxy([{}], { getOwnPropertyDescriptor() { throw new Error("gopd"); } })],
     ["an array claiming a huge length", Object.assign([], { length: 2 ** 32 - 1 })],
+    // No own keys at all; everything on the prototype. This one reversed
+    // actorFieldsAreConsistent's answer.
+    ["an object whose fields are all inherited", Object.create({ kind: "verifier", verifierId: "v", independent: true })],
+    ["an object whose kind is an accessor", { get kind() { return "worker"; }, workerId: "w" }],
   ];
 }
 
