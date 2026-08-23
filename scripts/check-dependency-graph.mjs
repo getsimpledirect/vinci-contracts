@@ -18,7 +18,7 @@ const packagesDir = join(root, "packages");
 const LAYERS = [
   ["@vinci/contracts"],
   ["@vinci/policy", "@vinci/model-classes", "@vinci/evidence", "@vinci/approvals", "@vinci/device-auth"],
-  ["@vinci/receipts", "@vinci/run-events"],
+  ["@vinci/receipts", "@vinci/run-events", "@vinci/work-orders"],
   ["@vinci/worker-protocol", "@vinci/remote-protocol"],
 ];
 

@@ -1,3 +1,4 @@
+import { ownData } from "@vinci/contracts";
 /**
  * Who or what a failure belongs to.
  *
@@ -109,18 +110,4 @@ export function countsAgainstSubmittedWork(evidence: EvidenceOutcome): boolean {
   return blamesSubmittedWork(ownData(evidence, "failureOwner") as FailureOwner);
 }
 
-/**
- * Read one own DATA property, or undefined. Never invokes a getter, never
- * follows a prototype, never throws.
- */
-function ownData(source: unknown, field: string): unknown {
-  if (typeof source !== "object" || source === null) return undefined;
-  let descriptor: PropertyDescriptor | undefined;
-  try {
-    descriptor = Object.getOwnPropertyDescriptor(source, field);
-  } catch {
-    return undefined;
-  }
-  if (descriptor === undefined || !("value" in descriptor)) return undefined;
-  return descriptor.value;
-}
+

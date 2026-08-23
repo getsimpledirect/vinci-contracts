@@ -164,6 +164,50 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "issued", staled: false, status: "VERIFIED_PASS" }) !== undefined,
   },
   {
+    pkg: "work-orders",
+    export: "mayInterrupt",
+    label: "mayInterrupt(budget, spend)",
+    call: (fn, hostile) => fn(hostile, { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }),
+    control: (fn) =>
+      fn({ interruptions: 2, decisions: 2, onExhaustion: "block" },
+         { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }) === true
+      && fn({ interruptions: 2, decisions: 2, onExhaustion: "block" },
+            { workOrderId: "wo-1", interruptionsUsed: 2, decisionsUsed: 0 }) === false,
+  },
+  {
+    pkg: "work-orders",
+    export: "mayInterrupt",
+    label: "mayInterrupt(budget, hostileSpend)",
+    call: (fn, hostile) => fn({ interruptions: 2, decisions: 2, onExhaustion: "block" }, hostile),
+    control: (fn) =>
+      fn({ interruptions: 1, decisions: 1, onExhaustion: "escalate" },
+         { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }) === true
+      && fn({ interruptions: 1, decisions: 1, onExhaustion: "escalate" },
+            { workOrderId: "wo-1", interruptionsUsed: 5, decisionsUsed: 0 }) === false,
+  },
+  {
+    pkg: "work-orders",
+    export: "mayRequireDecision",
+    label: "mayRequireDecision(budget, spend)",
+    call: (fn, hostile) => fn(hostile, { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }),
+    control: (fn) =>
+      fn({ interruptions: 2, decisions: 2, onExhaustion: "block" },
+         { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }) === true
+      && fn({ interruptions: 2, decisions: 2, onExhaustion: "block" },
+            { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 2 }) === false,
+  },
+  {
+    pkg: "work-orders",
+    export: "mayRequireDecision",
+    label: "mayRequireDecision(budget, hostileSpend)",
+    call: (fn, hostile) => fn({ interruptions: 2, decisions: 2, onExhaustion: "block" }, hostile),
+    control: (fn) =>
+      fn({ interruptions: 1, decisions: 1, onExhaustion: "block" },
+         { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }) === true
+      && fn({ interruptions: 1, decisions: 1, onExhaustion: "block" },
+            { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 9 }) === false,
+  },
+  {
     pkg: "contracts",
     export: "plainActor",
     label: "plainActor(actor)",
@@ -262,6 +306,10 @@ const REQUIRED_GUARDS = [
   "countsAgainstSubmittedWork(outcome)",
   "isProvenanceConsistent(provenance, actor)",
   "isProvenanceConsistent('worker_provided', actor)",
+  "mayInterrupt(budget, spend)",
+  "mayInterrupt(budget, hostileSpend)",
+  "mayRequireDecision(budget, spend)",
+  "mayRequireDecision(budget, hostileSpend)",
   "statusIsSupportedBy('VERIFIED_PASS', results)",
   "statusIsSupportedBy(status, [supported])",
 ];
@@ -311,6 +359,11 @@ const NOT_AUTHORITY_GUARDS = {
   // Its own no-throw property is pinned by unit tests, including the
   // null-prototype case that made String() throw in the first place.
   "contracts.safeLabel": "total value-to-label function, never a decision",
+  "contracts.ownData": "single own-data property read; never a decision",
+  // Arithmetic over an already-validated budget and spend. It answers "how
+  // much is left", not "may this happen" — the guards above answer that, and
+  // they validate before calling it.
+  "work-orders.attentionRemaining": "computes remaining counts; not a permission",
   "contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
   // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.
   // Returning true for an accessor is correct — the key is own-present — so
