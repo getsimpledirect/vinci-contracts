@@ -1,0 +1,64 @@
+#!/usr/bin/env node
+/**
+ * The E0 integration gate.
+ *
+ * Layer 2 does not begin until this passes on the exact integrated head. It
+ * exists as a script rather than a checklist because a checklist is satisfied
+ * by remembering it, and the failures this repository has already hit — a
+ * SchemaMeta claiming a guarantee no validator provided, a test asserting the
+ * opposite of its own name — all passed every check anyone remembered to run.
+ *
+ * Every step must be capable of failing. A step that cannot fail is not a
+ * check, and is reported as a gate failure in its own right.
+ */
+import { execSync } from "node:child_process";
+import { readdirSync, existsSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const root = join(dirname(fileURLToPath(import.meta.url)), "..");
+
+const STEPS = [
+  ["build", "npx tsc --build packages/*/tsconfig.json --force"],
+  ["lint", "npx eslint packages --max-warnings=0"],
+  ["tests", "npx vitest run"],
+  ["dependency graph", "node scripts/check-dependency-graph.mjs"],
+  ["SchemaMeta conformance", "node scripts/check-schema-meta.mjs"],
+];
+
+const results = [];
+let failed = false;
+
+for (const [name, command] of STEPS) {
+  process.stdout.write(`\n─── ${name} ───\n`);
+  try {
+    execSync(command, { cwd: root, stdio: "inherit" });
+    results.push([name, "pass"]);
+  } catch {
+    results.push([name, "FAIL"]);
+    failed = true;
+  }
+}
+
+// A gate that skips a package silently is worse than no gate. Every package
+// on disk must have been covered by the build and by a test file.
+process.stdout.write("\n─── coverage of the gate itself ───\n");
+const packages = readdirSync(join(root, "packages")).filter((d) =>
+  existsSync(join(root, "packages", d, "package.json")),
+);
+for (const pkg of packages) {
+  const src = join(root, "packages", pkg, "src");
+  const hasTest =
+    existsSync(src) && readdirSync(src).some((f) => f.endsWith(".test.ts"));
+  if (!hasTest) {
+    console.error(`  ${pkg}: no test file — the suite passing says nothing about it`);
+    failed = true;
+  } else {
+    console.log(`  ${pkg}: covered`);
+  }
+}
+
+console.log("\n─── gate ───");
+for (const [name, status] of results) console.log(`  ${status.padEnd(4)}  ${name}`);
+console.log(failed ? "\nGATE FAILED — layer 2 does not start.\n" : "\nGATE PASSED.\n");
+process.exit(failed ? 1 : 0);

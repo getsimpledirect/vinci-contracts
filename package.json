@@ -11,9 +11,10 @@
   "scripts": {
     "build": "tsc --build",
     "test": "vitest run",
-    "lint": "eslint packages",
+    "lint": "eslint packages --max-warnings=0",
     "typecheck": "tsc --build --dry && npm run typecheck --workspaces --if-present",
-    "check:graph": "node scripts/check-dependency-graph.mjs"
+    "check:graph": "node scripts/check-dependency-graph.mjs",
+    "gate": "node scripts/gate.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.1",
