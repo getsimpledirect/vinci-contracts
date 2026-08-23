@@ -110,6 +110,77 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "worker", workerId: "w", independent: true }) === false,
   },
   {
+    pkg: "approvals",
+    export: "isGrantStrictlyNarrower",
+    label: "isGrantStrictlyNarrower(a, b)",
+    call: (fn, hostile) => fn(hostile, hostile),
+    control: () => true,
+  },
+  {
+    pkg: "approvals",
+    export: "isDecisionEffective",
+    label: "isDecisionEffective(decision)",
+    call: (fn, hostile) => fn(hostile),
+    control: () => true,
+  },
+  {
+    pkg: "approvals",
+    export: "canAdvanceDelivery",
+    label: "canAdvanceDelivery(a, b)",
+    call: (fn, hostile) => fn(hostile, hostile),
+    control: () => true,
+  },
+  {
+    pkg: "approvals",
+    export: "isEffectiveDeliveryState",
+    label: "isEffectiveDeliveryState(state)",
+    call: (fn, hostile) => fn(hostile),
+    control: () => true,
+  },
+  {
+    pkg: "contracts",
+    export: "isOrganizationWorkspace",
+    label: "isOrganizationWorkspace(value)",
+    call: (fn, hostile) => fn(hostile),
+    control: () => true,
+  },
+  {
+    pkg: "contracts",
+    export: "terminalStateOfVerification",
+    label: "terminalStateOfVerification(value)",
+    call: (fn, hostile) => fn(hostile),
+    control: () => true,
+  },
+  {
+    pkg: "evidence",
+    export: "countsAgainstSubmittedWork",
+    label: "countsAgainstSubmittedWork(outcome)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) =>
+      fn({ outcome: "contradicts", failureOwner: "submitted_work" }) === true
+      && fn({ outcome: "invalid", failureOwner: "submitted_work" }) === true
+      && fn({ outcome: "contradicts", failureOwner: "vinci_harness" }) === false
+      && fn({ outcome: "supports" }) === false,
+  },
+  {
+    pkg: "evidence",
+    export: "isProvenanceConsistent",
+    label: "isProvenanceConsistent(provenance, actor)",
+    call: (fn, hostile) => fn(hostile, { kind: "worker", workerId: "w" }),
+    control: (fn) =>
+      fn("worker_provided", { kind: "worker", workerId: "w" }) === true
+      && fn("worker_provided", { kind: "user", userId: "u" }) === false,
+  },
+  {
+    pkg: "evidence",
+    export: "isProvenanceConsistent",
+    label: "isProvenanceConsistent('worker_provided', actor)",
+    call: (fn, hostile) => fn("worker_provided", hostile),
+    control: (fn) =>
+      fn("worker_provided", { kind: "worker", workerId: "w" }) === true
+      && fn("independent_verifier", { kind: "verifier", verifierId: "v", independent: true }) === true,
+  },
+  {
     pkg: "evidence",
     export: "statusIsSupportedBy",
     label: "statusIsSupportedBy(status, [supported])",
@@ -119,6 +190,114 @@ const AUTHORITY_GUARDS = [
       && fn("BLOCKED", [{ status: "supported" }]) === true,
   },
 ];
+
+/**
+ * Names that MUST appear in AUTHORITY_GUARDS above.
+ *
+ * Without this, the registry is a list nobody checks: deleting both mayIssue
+ * entries dropped coverage from 105 probes to 63 and the gate still exited 0,
+ * green. Silent coverage loss is the same failure as a vacuous test — the
+ * check reports success for work it did not do.
+ *
+ * Removing a guard now requires removing it from here too, which is a visible,
+ * reviewable edit rather than a deletion nobody notices.
+ */
+const REQUIRED_GUARDS = [
+  "mayIssue",
+  "statusIsSupportedBy",
+  "actorFieldsAreConsistent",
+  "countsAgainstSubmittedWork",
+  "isProvenanceConsistent",
+];
+
+/**
+ * Exported predicates that still THROW on hostile input.
+ *
+ * The distinction this list encodes matters and is easy to lose: none of these
+ * ever returns `true` for hostile input. They fail LOUDLY, not OPEN. Nobody
+ * gets a false yes, so this is a robustness gap and not an authority bypass —
+ * materially less severe than statusIsSupportedBy returning true for a sparse
+ * array, which granted an unearned pass.
+ *
+ * They are probed on the property that actually guards authority (never true)
+ * and exempted only from the no-throw property. The exemption is listed here,
+ * counted, and printed on every run, so the debt is visible and shrinking it is
+ * a matter of deleting lines rather than remembering.
+ */
+const MAY_STILL_THROW = new Set([
+  "isGrantStrictlyNarrower",
+  "isDecisionEffective",
+  "canAdvanceDelivery",
+  "isEffectiveDeliveryState",
+  "isOrganizationWorkspace",
+  "terminalStateOfVerification",
+]);
+
+/**
+ * Exported functions deliberately NOT probed as authority guards, each with a
+ * reason. The point is that adding an export forces a decision: a new export
+ * that is neither a validator, nor a registered guard, nor listed here fails
+ * the gate rather than silently going unexamined.
+ */
+const NOT_AUTHORITY_GUARDS = {
+  "approvals.applyApprovalDecision": "state transition over an already-validated decision",
+  "approvals.createApprovalDecision": "constructor; its output is validated",
+  "approvals.collectActorUnknownFields": "helper used inside a validator, after the snapshot",
+  "approvals.notificationSafeProjection": "projection, not a predicate; has its own redaction suite",
+  "approvals.assertSchemaMetaComplete": "build-time assertion, not runtime input",
+  "contracts.assertSchemaMetaComplete": "build-time assertion, not runtime input",
+  "contracts.isCanonicalTimestamp": "pure string/regex predicate",
+  "contracts.isDigest": "pure string/regex predicate",
+  "contracts.isEnumToken": "pure string/regex predicate",
+  "contracts.isIdentifier": "pure string/regex predicate",
+  "contracts.isNonBlankText": "pure string predicate",
+  "contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
+  // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.
+  // Returning true for an accessor is correct — the key is own-present — so
+  // registering it as an authority guard was a classification error on my
+  // part, not a defect in it.
+  "contracts.hasField": "own-key accessor over an inert snapshot, used inside validators",
+  // Constructors/among-ours enum predicates: membership tests against OUR
+  // frozen arrays via includes, which coerces nothing and invokes nothing.
+  "device-auth.isClientType": "enum membership",
+  "device-auth.isDeviceScope": "enum membership",
+  "device-auth.isEnforcedRole": "enum membership",
+  "device-auth.isPairingState": "enum membership",
+  "device-auth.isRole": "enum membership",
+  "device-auth.isScope": "enum membership",
+  "device-auth.isShippingClientType": "enum membership",
+  "evidence.isFailureOwner": "enum membership",
+  "remote-protocol.isSessionRole": "enum membership",
+  "remote-protocol.isReversibleBraking": "enum membership",
+  "remote-protocol.isTerminal": "enum membership",
+  "run-events.isRunEventType": "enum membership",
+  "run-events.isCanonicalTimestamp": "pure string/regex predicate",
+  "contracts.isActorKind": "enum membership",
+  "contracts.isRunState": "enum membership",
+  "contracts.isTerminal": "enum membership",
+  "contracts.isTerminalState": "enum membership",
+  "contracts.isVerdictStatus": "enum membership",
+  "contracts.isConsequentialActionClass": "enum membership",
+  "contracts.terminalStateOf": "total map lookup, returns undefined for unknown",
+  "contracts.toPlainRecord": "IS the snapshot boundary; has its own suite",
+  "contracts.canonicalize": "encoder, not a guard; golden vectors pin its bytes",
+  "receipts.canonicalize": "re-export of contracts.canonicalize",
+  "run-events.canonicalize": "re-export of contracts.canonicalize",
+  "contracts.ok": "result constructor",
+  "contracts.fail": "result constructor",
+  "policy.ok": "result constructor",
+  "policy.fail": "result constructor",
+  "policy.assertSchemaMetaComplete": "build-time assertion, not runtime input",
+  "run-events.payloadSpecIsComplete": "build-time assertion over OUR spec",
+  "evidence.blamesSubmittedWork": "enum membership over FAILURE_OWNERS",
+  "evidence.verdictAssessmentFor": "constructor; its output is validated",
+  "receipts.receiptDigest": "encoder over an already-validated record",
+  "run-events.eventDigest": "encoder over an already-validated record",
+  "receipts.verificationAgainst": "requires current state; covered by receipts suite",
+  "run-events.verifyAppend": "covered by the run-events suite",
+  "device-auth.parseKeyHash": "parser returning a ValidationResult",
+  "device-auth.revoke": "state transition over an already-validated record",
+};
 
 /** Hostile scalars, arrays and prototype tricks a guard must survive. */
 function hostileValues() {
@@ -216,17 +395,53 @@ for (const guard of AUTHORITY_GUARDS) {
   }
   for (const [shape, hostile] of hostileValues()) {
     guardProbes++;
-    let outcome;
+    let value;
+    let threw;
     try {
-      const value = guard.call(fn, hostile);
-      outcome = value === false ? "false" : `RETURNED ${String(value)}`;
+      value = guard.call(fn, hostile);
+      threw = undefined;
     } catch (error) {
-      outcome = `THREW: ${error instanceof Error ? error.message : String(error)}`;
+      threw = error instanceof Error ? error.message : String(error);
     }
-    if (outcome !== "false") {
-      console.error(`  ${guard.label} on ${shape}: ${outcome} — a guard must return false`);
+
+    // THE AUTHORITY PROPERTY: hostile input must never yield a yes. This is
+    // never waived for anything.
+    if (threw === undefined && value === true) {
+      console.error(`  ${guard.label} on ${shape}: RETURNED TRUE — hostile input granted a yes`);
       failed = true;
     }
+    // The robustness property, waivable only via MAY_STILL_THROW.
+    if (threw !== undefined && !MAY_STILL_THROW.has(guard.export)) {
+      console.error(`  ${guard.label} on ${shape}: THREW: ${threw} — a guard must refuse, not throw`);
+      failed = true;
+    }
+  }
+}
+
+// --- the registry must not silently shrink ---------------------------------
+const registered = new Set(AUTHORITY_GUARDS.map((g) => g.export));
+for (const name of REQUIRED_GUARDS) {
+  if (!registered.has(name)) {
+    console.error(`  ${name} is required to be an authority guard but is not in the registry`);
+    failed = true;
+  }
+}
+
+// --- every exported function must be triaged --------------------------------
+for (const pkg of packages) {
+  const entry = join(root, "packages", pkg, "dist", "index.js");
+  if (!existsSync(entry)) continue;
+  const mod = await import(pathToFileURL(entry).href);
+  for (const [name, value] of Object.entries(mod)) {
+    if (typeof value !== "function") continue;
+    if (/^validate/.test(name)) continue;
+    if (registered.has(name)) continue;
+    if (Object.hasOwn(NOT_AUTHORITY_GUARDS, `${pkg}.${name}`)) continue;
+    console.error(
+      `  ${pkg}.${name} is exported but neither probed nor listed in NOT_AUTHORITY_GUARDS — `
+        + "add it to the registry or say why it is not a guard",
+    );
+    failed = true;
   }
 }
 
@@ -251,5 +466,12 @@ if (failed) {
   process.exit(1);
 }
 console.log(
-  `  ${validators} validators x ${checked / (validators || 1)} shapes = ${checked} probes, plus ${guardProbes} authority-guard probes with positive controls — all fail closed`,
+  `  ${validators} validators x ${checked / (validators || 1)} shapes = ${checked} probes, plus ${guardProbes} authority-guard probes with positive controls — none granted a yes`,
 );
+if (MAY_STILL_THROW.size > 0) {
+  // Printed on every green run. A waiver nobody sees is a waiver nobody removes.
+  console.log(
+    `  ${MAY_STILL_THROW.size} predicates still throw rather than refuse (never return true): `
+      + [...MAY_STILL_THROW].join(", "),
+  );
+}

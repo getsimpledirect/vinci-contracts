@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { assertSchemaMetaComplete } from "@vinci/contracts";
 import {
+  countsAgainstSubmittedWork,
+  isProvenanceConsistent,
   EVIDENCE_RECORD_SCHEMA_META,
   VERDICT_ASSESSMENT_SCHEMA_META,
   FAILURE_OWNERS,
@@ -720,5 +722,43 @@ describe("a required string must carry content, not just length", () => {
     // merely contains whitespace.
     const record = { ...validEvidenceRecord(), summary: "ran 3 tests, all passed" };
     expect(validateEvidenceRecord(record).ok).toBe(true);
+  });
+});
+
+describe("attribution predicates decide from own data", () => {
+  it("refuses an outcome whose fields are inherited", () => {
+    // Attribution decided from a prototype is attribution nobody wrote.
+    const inherited = Object.create({ outcome: "contradicts", failureOwner: "submitted_work" });
+    expect(Object.keys(inherited)).toEqual([]);
+    expect(countsAgainstSubmittedWork(inherited)).toBe(false);
+  });
+
+  it("refuses hostile input instead of throwing", () => {
+    for (const hostile of [
+      null, undefined, "contradicts", 7, new Array(1),
+      { get outcome() { return "contradicts"; }, failureOwner: "submitted_work" },
+      new Proxy({}, { get() { throw new Error("t"); } }),
+    ]) {
+      expect(() => countsAgainstSubmittedWork(hostile as never)).not.toThrow();
+      expect(countsAgainstSubmittedWork(hostile as never)).toBe(false);
+    }
+  });
+
+  it("still attributes genuine failures", () => {
+    // Positive controls. Returning false for everything would silently
+    // exonerate all broken work, which is the failure that matters most here.
+    expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: "submitted_work" })).toBe(true);
+    expect(countsAgainstSubmittedWork({ outcome: "invalid", failureOwner: "submitted_work" })).toBe(true);
+    expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: "vinci_harness" })).toBe(false);
+    expect(countsAgainstSubmittedWork({ outcome: "supports" })).toBe(false);
+  });
+
+  it("returns a boolean for an unrecognised provenance, not undefined", () => {
+    // The switch had no default, so it fell through and returned `undefined`
+    // from a signature declaring `boolean`. Falsy, so it failed closed by luck
+    // rather than design, and a caller comparing === false got the wrong answer.
+    const result = isProvenanceConsistent("toString" as never, { kind: "worker", workerId: "w" });
+    expect(result).toBe(false);
+    expect(typeof result).toBe("boolean");
   });
 });

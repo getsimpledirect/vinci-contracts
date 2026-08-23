@@ -82,5 +82,16 @@ export function isProvenanceConsistent(
       // DISCLOSED; evidence claiming independent-verifier provenance is the
       // opposite of disclosing it.
       return actor.kind === "verifier" && actor.independent === true;
+    default:
+      // An unrecognised provenance is not consistent with anything.
+      //
+      // Without this the switch fell through and the function returned
+      // `undefined` from a signature declaring `boolean`. It is falsy, so it
+      // failed closed by luck rather than by design, and any caller comparing
+      // `=== false` — a reasonable thing to do with a predicate — got the
+      // wrong answer. TypeScript accepted the omission because the switch is
+      // exhaustive over the DECLARED union, which says nothing about what
+      // arrives at runtime.
+      return false;
   }
 }

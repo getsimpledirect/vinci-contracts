@@ -99,8 +99,28 @@ export const EVIDENCE_OUTCOMES = ["supports", "inconclusive", "contradicts", "in
  * acceptance system untrustworthy.
  */
 export function countsAgainstSubmittedWork(evidence: EvidenceOutcome): boolean {
-  return (
-    (evidence.outcome === "contradicts" || evidence.outcome === "invalid")
-    && blamesSubmittedWork(evidence.failureOwner)
-  );
+  // Own data reads, and no throwing, because this is exported and answers a
+  // question about blame. Before this it threw on null and on a throwing
+  // proxy, and — the real defect — an object with NO own keys inheriting
+  // `outcome: "contradicts"` and `failureOwner: "submitted_work"` returned
+  // TRUE. Attribution decided from a prototype is attribution nobody wrote.
+  const outcome = ownData(evidence, "outcome");
+  if (outcome !== "contradicts" && outcome !== "invalid") return false;
+  return blamesSubmittedWork(ownData(evidence, "failureOwner") as FailureOwner);
+}
+
+/**
+ * Read one own DATA property, or undefined. Never invokes a getter, never
+ * follows a prototype, never throws.
+ */
+function ownData(source: unknown, field: string): unknown {
+  if (typeof source !== "object" || source === null) return undefined;
+  let descriptor: PropertyDescriptor | undefined;
+  try {
+    descriptor = Object.getOwnPropertyDescriptor(source, field);
+  } catch {
+    return undefined;
+  }
+  if (descriptor === undefined || !("value" in descriptor)) return undefined;
+  return descriptor.value;
 }
