@@ -23,3 +23,40 @@ export type EffectiveDeliveryState = Extract<
 export function isEffectiveDeliveryState(state: DeliveryState): state is EffectiveDeliveryState {
   return state.kind === "accepted-by-governor" || state.kind === "acted-upon-by-worker";
 }
+
+/**
+ * Position in the delivery sequence. The states are ordered — a decision is
+ * queued on the device, delivered to the server, accepted by Governor, then
+ * acted upon by the worker (FR-5.6) — and skipping a step means claiming
+ * something happened that did not.
+ */
+const DELIVERY_ORDER: Readonly<Record<DeliveryStateKind, number>> = {
+  "queued-locally": 0,
+  delivered: 1,
+  "accepted-by-governor": 2,
+  "acted-upon-by-worker": 3,
+};
+
+/**
+ * May a delivery state move from `from` to `to`?
+ *
+ * Forward by exactly one step, or stay put. Not backwards, and not by jumping
+ * a step: a decision that reports `acted-upon-by-worker` without ever having
+ * been accepted by Governor is asserting that authority was granted when no
+ * record of granting it exists. That is indistinguishable, downstream, from an
+ * approval that never happened — and it reads as effective, because both of
+ * the last two states are effective.
+ *
+ * The four states existing is not the requirement; their progression is.
+ */
+export function canAdvanceDelivery(from: DeliveryStateKind, to: DeliveryStateKind): boolean {
+  const delta = DELIVERY_ORDER[to] - DELIVERY_ORDER[from];
+  return delta === 0 || delta === 1;
+}
+
+/**
+ * The first state every decision starts in. A decision that has not been
+ * anywhere is queued locally, never delivered — FR-5.6 requires that an
+ * offline approval not appear successful until something confirms it.
+ */
+export const INITIAL_DELIVERY_STATE: DeliveryState = { kind: "queued-locally" };

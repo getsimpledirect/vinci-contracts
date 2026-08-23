@@ -18,6 +18,9 @@ import {
   type ApprovalDecision,
   type ApprovalRequest,
   type RunAction,
+  canAdvanceDelivery,
+  isEffectiveDeliveryState,
+  INITIAL_DELIVERY_STATE,
 } from "./index.ts";
 
 const user = { kind: "user", userId: "user-1" as never } as const satisfies Actor;
@@ -251,5 +254,78 @@ describe("notification payloads carry no free text", () => {
   it("rejects a request whose action class is not recognised", () => {
     const result = validateApprovalRequest({ ...requestWithSentinels(), actionClass: "whatever" });
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("a widened grant cannot survive persistence", () => {
+  // Narrowing was checked only inside createApprovalDecision. Nothing
+  // re-verified it afterwards, so a decision that had been serialized,
+  // tampered with, or constructed by any other path could carry a WIDER grant
+  // than was requested and still be applied. An approval that grants more than
+  // the human saw is the failure this whole package exists to prevent.
+  const narrowRequest = {
+    ...request,
+    grant: { kind: "allow-bounded" as const, resourceId: "billing-service", durationMs: 600_000 },
+  };
+
+  const widened = {
+    kind: "approve-narrower" as const,
+    approvalId: narrowRequest.approvalId,
+    runId: narrowRequest.runId,
+    decidedBy: { kind: "user" as const, userId: "user-9" as never },
+    decidedAt: "2026-08-23T12:05:00.000Z" as never,
+    deliveryState: { kind: "acted-upon-by-worker" as const },
+    narrowedGrant: {
+      kind: "allow-bounded" as const,
+      resourceId: "production/all",
+      durationMs: 86_400_000,
+    },
+  };
+
+  it("refuses to apply a decision whose narrowed grant is wider than requested", () => {
+    const result = applyApprovalDecision(narrowRequest, { kind: "pending" }, widened as never);
+    expect(result.kind).not.toBe("satisfied");
+  });
+
+  it("still applies a genuinely narrower grant", () => {
+    // The fix must not break the feature it protects.
+    const narrower = {
+      ...widened,
+      narrowedGrant: {
+        kind: "allow-bounded" as const,
+        resourceId: "billing-service",
+        durationMs: 60_000,
+      },
+    };
+    const result = applyApprovalDecision(narrowRequest, { kind: "pending" }, narrower as never);
+    expect(result.kind).toBe("satisfied");
+  });
+});
+
+describe("delivery states must progress, not jump", () => {
+  it("allows each single forward step and staying put", () => {
+    expect(canAdvanceDelivery("queued-locally", "delivered")).toBe(true);
+    expect(canAdvanceDelivery("delivered", "accepted-by-governor")).toBe(true);
+    expect(canAdvanceDelivery("accepted-by-governor", "acted-upon-by-worker")).toBe(true);
+    expect(canAdvanceDelivery("delivered", "delivered")).toBe(true);
+  });
+
+  it("refuses to skip Governor acceptance", () => {
+    // The consequential case: both of the last two states read as effective,
+    // so a decision that jumps straight to acted-upon-by-worker claims
+    // authority was granted with no record of it being granted.
+    expect(canAdvanceDelivery("delivered", "acted-upon-by-worker")).toBe(false);
+    expect(canAdvanceDelivery("queued-locally", "accepted-by-governor")).toBe(false);
+    expect(canAdvanceDelivery("queued-locally", "acted-upon-by-worker")).toBe(false);
+  });
+
+  it("refuses to move backwards", () => {
+    expect(canAdvanceDelivery("acted-upon-by-worker", "delivered")).toBe(false);
+    expect(canAdvanceDelivery("accepted-by-governor", "queued-locally")).toBe(false);
+  });
+
+  it("starts every decision in the one state that is not effective", () => {
+    expect(INITIAL_DELIVERY_STATE.kind).toBe("queued-locally");
+    expect(isEffectiveDeliveryState(INITIAL_DELIVERY_STATE)).toBe(false);
   });
 });

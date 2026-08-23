@@ -37,7 +37,12 @@ export type ApprovalDecision = DecisionContext & (
   | { readonly kind: "approve-once" }
   | {
       readonly kind: "approve-narrower";
-      /** Created only through the subset check below, so this field cannot widen the requested grant. */
+      /**
+       * Checked against the request's grant at construction AND again in
+       * `applyApprovalDecision`. The second check is the load-bearing one: a
+       * decision that was serialized or built by another path has not been
+       * through the first.
+       */
       readonly narrowedGrant: GrantShape;
     }
   | { readonly kind: "deny" }
@@ -139,6 +144,18 @@ export function applyApprovalDecision(
   }
   if (decision.kind === "deny") {
     return { kind: "denied", deniedBy: decision.decidedBy, deniedAt: decision.decidedAt };
+  }
+  // Re-verify the narrowing here, against this request, every time.
+  //
+  // createApprovalDecision checks it once at construction, which is only a
+  // guarantee for a decision that never leaves the process that built it.
+  // Approvals are serialized, queued while a device is offline (FR-5.6), and
+  // applied later by something else entirely, so the value arriving here has
+  // not necessarily been through that check — and a decision granting MORE
+  // than the human was shown is the precise failure this package exists to
+  // prevent. Fail closed: the approval simply does not take effect.
+  if (decision.kind === "approve-narrower" && !isGrantStrictlyNarrower(decision.narrowedGrant, request.grant)) {
+    return current;
   }
   const record: ApprovalRecord = {
     approver: decision.decidedBy,
