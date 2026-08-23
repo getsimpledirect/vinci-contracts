@@ -385,6 +385,27 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
   // chooses to say, it says once, and that single answer is both what is
   // validated and what is returned.
   //
+  // The guarantee has two halves and they are NOT symmetric. Stating it as one
+  // equivalence — "validating a value gives the same answer as validating its
+  // JSON" — is wrong, and that wording was repeated in a commit message and a
+  // test before a review produced the counterexamples.
+  //
+  //   SOUNDNESS  Validation never accepts more than validating the value's JSON
+  //              would. There is no input that succeeds here and would fail as
+  //              plain JSON. This is the direction an attacker needs, and it
+  //              holds without exception.
+  //
+  //   FIDELITY   When validation succeeds, the returned value IS that JSON —
+  //              same data, no shared references, frozen.
+  //
+  // It refuses strictly more, deliberately. A VALUE that JSON cannot carry —
+  // undefined, a function, a symbol, NaN, +/-Infinity — is refused rather than
+  // dropped, even though serializing it and validating the result would
+  // succeed. That is distinct from the object FEATURES described below, which
+  // are neutralized: dropping a value means a field the caller sent vanishing
+  // between what was sent and what was checked, while the caller is told the
+  // record is fine.
+  //
   // The cost is diagnostic, and it is worth naming. Features that cannot be
   // represented as JSON — accessors, inherited fields, symbol keys,
   // non-enumerable properties — are no longer REFUSED with a specific error;
