@@ -295,19 +295,24 @@ function escapePointer(field: string): string {
 const MAX_SERIALIZED_BYTES = 1_000_000;
 
 /**
- * Types that carry no data and must not be silently dropped.
+ * Maximum values visited during serialization, enforced DURING traversal.
  *
- * `JSON.stringify` omits functions, symbols and undefined rather than
- * complaining. Omission would mean a field vanishing between what the caller
- * sent and what was validated, so the replacer flags them instead.
+ * A size cap checked after `JSON.stringify` returns is not a cap: the input
+ * controls how much work stringify does before it returns. A Proxy that passed
+ * the reflective pass by reporting `ownKeys` as `["length"]` with a descriptor
+ * value of 0 could then have its `get` trap report an enormous `length`, since
+ * stringify reads length through [[Get]] rather than the descriptor. Serializing
+ * an array of that declared size ran to completion first — measured linear:
+ * 100,000 elements cost 13ms and 4MB, so a billion costs minutes and tens of
+ * gigabytes, all before any limit was consulted.
+ *
+ * The replacer counts every value it sees and aborts the moment this is
+ * exceeded, which bounds the work regardless of what the input claims.
  */
-function assertSerializableValue(value: unknown, found: string[]): void {
-  const type = typeof value;
-  if (type === "function" || type === "symbol" || type === "bigint" || type === "undefined") {
-    found.push(type);
-  }
-  if (type === "number" && !Number.isFinite(value as number)) found.push("non-finite number");
-}
+const MAX_NODES = 200_000;
+
+/** Distinguishes our own abort from a genuine serialization error. */
+const ABORT = Symbol("vinci.normalize.abort");
 
 export function toPlainRecord(value: unknown, path = ""): ValidationResult<PlainRecord> {
   if (typeof value !== "object" || value === null) {
@@ -355,14 +360,40 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
   // an accessor, a proxy or a cycle. They are cheap on inert input and they are
   // what enforces the repository's own rules: no `__proto__` key, no symbol
   // key, bounded depth, bounded width, no sparse array.
-  const nonData: string[] = [];
-  let serialized: string;
+  const nonData = new Set<string>();
+  let visited = 0;
+  let aborted: "too_many_nodes" | "string_too_long" | undefined;
+  let serialized: string | undefined;
   try {
     serialized = JSON.stringify(value, (_key, entry: unknown) => {
-      assertSerializableValue(entry, nonData);
+      visited += 1;
+      if (visited > MAX_NODES) {
+        aborted = "too_many_nodes";
+        throw ABORT;
+      }
+      if (typeof entry === "string" && entry.length > MAX_SERIALIZED_BYTES) {
+        aborted = "string_too_long";
+        throw ABORT;
+      }
+      const type = typeof entry;
+      if (type === "function" || type === "symbol" || type === "bigint" || type === "undefined") {
+        nonData.add(type);
+      }
+      if (type === "number" && !Number.isFinite(entry as number)) nonData.add("non-finite number");
       return entry;
     });
-  } catch {
+  } catch (error) {
+    if (error === ABORT) {
+      return fail([
+        issue(
+          path,
+          aborted === "string_too_long" ? "too_large" : "too_many_nodes",
+          aborted === "string_too_long"
+            ? `a data record must not contain a string longer than ${MAX_SERIALIZED_BYTES} characters`
+            : `a data record must not contain more than ${MAX_NODES} values`,
+        ),
+      ]);
+    }
     // Cycles and BigInt throw here. Reflection on a Proxy also runs user code
     // that may throw. The message is attacker-authored and is not echoed.
     return fail([
@@ -370,12 +401,12 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
     ]);
   }
 
-  if (nonData.length > 0) {
+  if (nonData.size > 0) {
     return fail([
       issue(
         path,
         "unsupported_value",
-        `a data record must not carry a value of type ${[...new Set(nonData)].sort().join(", ")}`,
+        `a data record must not carry a value of type ${[...nonData].sort().join(", ")}`,
       ),
     ]);
   }

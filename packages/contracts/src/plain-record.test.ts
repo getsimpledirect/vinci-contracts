@@ -330,3 +330,66 @@ describe("a Proxy cannot make validation disagree with the record it produced", 
     expect(result.ok === false && result.issues.some((i) => i.code === "non_enumerable_property")).toBe(true);
   });
 });
+
+describe("the work is bounded during traversal, not after it", () => {
+  // A size cap checked after JSON.stringify returns is not a cap, because the
+  // input controls how much work stringify does before returning. A Proxy that
+  // passed the reflective pass — ownKeys ["length"], descriptor value 0 — could
+  // then report an enormous `length` from its `get` trap, since stringify reads
+  // length through [[Get]] rather than the descriptor. Cost was linear in the
+  // claimed size: 100,000 elements took 13ms and 4MB before any limit was read.
+  function lyingLength(fakeLength: number): unknown {
+    const target: unknown[] = [];
+    const realLength = Object.getOwnPropertyDescriptor(target, "length") as PropertyDescriptor;
+    return new Proxy(target, {
+      ownKeys() {
+        return ["length"];
+      },
+      getOwnPropertyDescriptor(t, k) {
+        return k === "length"
+          ? { ...realLength, value: 0 }
+          : Reflect.getOwnPropertyDescriptor(t, k);
+      },
+      get(t, k, r) {
+        return k === "length" ? fakeLength : Reflect.get(t, k, r);
+      },
+    });
+  }
+
+  it("refuses a hugely-claimed array without doing the work", () => {
+    const started = Date.now();
+    const result = toPlainRecord({ items: lyingLength(10_000_000) });
+    const elapsed = Date.now() - started;
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues[0]?.code).toBe("too_many_nodes");
+    // The point is the bound, not the refusal: ten million elements must cost
+    // about what two hundred thousand cost, not fifty times more.
+    expect(elapsed).toBeLessThan(2_000);
+  });
+
+  it("does not grow with the size claimed", () => {
+    // Scaling must flatten once the bound engages. If this ever regresses to
+    // linear, the cap has moved back to being checked after the fact.
+    const time = (n: number) => {
+      const started = Date.now();
+      toPlainRecord({ items: lyingLength(n) });
+      return Date.now() - started;
+    };
+    time(1_000_000); // warm
+    const small = time(1_000_000);
+    const large = time(20_000_000);
+    expect(large).toBeLessThan(Math.max(small * 4, 1_000));
+  });
+
+  it("refuses a single absurdly long string", () => {
+    const result = toPlainRecord({ blob: "x".repeat(1_000_001) });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues[0]?.code).toBe("too_large");
+  });
+
+  it("still accepts a large but legitimate record", () => {
+    const result = toPlainRecord({ items: Array.from({ length: 5_000 }, (_, i) => i) });
+    expect(result.ok).toBe(true);
+  });
+});
