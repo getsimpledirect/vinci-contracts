@@ -307,7 +307,15 @@ const MAX_SERIALIZED_BYTES = 1_000_000;
  * gigabytes, all before any limit was consulted.
  *
  * The replacer counts every value it sees and aborts the moment this is
- * exceeded, which bounds the work regardless of what the input claims.
+ * exceeded, which bounds the work *this code* performs regardless of what the
+ * input claims.
+ *
+ * It does not bound the work a trap does before returning. A `get` handler is
+ * free to loop or allocate without ever yielding control, and no replacer can
+ * interrupt it. Defending against that needs a timeout or a separate execution
+ * context, neither of which belongs in a schema package — so the guarantee here
+ * is deliberately the narrower one, and should not be described as bounding
+ * arbitrary Proxy work.
  */
 const MAX_NODES = 200_000;
 
@@ -362,17 +370,34 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
   // key, bounded depth, bounded width, no sparse array.
   const nonData = new Set<string>();
   let visited = 0;
-  let aborted: "too_many_nodes" | "string_too_long" | undefined;
+  let aborted: "too_many_nodes" | "too_large" | undefined;
+  let budget = 0;
   let serialized: string | undefined;
   try {
-    serialized = JSON.stringify(value, (_key, entry: unknown) => {
+    serialized = JSON.stringify(value, (key: string, entry: unknown) => {
       visited += 1;
       if (visited > MAX_NODES) {
         aborted = "too_many_nodes";
         throw ABORT;
       }
-      if (typeof entry === "string" && entry.length > MAX_SERIALIZED_BYTES) {
-        aborted = "string_too_long";
+      // Accumulate a LOWER BOUND on the serialized size and abort the moment
+      // it exceeds the cap.
+      //
+      // A per-string cap bounds nothing in aggregate: 200,000 permitted nodes
+      // times a one-million-character limit is two hundred gigabytes. Measured
+      // with forty strings of 900,000 characters — 41 nodes, every string under
+      // its cap, 34.6MB allocated before the final length check ran.
+      //
+      // A lower bound is used rather than an estimate because it cannot
+      // over-reject: JSON escaping only ever expands a string, so a record whose
+      // minimum possible size already exceeds the cap could never have fit. The
+      // constants are the smallest any encoding can produce — two quotes around
+      // a string, three characters for a key and its colon, one for the shortest
+      // literal.
+      budget += typeof entry === "string" ? entry.length + 2 : 1;
+      if (typeof key === "string" && key.length > 0) budget += key.length + 3;
+      if (budget > MAX_SERIALIZED_BYTES) {
+        aborted = "too_large";
         throw ABORT;
       }
       const type = typeof entry;
@@ -387,9 +412,9 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
       return fail([
         issue(
           path,
-          aborted === "string_too_long" ? "too_large" : "too_many_nodes",
-          aborted === "string_too_long"
-            ? `a data record must not contain a string longer than ${MAX_SERIALIZED_BYTES} characters`
+          aborted === "too_large" ? "too_large" : "too_many_nodes",
+          aborted === "too_large"
+            ? `a data record must serialize to under ${MAX_SERIALIZED_BYTES} bytes`
             : `a data record must not contain more than ${MAX_NODES} values`,
         ),
       ]);

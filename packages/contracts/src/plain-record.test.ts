@@ -362,7 +362,12 @@ describe("the work is bounded during traversal, not after it", () => {
     const elapsed = Date.now() - started;
 
     expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues[0]?.code).toBe("too_many_nodes");
+    // Either bound refusing is correct — node count or aggregate size, whichever
+    // the input trips first. Asserting which one fires would pin an
+    // implementation detail rather than the property under test.
+    expect(
+      result.ok === false && ["too_many_nodes", "too_large"].includes(result.issues[0]?.code ?? ""),
+    ).toBe(true);
     // The point is the bound, not the refusal: ten million elements must cost
     // about what two hundred thousand cost, not fifty times more.
     expect(elapsed).toBeLessThan(2_000);
@@ -391,5 +396,45 @@ describe("the work is bounded during traversal, not after it", () => {
   it("still accepts a large but legitimate record", () => {
     const result = toPlainRecord({ items: Array.from({ length: 5_000 }, (_, i) => i) });
     expect(result.ok).toBe(true);
+  });
+});
+
+describe("the aggregate size bound is enforced during traversal", () => {
+  it("refuses many sub-cap strings without building them all", () => {
+    // A per-string cap bounds nothing in aggregate: 200,000 permitted nodes
+    // times a one-million-character limit is two hundred gigabytes. Forty
+    // strings of 900,000 characters is 41 nodes, every string under its own
+    // cap, and 34.6MB was allocated before the final length check ran.
+    const big = "x".repeat(900_000);
+    const record: Record<string, string> = {};
+    for (let i = 0; i < 40; i += 1) record[`k${i}`] = big;
+
+    const before = process.memoryUsage().heapUsed;
+    const result = toPlainRecord(record);
+    const grewMb = (process.memoryUsage().heapUsed - before) / 1_048_576;
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues[0]?.code).toBe("too_large");
+    // The refusal was never the question — the allocation was.
+    expect(grewMb).toBeLessThan(10);
+  });
+
+  it("does not over-reject: the bound is a lower bound, not an estimate", () => {
+    // JSON escaping only ever expands a string, so a record whose MINIMUM
+    // possible serialized size exceeds the cap could never have fit. Anything
+    // that could fit must still validate.
+    expect(toPlainRecord({ blob: "x".repeat(900_000) }).ok).toBe(true);
+
+    const many: Record<string, string> = {};
+    for (let i = 0; i < 100; i += 1) many[`k${i}`] = "y".repeat(5_000);
+    expect(toPlainRecord(many).ok).toBe(true);
+  });
+
+  it("refuses once the aggregate genuinely exceeds the cap", () => {
+    const over: Record<string, string> = {};
+    for (let i = 0; i < 300; i += 1) over[`k${i}`] = "y".repeat(5_000);
+    const result = toPlainRecord(over);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues[0]?.code).toBe("too_large");
   });
 });
