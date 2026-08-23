@@ -70,6 +70,17 @@ for (const name of readdirSync(root)) {
   }
   if (entry.isDirectory()) continue;
 
+  // `.git` is git's, and its TYPE depends on how the tree was created: a
+  // directory in an ordinary clone, a FILE containing "gitdir: ..." inside a
+  // worktree, and a symlink in some submodule layouts. Skipping it by name
+  // rather than by type is the only form that behaves the same everywhere.
+  //
+  // This check passed for two commits and failed the moment it first ran in a
+  // clean-checkout worktree — the exact environment the acceptance rule
+  // requires — because `.git` was a file there and a directory here. A check
+  // that depends on how the tree was made is not checking the tree.
+  if (name === ".git") continue;
+
   if (!entry.isFile() || entry.isSymbolicLink()) {
     console.error(`  ${name}: not a regular file (symlink or special file) — the root holds real files only`);
     failed = true;
