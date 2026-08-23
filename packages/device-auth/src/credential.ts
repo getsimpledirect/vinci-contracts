@@ -86,7 +86,28 @@ export function revoke(
   return { ...identity, revokedAt: at };
 }
 
+/**
+ * sha256, lowercase hex, exactly 64 characters.
+ *
+ * The brand alone is a compile-time guarantee, and a validator that accepted
+ * any non-empty string erased it the moment data arrived from outside — which
+ * is the only place credentials ever come from. `"super-secret-value"` is a
+ * non-empty string; it is not a digest. Checking the actual shape is what
+ * makes "the raw secret is never stored" true at runtime rather than aspirational.
+ */
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+
+/** The only way to obtain a KeyHash from untrusted input. */
+export function parseKeyHash(value: unknown): KeyHash | undefined {
+  return typeof value === "string" && SHA256_HEX.test(value) ? (value as KeyHash) : undefined;
+}
+
 const KNOWN_CREDENTIAL_FIELDS = new Set([
+  // `kind` and `deviceId` are safe metadata carried by the device variant.
+  // They must be listed, or the reject-unknowns rule above refuses every
+  // device credential.
+  "kind",
+  "deviceId",
   "keyHash",
   "prefix",
   "clientType",
@@ -118,17 +139,25 @@ export function validateCredentialIdentity(value: unknown): ValidationResult<Cre
   }
   const record = value as Record<string, unknown>;
   const issues: ValidationIssue[] = [];
-  const unknownFields: Record<string, unknown> = {};
-
+  // D4 exception, matching /credentials in @vinci/policy: an unrecognised
+  // field on a credential may BE the secret, and preserving it would carry
+  // that secret into a record SR-3 says must never hold one. Reject instead.
   for (const key of Object.keys(record)) {
-    if (!KNOWN_CREDENTIAL_FIELDS.has(key)) unknownFields[key] = record[key];
+    if (KNOWN_CREDENTIAL_FIELDS.has(key)) continue;
+    issues.push({
+      path: `/${key}`,
+      code: "unknown_credential_field",
+      message:
+        "unrecognised field on a credential; a credential carries only safe metadata, and an unknown field here may be secret material",
+    });
   }
 
-  if (typeof record.keyHash !== "string" || record.keyHash.length === 0) {
+  if (parseKeyHash(record.keyHash) === undefined) {
     issues.push({
       path: "/keyHash",
       code: "invalid_hash",
-      message: "keyHash must be a non-empty sha256 digest string; the raw secret is never stored",
+      message:
+        "keyHash must be a sha256 digest: 64 lowercase hex characters. A raw secret is not a digest and is never stored.",
     });
   }
   if (typeof record.prefix !== "string" || record.prefix.length === 0) {
@@ -173,11 +202,16 @@ export function validateCredentialIdentity(value: unknown): ValidationResult<Cre
       keyHash: record.keyHash as KeyHash,
       prefix: record.prefix as string,
       clientType: record.clientType as ClientType | null,
-      scopes: record.scopes as readonly Scope[],
+      // Cloned and frozen. Retaining the caller's array let a validated
+      // credential be mutated afterwards — pushing `acceptance` onto it with
+      // no cast and no re-validation, defeating the prohibition below.
+      scopes: Object.freeze([...(record.scopes as readonly Scope[])]),
       createdAt: record.createdAt as Timestamp,
       revokedAt: record.revokedAt as Timestamp | null,
     },
-    unknownFields,
+    // Empty by construction: an unrecognised field is a rejection above, so a
+    // successful validation has nothing left over to carry.
+    {},
   );
 }
 
@@ -217,11 +251,11 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
       keyHash: known.keyHash,
       prefix: known.prefix,
       clientType: known.clientType as ClientType,
-      scopes: known.scopes as readonly DeviceScope[],
+      scopes: Object.freeze([...known.scopes]) as readonly DeviceScope[],
       createdAt: known.createdAt,
       revokedAt: known.revokedAt,
     },
-    base.unknownFields,
+    {},
   );
 }
 
@@ -232,7 +266,13 @@ export const CREDENTIAL_IDENTITY_SCHEMA_META: SchemaMeta = {
   id: "vinci.device-auth.credential-identity",
   version: 1,
   compatibility: "additive-only",
-  unknownFields: "preserve",
+  /**
+   * Rejected, not preserved — the D4 exception that also governs /credentials
+   * in @vinci/policy. An unrecognised field on a credential may be the secret
+   * itself, and preserving it would carry that secret into a record SR-3 says
+   * must never hold one.
+   */
+  unknownFields: "reject",
   malformedData: "fail-closed",
   migration: "none",
 };

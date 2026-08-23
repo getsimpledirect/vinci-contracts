@@ -53,10 +53,42 @@ describe("credential identity (cannot carry a secret)", () => {
   });
 
   it("rejects a record that carries the raw secret instead of a digest", () => {
-    // keyHash is branded; a plain string (the secret) may not stand in for it.
+    // This test previously asserted ok === true while being named "rejects",
+    // documenting a guarantee the code did not provide. A secret is not a
+    // digest, and the validator now says so.
     const result = validateCredentialIdentity(credential({ keyHash: "super-secret-value" }));
-    expect(result.ok).toBe(true); // a long string is a valid digest shape
-    expect(result.ok && typeof result.value.keyHash).toBe("string");
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "invalid_hash")).toBe(true);
+  });
+
+  it.each([
+    ["too short", "abc123"],
+    ["uppercase hex", "A".repeat(64)],
+    ["63 chars", "a".repeat(63)],
+    ["65 chars", "a".repeat(65)],
+    ["a bearer token", "vinci_live_aaaaaaaaaaaaaaaaaaaaaaaa"],
+    ["an empty string", ""],
+  ])("rejects %s as a keyHash", (_label, keyHash) => {
+    expect(validateCredentialIdentity(credential({ keyHash })).ok).toBe(false);
+  });
+
+  it("accepts a real sha256 digest", () => {
+    // The shape must stay usable for the thing it actually stores.
+    const digest = "e".repeat(64);
+    const result = validateCredentialIdentity(credential({ keyHash: digest }));
+    expect(result.ok).toBe(true);
+  });
+
+  it("refuses an unrecognised field rather than carrying it", () => {
+    // A field nobody recognises may BE the secret. Preserving it would put it
+    // inside a record SR-3 says must never hold one, so it fails closed.
+    const result = validateCredentialIdentity(credential({ clientSecret: "s3cr3t" } as never));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.some((i) => i.code === "unknown_credential_field")).toBe(true);
+      // and the value must not have survived into the failure either
+      expect(JSON.stringify(result.issues)).not.toContain("s3cr3t");
+    }
   });
 
   it("enforces the digest at the type level: a plain secret string is not a KeyHash", () => {
@@ -253,17 +285,64 @@ describe("D4 behavior", () => {
     if (!result.ok) expect(result.issues[0]?.path).toBe("/revokedAt");
   });
 
-  it("preserves unknown fields verbatim, including nested fields", () => {
+  it("does NOT preserve unknown fields on a credential — it rejects them", () => {
+    // The general D4 rule is preserve, so that an older consumer can round-trip
+    // a newer producer's record. Credentials are the documented exception: an
+    // unrecognised field here may be secret material, and a preserved secret
+    // sits inside a record SR-3 says must never carry one. Same rule as
+    // /credentials in @vinci/policy.
     const future = { mode: "future", values: [1, { untouched: true }] };
     const result = validateCredentialIdentity(credential({ futureTopLevel: future }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.some((i) => i.code === "unknown_credential_field")).toBe(true);
+    }
+  });
+
+  it("declares that rejection in its metadata rather than claiming to preserve", () => {
+    // The claim and the behaviour have to agree; SR-6 forbids advertising a
+    // guarantee the code does not provide.
+    expect(CREDENTIAL_IDENTITY_SCHEMA_META.unknownFields).toBe("reject");
+  });
+
+  it("cannot have `acceptance` pushed onto a validated credential's scopes", () => {
+    // The array was previously the caller's own, so a validated device
+    // credential could be mutated afterwards to hold the one scope a device
+    // token may never have — no cast, no re-validation.
+    const result = validateDeviceCredential(credential({ deviceId: "dev-1" }));
     expect(result.ok).toBe(true);
     if (result.ok) {
-      expect(result.unknownFields["futureTopLevel"]).toBe(future);
-      expect(result.unknownFields["futureTopLevel"]).toEqual(future);
+      expect(() => (result.value.scopes as string[]).push("acceptance")).toThrow();
+      expect(result.value.scopes).not.toContain("acceptance");
     }
   });
 });
 
 it("exposes the requested scope/device scope constants", () => {
   expect(DEVICE_SCOPE_LIST).toEqual(["inference", "models", "usage"]);
+});
+
+describe("device pairing digests", () => {
+  const pairing = (overrides: Record<string, unknown> = {}) => ({
+    deviceCodeHash: "b".repeat(64),
+    userCode: "WXYZ-1234",
+    clientType: "code",
+    status: "pending",
+    userId: null,
+    createdAt: "2026-08-22T10:00:00.000Z",
+    expiresAt: "2026-08-22T10:15:00.000Z",
+    ...overrides,
+  });
+
+  it("rejects the raw device code in the field meant to hold its digest", () => {
+    // "non-empty string" accepted the device code itself — precisely the value
+    // this column exists so as not to store.
+    const result = validateDevicePairing(pairing({ deviceCodeHash: "WXYZ-1234-raw-device-code" }));
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "invalid_hash")).toBe(true);
+  });
+
+  it("accepts a real digest, so the fix does not break the legitimate case", () => {
+    expect(validateDevicePairing(pairing()).ok).toBe(true);
+  });
 });

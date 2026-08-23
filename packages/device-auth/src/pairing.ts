@@ -11,6 +11,7 @@ import type { ClientType } from "./client-type.ts";
 import { isClientType } from "./client-type.ts";
 import type { PairingState } from "./pairing-state.ts";
 import { isPairingState } from "./pairing-state.ts";
+import { parseKeyHash } from "./credential.ts";
 
 /**
  * A device pairing record (`device_pairings`).
@@ -67,11 +68,15 @@ export function validateDevicePairing(value: unknown): ValidationResult<DevicePa
     if (!KNOWN_PAIRING_FIELDS.has(key)) unknownFields[key] = record[key];
   }
 
-  if (typeof record.deviceCodeHash !== "string" || record.deviceCodeHash.length === 0) {
+  // Same reasoning as keyHash in credential.ts: "non-empty string" accepts the
+  // raw device code, which is exactly the value this field exists to avoid
+  // storing. A digest has a checkable shape, so check it.
+  if (parseKeyHash(record.deviceCodeHash) === undefined) {
     issues.push({
       path: "/deviceCodeHash",
       code: "invalid_hash",
-      message: "deviceCodeHash must be a non-empty sha256 digest string; the code is never stored",
+      message:
+        "deviceCodeHash must be a sha256 digest: 64 lowercase hex characters. The device code itself is never stored.",
     });
   }
   if (typeof record.userCode !== "string" || record.userCode.length === 0) {
