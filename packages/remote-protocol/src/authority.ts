@@ -1,3 +1,11 @@
+import {
+  fail,
+  isCanonicalTimestamp,
+  ok,
+  toPlainRecord,
+  type ValidationIssue,
+  type ValidationResult,
+} from "@vinci/contracts";
 import type { SessionRole } from "./session.ts";
 
 /**
@@ -7,44 +15,49 @@ import type { SessionRole } from "./session.ts";
  */
 
 /**
- * Commands that REDUCE what the worker may do, or stop it.
+ * Commands that reduce what the worker may do WITHOUT destroying its work.
  *
- * Always available to any device with a role that can act at all. Reducing
- * authority is safe by construction: the worst outcome of an unauthorized
- * pause is that work stops, which is recoverable. Requiring an approval round
- * trip before someone can hit the brakes gets the trade backwards.
+ * Available to any role that may act at all. The justification is that the
+ * worst outcome of an unauthorized brake is that work stops and can be
+ * resumed — recoverable, so requiring an approval round trip before someone
+ * can slow a worker down gets the trade backwards.
+ *
+ * Note what is NOT here: `abort`. An earlier version of this file listed abort
+ * alongside these and reused the same "worst case is a recoverable pause"
+ * argument for it. That argument is about pausing. It does not establish that
+ * aborting is recoverable, and this package — which defines a protocol, not a
+ * host — cannot establish it: whether an aborted run loses uncommitted work
+ * depends on host lifecycle semantics it does not control.
+ *
+ * Reusing a safety argument for a case it was not made about is how a
+ * destructive action acquires a permissive default.
  */
-export const TIGHTENING_COMMANDS = [
+export const REVERSIBLE_BRAKING_COMMANDS = [
   "pause",
-  "abort",
-  "deny_pending_approval",
   "restrict_to_read_only",
+  "deny_pending_approval",
 ] as const;
 
 /**
- * Commands that BROADEN what the worker may do.
+ * Terminal commands. Not reversible braking, and not broadening either.
  *
- * `set_permission_mode: full_access` is deliberately absent, and this is the
- * central authority decision in this protocol.
+ * `abort` ends a run. Until the host lifecycle proves otherwise, assume it may
+ * discard in-flight and uncommitted work. It is therefore narrowly authorized:
+ * the run's owner only.
  *
- * A phone that can silently raise a worker to full access turns a stolen or
- * unlocked device into a privilege escalation, and does it through a channel
- * whose entire purpose is that the human is NOT at the machine. The relay
- * cannot judge whether that is appropriate; the host cannot tell an authorized
- * tap from an unauthorized one; and the person best placed to notice is by
- * definition somewhere else.
- *
- * Broadening happens only through a bounded approval — a specific capability,
- * a specific resource, a stated scope, an expiry, and a host confirmation.
- * That path already exists in @vinci/approvals and does not need a second,
- * weaker one beside it.
+ * That is not a hardship, because `pause` covers the urgent case. Anyone who
+ * may act can stop a worker immediately; only the owner can throw the work
+ * away. Braking is universal, termination is owned.
  */
+export const TERMINAL_COMMANDS = ["abort"] as const;
+
 export const BROADENING_COMMANDS = [] as const;
 
 export const STEERING_COMMANDS = ["send_message", "answer_question"] as const;
 
 export type RemoteCommandKind =
-  | (typeof TIGHTENING_COMMANDS)[number]
+  | (typeof REVERSIBLE_BRAKING_COMMANDS)[number]
+  | (typeof TERMINAL_COMMANDS)[number]
   | (typeof STEERING_COMMANDS)[number]
   | "approve_pending_approval";
 
@@ -58,30 +71,17 @@ const PERMITTED: Readonly<Record<SessionRole, readonly RemoteCommandKind[]>> = {
   // The host is not a remote device; it receives commands rather than sending
   // them, and is listed so the map is total.
   host: [],
+  // The owner is the only role that may end a run, because ending it may
+  // discard work and this package cannot prove otherwise.
   owner: [
-    "pause",
-    "abort",
-    "deny_pending_approval",
-    "restrict_to_read_only",
+    ...REVERSIBLE_BRAKING_COMMANDS,
+    ...TERMINAL_COMMANDS,
     "send_message",
     "answer_question",
     "approve_pending_approval",
   ],
-  approver: [
-    "pause",
-    "abort",
-    "deny_pending_approval",
-    "restrict_to_read_only",
-    "approve_pending_approval",
-  ],
-  collaborator: [
-    "pause",
-    "abort",
-    "deny_pending_approval",
-    "restrict_to_read_only",
-    "send_message",
-    "answer_question",
-  ],
+  approver: [...REVERSIBLE_BRAKING_COMMANDS, "approve_pending_approval"],
+  collaborator: [...REVERSIBLE_BRAKING_COMMANDS, "send_message", "answer_question"],
   viewer: [],
 };
 
@@ -101,20 +101,40 @@ const PERMITTED: Readonly<Record<SessionRole, readonly RemoteCommandKind[]>> = {
  * only one of those is safe to proceed past.
  */
 export function mayIssue(role: SessionRole, command: RemoteCommandKind): boolean {
+  // typeof first, before anything indexes with `role`.
+  //
+  // The previous version guarded the lookup RESULT and not the lookup ITSELF.
+  // Indexing an object with an exotic key coerces the key to a property name,
+  // and that coercion runs code the caller supplied: a proxy with a throwing
+  // get trap, an object whose toString throws, and Object.create(null) all
+  // threw out of this function while its own comment promised it would not.
+  //
+  // A typeof check is used rather than try/catch deliberately. A catch would
+  // swallow a genuine programming error alongside hostile input and report
+  // both as "no authority", hiding real bugs. Refusing non-strings up front
+  // separates the two.
+  if (typeof role !== "string" || typeof command !== "string") return false;
   const permitted = PERMITTED[role];
   if (permitted === undefined) return false;
   return permitted.includes(command);
 }
 
 /**
- * Is this command one that only reduces authority?
+ * Does this command only reduce authority, without destroying work?
  *
- * Exported so a host can apply the rule directly rather than re-deriving it:
- * anything not on the tightening list needs the approval path, and a host that
- * hand-rolls that check will eventually disagree with this one.
+ * Exported so a host applies the rule rather than re-deriving it. Anything not
+ * reversible braking needs either the approval path or owner authority, and a
+ * host that hand-rolls the distinction will eventually disagree with this one.
  */
-export function isTightening(command: RemoteCommandKind): boolean {
-  return (TIGHTENING_COMMANDS as readonly string[]).includes(command as string);
+export function isReversibleBraking(command: RemoteCommandKind): boolean {
+  if (typeof command !== "string") return false;
+  return (REVERSIBLE_BRAKING_COMMANDS as readonly string[]).includes(command);
+}
+
+/** Terminal, and deliberately not grouped with braking. */
+export function isTerminal(command: RemoteCommandKind): boolean {
+  if (typeof command !== "string") return false;
+  return (TERMINAL_COMMANDS as readonly string[]).includes(command);
 }
 
 /**
@@ -145,3 +165,68 @@ export const REMOTE_DECISION_REJECTIONS = [
 ] as const;
 
 export type RemoteDecisionRejection = (typeof REMOTE_DECISION_REJECTIONS)[number];
+
+/**
+ * Validate a remote decision state arriving from untrusted input.
+ *
+ * This exists because the package was claiming validation coverage it did not
+ * have. `RemoteDecisionState` was type-only: the timestamps it carries were
+ * never checked for canonical form, and the rejection arm's `reason` was never
+ * checked against the closed vocabulary. A type is a compile-time statement
+ * about code we wrote; it says nothing about bytes off a relay, and a relay is
+ * precisely the thing the surrounding comment says not to trust.
+ *
+ * Fail-closed, on an inert snapshot, like every validator here. An unrecognised
+ * `kind` is rejected rather than preserved — the documented exception to the
+ * unknown-field rule, because a decision state nobody understands must not be
+ * carried forward as though it were understood.
+ */
+export function validateRemoteDecisionState(
+  input: unknown,
+): ValidationResult<RemoteDecisionState> {
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  const record = plain.value;
+  const issues: ValidationIssue[] = [];
+  const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
+
+  const KEYS: Record<string, readonly string[]> = {
+    provisional: ["kind", "submittedAt"],
+    confirmed: ["kind", "confirmedAt"],
+    rejected_by_host: ["kind", "reason"],
+  };
+
+  const kind = record.kind;
+  if (typeof kind !== "string" || !(kind in KEYS)) {
+    // Fail closed and stop: without a known kind there is no shape to check
+    // the remaining fields against, and guessing one would invent authority.
+    return fail([
+      {
+        path: "/kind",
+        code: "invalid_enum",
+        message: "a decision is provisional, confirmed or rejected_by_host",
+      },
+    ]);
+  }
+
+  const allowed = KEYS[kind] as readonly string[];
+  for (const key of Object.keys(record)) {
+    if (!allowed.includes(key)) {
+      add(`/${key}`, "unknown_field", `a ${kind} decision carries only its declared fields`);
+    }
+  }
+
+  if (kind === "provisional" && !isCanonicalTimestamp(record.submittedAt)) {
+    add("/submittedAt", "invalid_timestamp", "submittedAt is ISO-8601 UTC with millisecond precision");
+  }
+  if (kind === "confirmed" && !isCanonicalTimestamp(record.confirmedAt)) {
+    add("/confirmedAt", "invalid_timestamp", "confirmedAt is ISO-8601 UTC with millisecond precision");
+  }
+  if (kind === "rejected_by_host"
+      && !(REMOTE_DECISION_REJECTIONS as readonly unknown[]).includes(record.reason)) {
+    add("/reason", "invalid_enum", "unrecognised rejection reason");
+  }
+
+  if (issues.length > 0) return fail(issues);
+  return ok(record as unknown as RemoteDecisionState, {});
+}

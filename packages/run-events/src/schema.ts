@@ -3,6 +3,7 @@ import {
   fail,
   hasField,
   isActorKind,
+  isCanonicalTimestamp,
   ok,
   toPlainRecord,
   type PlainRecord,
@@ -15,22 +16,15 @@ import { PAYLOAD_FIELDS } from "./payload.ts";
 import type { RunEvent } from "./event.ts";
 
 /**
- * ISO-8601 UTC, millisecond precision, and a date that exists.
+ * Re-exported from layer 0, not re-implemented.
  *
- * Mandatory, not advisory. Ordering compares timestamps as strings, which is
- * sound ONLY for this exact canonical form — an unvalidated `occurredAt` makes
- * `"2026-1-1"` sort before `"2026-01-02"` and a non-UTC offset sort by its
- * text rather than its instant. The round-trip also rejects dates that do not
- * exist: Date.parse normalizes 2026-02-29 to March 1 rather than refusing it.
+ * This rule used to live here. The verdict record in `@vinci/evidence` (layer
+ * 1) needs the identical rule and cannot import upward, so the definition moved
+ * to `@vinci/contracts` and this is now a re-export. The wire format is
+ * unchanged — same regex, same round-trip — and there is exactly one copy, so
+ * the two cannot drift the way the duplicated canonicalizer already had.
  */
-export function isCanonicalTimestamp(value: unknown): value is string {
-  return (
-    typeof value === "string"
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
-    && !Number.isNaN(Date.parse(value))
-    && new Date(value).toISOString() === value
-  );
-}
+export { isCanonicalTimestamp };
 
 /** Identifiers refer to things; they are not a place to put prose. */
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
