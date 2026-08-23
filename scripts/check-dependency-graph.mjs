@@ -19,7 +19,7 @@ const LAYERS = [
   ["@vinci/contracts"],
   ["@vinci/policy", "@vinci/model-classes", "@vinci/evidence", "@vinci/approvals", "@vinci/device-auth"],
   ["@vinci/receipts", "@vinci/run-events"],
-  ["@vinci/worker-protocol"],
+  ["@vinci/worker-protocol", "@vinci/remote-protocol"],
 ];
 
 const layerOf = new Map();
