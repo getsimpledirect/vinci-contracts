@@ -12,6 +12,7 @@ import {
 } from "./evidence-kinds.ts";
 import type { EvidenceRecord } from "./evidence-record.ts";
 import { actorFieldsAreConsistent } from "@vinci/contracts";
+import { EVIDENCE_OUTCOMES, isFailureOwner } from "./attribution.ts";
 import { EVIDENCE_PROVENANCE_CASES, type EvidenceProvenance } from "./provenance.ts";
 import {
   VERDICT_STALENESS_TRIGGERS,
@@ -317,6 +318,71 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * A failing outcome must name an owner.
+ *
+ * The structural rule this package exists to enforce: there is no shape for
+ * "this failed and I am not saying whose failure it is". An unattributed
+ * failure gets read as the author's fault, and a false accusation costs more
+ * than a missed finding because it is paid every time.
+ */
+function validateAssessment(raw: unknown, issues: ValidationIssue[]): void {
+  const path = "/assessment";
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    addIssue(issues, path, "invalid_assessment", "an assessment is an object");
+    return;
+  }
+  const value = raw as Record<string, unknown>;
+  const outcome = value.outcome;
+  if (!(EVIDENCE_OUTCOMES as readonly unknown[]).includes(outcome)) {
+    addIssue(issues, `${path}/outcome`, "invalid_enum", "unrecognised evidence outcome");
+    return;
+  }
+  const needsOwner = outcome === "contradicts" || outcome === "invalid";
+  const keys = Object.keys(value).sort().join(",");
+  const expected = needsOwner ? "failureOwner,outcome" : "outcome";
+  if (keys !== expected) {
+    addIssue(
+      issues,
+      path,
+      needsOwner ? "failure_owner_required" : "field_not_valid_for_outcome",
+      needsOwner
+        ? "evidence that contradicts or is invalid must name whose failure it is"
+        : "a non-failing outcome carries no failure owner",
+    );
+    return;
+  }
+  if (needsOwner && !isFailureOwner(value.failureOwner)) {
+    addIssue(issues, `${path}/failureOwner`, "invalid_enum", "unrecognised failure owner");
+  }
+}
+
+/** "Not tested" without a reason is indistinguishable from an oversight. */
+function validateNotTested(raw: unknown, issues: ValidationIssue[]): void {
+  if (!Array.isArray(raw)) {
+    addIssue(issues, "/notTested", "invalid_type", "notTested is an array, empty if everything was checked");
+    return;
+  }
+  raw.forEach((item, index) => {
+    const path = `/notTested/${index}`;
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      addIssue(issues, path, "invalid_type", "each entry is an object");
+      return;
+    }
+    const entry = item as Record<string, unknown>;
+    if (Object.keys(entry).sort().join(",") !== "description,reason") {
+      addIssue(issues, path, "invalid_shape", "each entry carries exactly a description and a reason");
+      return;
+    }
+    for (const field of ["description", "reason"] as const) {
+      const v = entry[field];
+      if (typeof v !== "string" || v.trim() === "") {
+        addIssue(issues, `${path}/${field}`, "required_field", `${field} must be a non-empty string`);
+      }
+    }
+  });
+}
+
 export function validateEvidenceRecord(input: unknown): ValidationResult<EvidenceRecord> {
   // Snapshot before inspecting: rejects prototypes carrying inherited
   // fields, accessors that answer differently on each read, and symbol or
@@ -337,6 +403,8 @@ export function validateEvidenceRecord(input: unknown): ValidationResult<Evidenc
       "mode",
       "reliability",
       "sourceKind",
+      "assessment",
+      "notTested",
       "summary",
       "recordedAt",
     ],
@@ -354,6 +422,9 @@ export function validateEvidenceRecord(input: unknown): ValidationResult<Evidenc
   enumValue(object.sourceKind, EVIDENCE_SOURCE_KINDS, "/sourceKind", issues);
   requiredString(object.summary, "/summary", issues);
   timestamp(object.recordedAt, "/recordedAt", issues);
+
+  validateAssessment(object.assessment, issues);
+  validateNotTested(object.notTested, issues);
 
   if (issues.length > 0) return fail(issues);
   return ok(input as EvidenceRecord, unknownFields);

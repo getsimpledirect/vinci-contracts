@@ -1,3 +1,4 @@
+export * from "./attribution.ts";
 export * from "./evidence-kinds.ts";
 export * from "./provenance.ts";
 export * from "./verdict-assessment.ts";

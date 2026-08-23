@@ -3,6 +3,8 @@ import { assertSchemaMetaComplete } from "@vinci/contracts";
 import {
   EVIDENCE_RECORD_SCHEMA_META,
   VERDICT_ASSESSMENT_SCHEMA_META,
+  FAILURE_OWNERS,
+  countsAgainstSubmittedWork,
   isProvenanceConsistent,
   verdictAssessmentFor,
   validateEvidenceRecord,
@@ -20,6 +22,8 @@ const validEvidenceRecord = () => ({
   mode: "execution",
   reliability: "strong",
   sourceKind: "runner",
+  assessment: { outcome: "supports" },
+  notTested: [],
   summary: "All unit tests passed",
   recordedAt: "2026-08-23T12:34:56.789Z",
 });
@@ -501,5 +505,75 @@ describe("the constructor cannot manufacture what the validator refuses", () => 
     triggers.length = 0;
     expect(built.value.kind === "stale" && built.value.triggers.length).toBe(1);
     expect(Object.isFrozen(built.value)).toBe(true);
+  });
+});
+
+describe("a failure cannot be recorded without saying whose it is", () => {
+  // The difference between an evaluator worth having and one that is worse than
+  // nothing. Reporting a broken container or a missing credential as a defect
+  // in the submitted work does not merely fail to help — it teaches people to
+  // stop believing verdicts, and a false accusation is paid every time.
+  const withAssessment = (assessment: unknown) =>
+    validateEvidenceRecord({ ...validEvidenceRecord(), assessment });
+
+  it("refuses a contradicting outcome with no owner", () => {
+    const result = withAssessment({ outcome: "contradicts" });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "failure_owner_required")).toBe(true);
+  });
+
+  it("refuses an invalid outcome with no owner", () => {
+    expect(withAssessment({ outcome: "invalid" }).ok).toBe(false);
+  });
+
+  it("accepts a failure that names its owner", () => {
+    for (const failureOwner of FAILURE_OWNERS) {
+      expect(withAssessment({ outcome: "contradicts", failureOwner }).ok, failureOwner).toBe(true);
+    }
+  });
+
+  it("refuses a failure owner on a non-failing outcome", () => {
+    // "supports, and by the way someone is at fault" is not a coherent record.
+    expect(withAssessment({ outcome: "supports", failureOwner: "submitted_work" }).ok).toBe(false);
+  });
+
+  it("counts only submitted_work against the author", () => {
+    // Infrastructure breakage must never read as a defect in the work.
+    expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: "submitted_work" })).toBe(true);
+    for (const owner of ["vinci_infrastructure", "missing_access", "unclear_requirement"] as const) {
+      expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: owner }), owner).toBe(false);
+    }
+    expect(countsAgainstSubmittedWork({ outcome: "supports" })).toBe(false);
+    expect(countsAgainstSubmittedWork({ outcome: "inconclusive" })).toBe(false);
+  });
+
+  it("treats inconclusive as not-a-failure", () => {
+    // Reporting an inconclusive check as a contradiction is how a flaky test
+    // becomes a rejected pull request.
+    expect(withAssessment({ outcome: "inconclusive" }).ok).toBe(true);
+    expect(countsAgainstSubmittedWork({ outcome: "inconclusive" })).toBe(false);
+  });
+});
+
+describe("what was not checked has to be said", () => {
+  const withNotTested = (notTested: unknown) =>
+    validateEvidenceRecord({ ...validEvidenceRecord(), notTested });
+
+  it("accepts an empty list, meaning everything in scope was checked", () => {
+    expect(withNotTested([]).ok).toBe(true);
+  });
+
+  it("requires a reason, because 'not tested' alone is indistinguishable from an oversight", () => {
+    expect(withNotTested([{ description: "the migration path" }]).ok).toBe(false);
+    expect(withNotTested([{ description: "the migration path", reason: "" }]).ok).toBe(false);
+    expect(
+      withNotTested([{ description: "the migration path", reason: "no staging database available" }]).ok,
+    ).toBe(true);
+  });
+
+  it("refuses an entry carrying anything else", () => {
+    expect(
+      withNotTested([{ description: "d", reason: "r", severity: "low" }]).ok,
+    ).toBe(false);
   });
 });
