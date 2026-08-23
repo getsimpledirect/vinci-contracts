@@ -185,11 +185,22 @@ function validatorAccepts(actor: unknown): boolean {
   // An oracle that reports acceptance for rejected input can only mask a
   // permissive gap, never create one, which is exactly why it would have gone
   // unnoticed until it mattered.
-  if (result.issues.some((issue) => issue.path === "")) return false;
-
-  return !result.issues.some(
-    (issue) => issue.path.includes("/actor") && issue.code !== "provenance_actor_mismatch",
-  );
+  // ANY issue means the actor was not accepted, wherever it is reported.
+  //
+  // This oracle has now been wrong twice in the same direction. First it looked
+  // only under "/actor", so a function-valued actor refused at the root path ""
+  // read as ACCEPTED. Adding a root check fixed that case and left the general
+  // one: a hostile actor can invalidate a path that is neither the root nor the
+  // actor subtree — it is the only thing varying in this record — and the
+  // oracle would still call it accepted.
+  //
+  // Every other field here is fixed by the template, so ANY complaint is
+  // attributable to the actor. The single exception is
+  // `provenance_actor_mismatch`, which reports that the actor does not match
+  // the provenance it was PAIRED with; plainActor is never shown the
+  // provenance and cannot answer that, so counting it would make the two
+  // disagree by construction.
+  return result.issues.every((issue) => issue.code === "provenance_actor_mismatch");
 }
 
 describe("plainActor agrees with validateEvidenceRecord on every actor shape", () => {

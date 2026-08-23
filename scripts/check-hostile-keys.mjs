@@ -235,16 +235,35 @@ const AUTHORITY_GUARDS = [
  * green. Silent coverage loss is the same failure as a vacuous test — the
  * check reports success for work it did not do.
  *
- * Removing a guard now requires removing it from here too, which is a visible,
- * reviewable edit rather than a deletion nobody notices.
+ * These are LABELS, not pkg.export names, and that distinction is the whole
+ * point. Keying by function name meant a function probed in two argument
+ * positions only needed ONE of them to survive: deleting a single mayIssue
+ * entry dropped probes from 315 to 294 and exited 0, because the remaining
+ * entry still satisfied "remote-protocol.mayIssue". Every probe is now named
+ * individually, so losing an argument position is as visible as losing a
+ * function.
+ *
+ * A reviewer also corrected a claim that used to sit here: deleting a UNIQUE
+ * entry was already caught, by the export-triage sweep rather than by this
+ * list. Only the duplicated-position case slipped. The premise was wrong even
+ * though the conclusion held.
  */
 const REQUIRED_GUARDS = [
-  "remote-protocol.mayIssue",
-  "evidence.statusIsSupportedBy",
-  "contracts.actorFieldsAreConsistent",
-  "contracts.plainActor",
-  "evidence.countsAgainstSubmittedWork",
-  "evidence.isProvenanceConsistent",
+  "mayIssue(role, 'pause')",
+  "mayIssue('owner', command)",
+  "isGrantStrictlyNarrower(a, b)",
+  "isDecisionEffective(decision)",
+  "canAdvanceDelivery(a, b)",
+  "isEffectiveDeliveryState(state)",
+  "isOrganizationWorkspace(value)",
+  "terminalStateOfVerification(value)",
+  "plainActor(actor)",
+  "actorFieldsAreConsistent(actor)",
+  "countsAgainstSubmittedWork(outcome)",
+  "isProvenanceConsistent(provenance, actor)",
+  "isProvenanceConsistent('worker_provided', actor)",
+  "statusIsSupportedBy('VERIFIED_PASS', results)",
+  "statusIsSupportedBy(status, [supported])",
 ];
 
 /**
@@ -522,9 +541,13 @@ for (const label of Object.keys(LEGITIMATE_SHAPES)) {
 // name meant registering (or waiving) one package's export silently covered
 // another's — the same identity confusion that lets a check claim coverage it
 // does not have.
-const registered = new Set(AUTHORITY_GUARDS.map((g) => `${g.pkg}.${g.export}`));
+// TWO sets, because the two questions are different. Required-guard coverage is
+// per PROBE (a function probed in two argument positions needs both), while the
+// triage sweep asks only whether a given EXPORT is accounted for at all.
+const registeredLabels = new Set(AUTHORITY_GUARDS.map((g) => g.label));
+const registeredExports = new Set(AUTHORITY_GUARDS.map((g) => `${g.pkg}.${g.export}`));
 for (const name of REQUIRED_GUARDS) {
-  if (!registered.has(name)) {
+  if (!registeredLabels.has(name)) {
     console.error(`  ${name} is required to be an authority guard but is not in the registry`);
     failed = true;
   }
@@ -538,7 +561,7 @@ for (const pkg of packages) {
   for (const [name, value] of Object.entries(mod)) {
     if (typeof value !== "function") continue;
     if (/^validate/.test(name)) continue;
-    if (registered.has(`${pkg}.${name}`)) continue;
+    if (registeredExports.has(`${pkg}.${name}`)) continue;
     if (Object.hasOwn(NOT_AUTHORITY_GUARDS, `${pkg}.${name}`)) continue;
     console.error(
       `  ${pkg}.${name} is exported but neither probed nor listed in NOT_AUTHORITY_GUARDS — `

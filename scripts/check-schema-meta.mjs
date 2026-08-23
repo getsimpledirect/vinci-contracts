@@ -29,6 +29,46 @@ function looksLikeSchemaMeta(value) {
   );
 }
 
+/**
+ * The closed vocabularies each policy field must come from.
+ *
+ * These were never checked. A review planted a SchemaMeta with a whitespace id,
+ * a whitespace migration, `unknownFields: true` and `malformedData: 42`, and
+ * this checker printed "SchemaMeta OK". It verified that the six fields were
+ * PRESENT and never that any of them said anything — the same shape as a test
+ * asserting a function exists rather than that it works.
+ *
+ * The point of SchemaMeta is that a schema answers §16's six questions. An
+ * answer of `42` is not an answer, and a checker that accepts it is confirming
+ * the questions were asked rather than answered.
+ */
+const POLICY_VALUES = {
+  compatibility: ["frozen", "additive-only", "versioned"],
+  unknownFields: ["reject", "preserve", "ignore"],
+  malformedData: ["fail-closed", "fail-open"],
+};
+
+function policyProblems(name, meta) {
+  const problems = [];
+  if (typeof meta.id !== "string" || meta.id.trim() === "") {
+    problems.push(`${name}: id must be a non-blank string`);
+  }
+  if (!Number.isInteger(meta.version) || meta.version < 1) {
+    problems.push(`${name}: version must be a positive integer, got ${JSON.stringify(meta.version)}`);
+  }
+  if (typeof meta.migration !== "string" || meta.migration.trim() === "") {
+    problems.push(`${name}: migration must be a non-blank string`);
+  }
+  for (const [field, allowed] of Object.entries(POLICY_VALUES)) {
+    if (!allowed.includes(meta[field])) {
+      problems.push(
+        `${name}: ${field} must be one of ${allowed.join(", ")}, got ${JSON.stringify(meta[field])}`,
+      );
+    }
+  }
+  return problems;
+}
+
 const errors = [];
 const found = [];
 
@@ -50,6 +90,7 @@ for (const dir of readdirSync(packagesDir)) {
   }
 
   for (const [name, meta] of metas) {
+    errors.push(...policyProblems(`${dir}.${name}`, meta));
     found.push(`${dir}.${name} (${meta.id} v${meta.version})`);
     for (const field of REQUIRED) {
       const value = meta[field];

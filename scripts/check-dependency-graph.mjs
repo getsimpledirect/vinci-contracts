@@ -41,7 +41,21 @@ for (const dir of readdirSync(packagesDir)) {
   }
 
   const own = layerOf.get(name);
-  for (const dep of Object.keys(manifest.dependencies ?? {})) {
+  // EVERY dependency section, not just "dependencies".
+  //
+  // The layer rule was enforced against runtime dependencies alone, so an
+  // upward edge declared as a devDependency, peerDependency or
+  // optionalDependency was invisible — a synthetic contracts-to-
+  // remote-protocol devDependency passed this check. A layering violation is a
+  // violation whichever section declares it: the import compiles either way,
+  // and a test importing upward couples the layers as firmly as source does.
+  const declaredDeps = {
+    ...manifest.dependencies,
+    ...manifest.devDependencies,
+    ...manifest.peerDependencies,
+    ...manifest.optionalDependencies,
+  };
+  for (const dep of Object.keys(declaredDeps)) {
     if (!dep.startsWith("@vinci/")) continue;
     if (!layerOf.has(dep)) {
       errors.push(`${name}: depends on unknown contract package ${dep}`);

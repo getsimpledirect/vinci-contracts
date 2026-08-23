@@ -71,9 +71,16 @@ for (const name of readdirSync(root)) {
   if (entry.isDirectory()) continue;
 
   // `.git` is git's, and its TYPE depends on how the tree was created: a
-  // directory in an ordinary clone, a FILE containing "gitdir: ..." inside a
-  // worktree, and a symlink in some submodule layouts. Skipping it by name
-  // rather than by type is the only form that behaves the same everywhere.
+  // directory in an ordinary clone, a regular file containing "gitdir: ..."
+  // inside a linked worktree. Both are accepted. A symlink is REFUSED, and
+  // deliberately so — see the branch below.
+  //
+  // This sentence previously cited "a symlink in some submodule layouts" as a
+  // reason to skip `.git` by name rather than by type, which was true when the
+  // skip was unconditional and became false one commit later when the type
+  // check was added. A comment that justifies the opposite of what the code
+  // does is how a closed hole gets reopened by someone tidying up an apparent
+  // inconsistency.
   //
   // This check passed for two commits and failed the moment it first ran in a
   // clean-checkout worktree — the exact environment the acceptance rule
