@@ -375,7 +375,27 @@ const NOT_AUTHORITY_GUARDS = {
  * fire for it and its nineteen hostile probes were INERT — running, passing,
  * and testing nothing. For that guard a yes is a non-null snapshot.
  */
-const YES_IS_NON_NULL = new Set(["plainActor(actor)"]);
+/**
+ * What counts as a guard "granting a yes", uniformly.
+ *
+ * Anything that is not `false`, `null` or `undefined`. Not a per-guard list,
+ * and the difference matters: this WAS a name list, it named plainActor, and it
+ * missed terminalStateOfVerification — which returns a TerminalState string, so
+ * `value === true` could never fire and all nineteen of its hostile probes were
+ * inert. Running, passing, testing nothing.
+ *
+ * That is the second time this exact defect has appeared. The first fix added
+ * one name to a list, which closed the instance and left the class open for
+ * whichever guard was registered next. A rule that reads the value rather than
+ * the guard's name cannot go stale when someone adds a guard, which is the only
+ * property that has actually held anywhere in this repository.
+ *
+ * Erring toward counting things as a yes is the safe direction: it can only
+ * produce a false failure that a human then examines, never a silent pass.
+ */
+function grantsYes(value) {
+  return value !== false && value !== null && value !== undefined;
+}
 
 /**
  * label -> hostile shapes that guard may legitimately accept.
@@ -503,9 +523,7 @@ for (const guard of AUTHORITY_GUARDS) {
     // ONLY where the shape is not actually hostile to that guard — see
     // SNAPSHOTTING_GUARDS. Never waived for a shape that can lie twice.
     const legitimate = (LEGITIMATE_SHAPES[guard.label] ?? []).includes(shape);
-    const grantedYes = YES_IS_NON_NULL.has(guard.label)
-      ? value !== null && value !== undefined
-      : value === true;
+    const grantedYes = threw === undefined && grantsYes(value);
     if (threw === undefined && grantedYes && !legitimate) {
       console.error(`  ${guard.label} on ${shape}: granted a yes (${JSON.stringify(value)}) — hostile input must be refused`);
       failed = true;
