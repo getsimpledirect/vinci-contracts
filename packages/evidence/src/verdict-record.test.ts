@@ -121,6 +121,23 @@ describe("statusIsSupportedBy is a gate, not a helper", () => {
     }
   });
 
+  it("refuses an entry whose status is an accessor or inherited", () => {
+    // The plain `result.status` read this replaces had two defects. The throw
+    // was reported by a reviewer; the inherited case is the one that
+    // manufactures a pass, and it returned TRUE.
+    const hostile: Array<[string, unknown]> = [
+      ["a throwing getter", { get status() { throw new Error("hostile"); } }],
+      ["a proxy get trap", new Proxy({}, { get() { throw new Error("trap"); } })],
+      ["a proxy gOPD trap", new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("g"); } })],
+      ["an INHERITED status", Object.create({ status: "supported" })],
+      ["a status getter returning supported", { get status() { return "supported"; } }],
+    ];
+    for (const [label, entry] of hostile) {
+      expect(() => statusIsSupportedBy("VERIFIED_PASS", [entry] as never), label).not.toThrow();
+      expect(statusIsSupportedBy("VERIFIED_PASS", [entry] as never), label).toBe(false);
+    }
+  });
+
   it("refuses hostile input instead of throwing", () => {
     // An external caller has not necessarily snapshotted anything.
     expect(() => statusIsSupportedBy("VERIFIED_PASS", null as never)).not.toThrow();

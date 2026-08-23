@@ -145,13 +145,39 @@ export function statusIsSupportedBy(
   // different statements, and only the second justifies a pass.
   if (criterionResults.length === 0) return false;
 
-  return criterionResults.every(
-    (result) =>
-      typeof result === "object"
-      && result !== null
-      && !Array.isArray(result)
-      && (result as { readonly status?: unknown }).status === "supported",
-  );
+  return criterionResults.every((result) => {
+    if (typeof result !== "object" || result === null || Array.isArray(result)) return false;
+
+    // Read the OWN data property, without ever invoking a getter.
+    //
+    // Two defects lived in the plain `result.status` read this replaces, and
+    // the second is the dangerous one:
+    //
+    //   [{ get status() { throw } }]        -> threw, from a function whose
+    //                                          comment promises it does not
+    //   [Object.create({status:"supported"})] -> TRUE. An object with NO own
+    //                                          status, inheriting one from its
+    //                                          prototype, counted as a
+    //                                          supported criterion.
+    //
+    // The second one manufactures a pass. An attacker supplying criterion
+    // results does not need a supported criterion, only a prototype that
+    // claims one. getOwnPropertyDescriptor answers the question actually
+    // meant — does this object ITSELF carry status as data — and an accessor
+    // or an inherited value both fail it.
+    let descriptor: PropertyDescriptor | undefined;
+    try {
+      // A Proxy can throw from its own getOwnPropertyDescriptor trap. Narrow
+      // catch: it wraps ONE read of caller-supplied data, not any logic of
+      // ours, so it cannot swallow a bug of our own the way a broad catch
+      // around the whole predicate would.
+      descriptor = Object.getOwnPropertyDescriptor(result, "status");
+    } catch {
+      return false;
+    }
+    if (descriptor === undefined || !("value" in descriptor)) return false;
+    return descriptor.value === "supported";
+  });
 }
 
 /** Closed-shape check for one nested object: declared keys, nothing else. */
