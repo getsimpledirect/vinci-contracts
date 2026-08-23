@@ -1,4 +1,11 @@
-import type { PolicyId, RunId, Timestamp, UserId } from "@vinci/contracts";
+import {
+  CONSEQUENTIAL_ACTION_CLASSES,
+  type ConsequentialActionClass,
+  type PolicyId,
+  type RunId,
+  type Timestamp,
+  type UserId,
+} from "@vinci/contracts";
 
 export const SYMLINK_HANDLING = ["deny", "allow_within_roots", "read_target_only"] as const;
 export type SymlinkHandling = (typeof SYMLINK_HANDLING)[number];
@@ -103,20 +110,13 @@ export type CredentialPolicy = CredentialMaterialExclusions & {
   readonly references: readonly CredentialReference[];
 };
 
-export const EXTERNAL_SIDE_EFFECT_CLASSES = [
-  "deployment",
-  "production_database_change",
-  "external_communication",
-  "financial_obligation",
-  "billing_modification",
-  "content_publication",
-  "customer_data_deletion",
-  "access_control_change",
-  "protected_branch_update",
-  "infrastructure_purchase",
-  "security_policy_change",
-] as const;
-export type ExternalSideEffectClass = (typeof EXTERNAL_SIDE_EFFECT_CLASSES)[number];
+/**
+ * Re-exported from @vinci/contracts rather than defined here. @vinci/approvals
+ * needs the same vocabulary to describe a pending request without quoting free
+ * text, and two copies of a list this specific would drift.
+ */
+export const EXTERNAL_SIDE_EFFECT_CLASSES = CONSEQUENTIAL_ACTION_CLASSES;
+export type ExternalSideEffectClass = ConsequentialActionClass;
 
 export type ExternalSideEffectRule = {
   readonly actionClass: ExternalSideEffectClass;
