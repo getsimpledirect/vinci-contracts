@@ -196,3 +196,41 @@ Order is a review convenience, not a dependency:
 2. `@vinci/receipts`
 3. Full gate, then an independent execution review on an engine that did not
    write the code.
+
+## Deliberate deviation from D4, recorded
+
+`@vinci/run-events` sets `unknownFields: "reject"` and `compatibility: "frozen"`.
+D4 names events *specifically* as preserving unknown fields, so this is a
+departure from an E0 decision and is recorded rather than left to be discovered.
+
+Two E0 principles genuinely conflict for this schema:
+
+- **D4** wants preservation, because losing a newer producer's field costs
+  replay fidelity through an older consumer.
+- **DR-3** forbids operational telemetry carrying prompts, responses, files,
+  memories, evidence content or secrets, and **FR-2.3** requires
+  content-minimization.
+
+An unknown field is exactly a place content can sit unexamined. The payload
+allowlist exists so content has nowhere to go; preserving unknown fields at the
+envelope would reopen at one level precisely what the allowlist closes at the
+other. The approvals notification already showed what "we will filter it later"
+is worth.
+
+Content-safety wins, because DR-3 is a prohibition while replay fidelity is a
+compatibility convenience. Both halves of the cost are stated plainly:
+
+- this log does **not** round-trip through older consumers;
+- every new event type or payload field is a **version bump**, not a free
+  addition — which is why the compatibility policy is `frozen` and not
+  `additive-only`.
+
+Declaring `additive-only` beside a validator that rejects unknown fields would
+have claimed a compatibility this schema does not provide — the same defect as a
+`SchemaMeta` advertising behaviour its validator lacks, which this repository
+has shipped twice.
+
+If replay fidelity later proves to matter more than this, the way to get it is a
+content-safe preservation envelope — a place for unrecognised fields that is
+structurally incapable of being read as event content — not by relaxing the
+validator and restating the claim.

@@ -11,6 +11,7 @@ import {
   validateRunEvent,
   verifyAppend,
   type RunEvent,
+  type RunEventFor,
   type SeenEvent,
 } from "./index.ts";
 
@@ -286,5 +287,61 @@ describe("the boundary refuses hostile raw input", () => {
   it("answers all six schema questions", () => {
     expect(() => assertSchemaMetaComplete(RUN_EVENT_SCHEMA_META)).not.toThrow();
     expect(RUN_EVENT_SCHEMA_META.unknownFields).toBe("reject");
+  });
+});
+
+describe("the payload type is wired to the event, not merely derived beside it", () => {
+  it("rejects a foreign payload field at compile time", () => {
+    // The derived PayloadFor existed while RunEvent still carried a broad index
+    // signature, so this typechecked and only the runtime rejected it. A
+    // structural guarantee that holds only at runtime is a runtime check with a
+    // comment attached.
+    const good: RunEventFor<"run.question"> = {
+      schemaVersion: 1,
+      eventId: "evt-1",
+      runId: "run-1" as RunEvent["runId"],
+      sequence: 1,
+      type: "run.question",
+      actor,
+      occurredAt: AT,
+      idempotencyKey: "key-1",
+      traceId: "trace-1",
+      payload: { questionId: { kind: "id", value: "q-1" } },
+    };
+    expect(validateRunEvent(good).ok).toBe(true);
+
+    const smuggled: RunEventFor<"run.question"> = {
+      ...good,
+      payload: {
+        questionId: { kind: "id", value: "q-1" },
+        // @ts-expect-error `prompt` is not a field of run.question
+        prompt: { kind: "id", value: "SECRET" },
+      },
+    };
+    expect(validateRunEvent(smuggled).ok).toBe(false);
+  });
+
+  it("rejects a payload belonging to a different event type", () => {
+    const mismatched = {
+      schemaVersion: 1,
+      eventId: "evt-1",
+      runId: "run-1",
+      sequence: 1,
+      type: "run.question",
+      actor,
+      occurredAt: AT,
+      idempotencyKey: "key-1",
+      traceId: "trace-1",
+      // @ts-expect-error run.question does not take run.started's payload
+      payload: { workerId: { kind: "id", value: "w-1" } },
+    } satisfies RunEventFor<"run.question">;
+    expect(validateRunEvent(mismatched).ok).toBe(false);
+  });
+
+  it("declares a compatibility policy its validator actually honours", () => {
+    // additive-only means consumers tolerate new fields. This validator rejects
+    // them, so the pair was incoherent.
+    expect(RUN_EVENT_SCHEMA_META.unknownFields).toBe("reject");
+    expect(RUN_EVENT_SCHEMA_META.compatibility).toBe("frozen");
   });
 });

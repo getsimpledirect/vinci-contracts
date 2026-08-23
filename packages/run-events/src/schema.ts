@@ -283,16 +283,43 @@ export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
   id: "vinci.run-event",
   version: 1,
   /**
-   * New event types and new payload fields may be added. Existing ones may not
-   * change meaning, because an append-only log is replayed by consumers written
-   * against older versions (FR-2.3).
+   * FROZEN, not additive-only, and the pair below is why.
+   *
+   * E0 defines additive-only as "new optional fields and new union members may
+   * be added; consumers must tolerate both". A validator that REJECTS unknown
+   * fields does not tolerate them — an older consumer handed a newer event
+   * carrying a new field refuses it outright. Declaring additive-only beside
+   * `unknownFields: "reject"` claimed a compatibility this schema does not
+   * provide, which is the same defect as a SchemaMeta advertising behaviour its
+   * validator lacks.
+   *
+   * So additions are version bumps. That is a real cost — every new event type
+   * or payload field becomes a coordinated change rather than a free one — and
+   * it is the deliberate price of the choice below.
    */
-  compatibility: "additive-only",
+  compatibility: "frozen",
   /**
-   * Rejected, not preserved — the D4 exception. Events are the record of what
-   * happened and are exported into receipts; an unrecognised field is somewhere
-   * content could sit unexamined, which is what the payload allowlist exists to
-   * prevent. Preserving one would reopen it at the envelope level.
+   * Rejected, and this is a considered DEVIATION from D4, which names events
+   * specifically as preserving unknown fields so an append-only log survives a
+   * round trip through an older consumer.
+   *
+   * Two E0 principles genuinely conflict here. D4 wants preservation because
+   * losing a newer producer's field costs replay fidelity. DR-3 forbids
+   * operational telemetry carrying prompts, responses, files, memories,
+   * evidence content or secrets, and FR-2.3 requires content-minimization.
+   *
+   * An unknown field is precisely a place content can sit unexamined, and the
+   * payload allowlist exists to leave content nowhere to go. Preserving unknown
+   * fields at the envelope would reopen at one level exactly what the allowlist
+   * closes at the other, and the approvals notification already demonstrated
+   * what "we will filter it later" is worth.
+   *
+   * Content-safety wins because DR-3 is a prohibition and replay fidelity is a
+   * compatibility convenience. The cost is named rather than hidden: this log
+   * does not round-trip through older consumers, and the frozen policy above is
+   * how that is made survivable.
+   *
+   * Recorded in docs/layer2-plan.md as a deliberate deviation, not an oversight.
    */
   unknownFields: "reject",
   malformedData: "fail-closed",
