@@ -340,6 +340,32 @@ const NOT_AUTHORITY_GUARDS = {
   "device-auth.revoke": "state transition over an already-validated record",
 };
 
+/**
+ * Guards that snapshot their input through toPlainRecord before judging it.
+ *
+ * For these, an ACCESSOR is not hostile input. Serialization invokes the getter
+ * exactly once and captures the result as data; the snapshot is inert and the
+ * original object is never consulted again, so there is no second read for a
+ * getter to answer differently. Accepting it is correct, and is what the
+ * validator does with the same value.
+ *
+ * The distinction is per-guard and not global, which is the whole reason this
+ * is a list rather than a corpus edit: the same accessor shape IS hostile to
+ * statusIsSupportedBy, which is handed a raw array and reads it directly.
+ * Deleting the shape from the corpus to make this file green would have
+ * silently dropped that coverage.
+ */
+const SNAPSHOTTING_GUARDS = new Set([
+  "contracts.plainActor",
+  "contracts.actorFieldsAreConsistent",
+  "evidence.isProvenanceConsistent",
+]);
+
+/** Shapes a snapshotting guard may legitimately accept. */
+const LEGITIMATE_FOR_SNAPSHOTTING = new Set([
+  "an object whose kind is an accessor",
+]);
+
 /** Hostile scalars, arrays and prototype tricks a guard must survive. */
 function hostileValues() {
   const sneakyEvery = [];
@@ -445,9 +471,13 @@ for (const guard of AUTHORITY_GUARDS) {
       threw = error instanceof Error ? error.message : String(error);
     }
 
-    // THE AUTHORITY PROPERTY: hostile input must never yield a yes. This is
-    // never waived for anything.
-    if (threw === undefined && value === true) {
+    // THE AUTHORITY PROPERTY: hostile input must never yield a yes. Waived
+    // ONLY where the shape is not actually hostile to that guard — see
+    // SNAPSHOTTING_GUARDS. Never waived for a shape that can lie twice.
+    const legitimate =
+      SNAPSHOTTING_GUARDS.has(`${guard.pkg}.${guard.export}`)
+      && LEGITIMATE_FOR_SNAPSHOTTING.has(shape);
+    if (threw === undefined && value === true && !legitimate) {
       console.error(`  ${guard.label} on ${shape}: RETURNED TRUE — hostile input granted a yes`);
       failed = true;
     }

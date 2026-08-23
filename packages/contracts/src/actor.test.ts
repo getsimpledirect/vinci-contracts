@@ -17,9 +17,18 @@ describe("an actor's fields must be its OWN data", () => {
     ).toBe(false);
   });
 
-  it("refuses accessors, which can answer differently on a later read", () => {
-    expect(actorFieldsAreConsistent({ get kind() { return "worker"; }, workerId: "w" })).toBe(false);
-    expect(actorFieldsAreConsistent({ kind: "worker", get workerId() { return "w"; } })).toBe(false);
+  it("accepts an accessor as the single value serialization captured", () => {
+    // This used to refuse accessors, on the reasoning that one can answer
+    // differently on a later read. True in general, and irrelevant here: the
+    // snapshot is taken by serialization, which invokes the getter ONCE and
+    // stores the result as data. There is no later read of the original for a
+    // getter to answer differently. Refusing was strictly stricter than the
+    // validator, and a helper that disagrees with the validator about the same
+    // value is the defect this file exists to prevent — in whichever direction.
+    expect(actorFieldsAreConsistent({ get kind() { return "worker"; }, workerId: "w" })).toBe(true);
+    expect(actorFieldsAreConsistent({ kind: "worker", get workerId() { return "w"; } })).toBe(true);
+    // A getter whose captured value is inconsistent is still refused.
+    expect(actorFieldsAreConsistent({ get kind() { return "verifier"; }, workerId: "w" })).toBe(false);
   });
 
   it("refuses hostile input instead of throwing", () => {
@@ -72,11 +81,18 @@ describe("an actor is snapshotted once, so a Proxy cannot serve two views", () =
     expect((proxy as unknown as { kind: string }).kind).toBe("verifier");
   });
 
-  it("returns the reflected view, and the same view every time", () => {
-    const snapshot = plainActor(twoFaced() as never);
+  it("refuses the two-faced proxy outright, agreeing with the validator", () => {
+    // It used to return the DESCRIPTOR view ("worker") while the validator,
+    // which snapshots by serialization, saw "verifier". Two lenses on one
+    // object: the stored record and the authority decision described different
+    // actors. Both now read through toPlainRecord, so the serialized view is
+    // the only view — and a verifier carrying a workerId is refused.
+    expect(plainActor(twoFaced() as never)).toBe(null);
+  });
+
+  it("returns a frozen, null-prototype snapshot for honest actors", () => {
+    const snapshot = plainActor({ kind: "worker", workerId: "w" });
     expect(snapshot?.kind).toBe("worker");
-    expect(snapshot?.independent).toBeUndefined();
-    // Frozen and null-prototype: nothing downstream can be handed a second view.
     expect(Object.isFrozen(snapshot)).toBe(true);
     expect(Object.getPrototypeOf(snapshot)).toBe(null);
   });

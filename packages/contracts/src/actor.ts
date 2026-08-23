@@ -1,3 +1,4 @@
+import { toPlainRecord } from "./plain-record.ts";
 import { isNonBlankText } from "./scalars.ts";
 import type { DeviceId, UserId, WorkerId } from "./ids.ts";
 
@@ -105,13 +106,6 @@ export function isActorKind(value: unknown): value is Actor["kind"] {
 }
 
 /**
- * Does this record carry exactly the fields its own `kind` permits?
- *
- * Shared by anything that inspects an actor, so a predicate and a validator
- * cannot answer differently — which they did: for a verifier carrying a
- * `workerId`, one said consistent and the other refused.
- */
-/**
  * One inert, own-data copy of an actor — or null if it is not a consistent one.
  *
  * THE POINT IS THAT THERE IS ONE READ. Callers must decide from the returned
@@ -129,47 +123,55 @@ export function isActorKind(value: unknown): value is Actor["kind"] {
  * Reflection saw an honest worker and said "consistent". The very next
  * property read said "independent verifier", and a worker was authorized to
  * vouch for its own output — the one thing the evidence layer must never
- * permit. Descriptor-based checking did not defeat this; it only moved which
- * lens was lied to.
+ * permit.
  *
- * This is the E0 lesson about `toPlainRecord`, arriving one layer up: you
+ * Rewriting the check to walk descriptors did not fix that; it only moved
+ * which lens was lied to. Measured against this same proxy:
+ *
+ *   descriptors report        { kind: "worker",   workerId: "w" }
+ *   toPlainRecord reports     { kind: "verifier", workerId: "w" }
+ *
+ * and toPlainRecord's is the view that gets stored and validated. So the
+ * record on disk said verifier while this function said worker.
+ *
+ * This is the E0 lesson about `toPlainRecord` arriving one layer up: you
  * cannot validate a Proxy by reflecting on it, because the reflection IS the
- * Proxy. The only defence is to stop asking — take one copy and work from it.
+ * Proxy. The defence is not a better reflection — it is deferring to the ONE
+ * boundary the whole repository already uses, so there is a single answer to
+ * "what is this value" rather than a well-polished second one.
  */
 export function plainActor(
   actor: Readonly<Record<string, unknown>>,
 ): Readonly<Record<string, unknown>> | null {
-  if (typeof actor !== "object" || actor === null || Array.isArray(actor)) return null;
+  // Snapshot through the SAME boundary every validator uses.
+  //
+  // This used to walk own property descriptors itself, which was one read and
+  // therefore safe against the check-then-decide split. But it was a DIFFERENT
+  // read from the one `toPlainRecord` performs, and a Proxy can make the two
+  // disagree about what the actor even is:
+  //
+  //   descriptors say  { kind: "worker",   workerId: "w" }
+  //   serialization says { kind: "verifier", workerId: "w" }
+  //
+  // The serialized view is the one that gets stored and validated, so the
+  // record on disk said verifier while this function's authority decision said
+  // worker. Two lenses is the bug, however carefully each one is polished —
+  // moving it from inside a function to across a package boundary did not fix
+  // it, it just made it harder to see.
+  //
+  // Deferring to toPlainRecord means there is ONE definition of "what this
+  // value is" in the entire repository. Accessors are invoked exactly once by
+  // serialization and captured as data, which is why an accessor actor is now
+  // accepted here as it always was by the validator.
+  const snapshot = toPlainRecord(actor);
+  if (!snapshot.ok) return null;
+  const record: Readonly<Record<string, unknown>> = snapshot.value;
 
-  let fields: string[];
-  try {
-    fields = Object.keys(actor);
-  } catch {
-    return null;
-  }
-
-  // Copy every own data property ONCE, before anything is judged. A trap that
-  // changes its answer between reads gets one chance to speak, and whatever it
-  // said is what both the check and the decision will see.
-  const snapshot: Record<string, unknown> = Object.create(null);
-  for (const field of fields) {
-    let descriptor: PropertyDescriptor | undefined;
-    try {
-      descriptor = Object.getOwnPropertyDescriptor(actor, field);
-    } catch {
-      return null;
-    }
-    // No descriptor => vanished between ownKeys and this read. No "value" =>
-    // an accessor, which may answer differently next time. Both refuse.
-    if (descriptor === undefined || !("value" in descriptor)) return null;
-    snapshot[field] = descriptor.value;
-  }
-
-  // Everything below reads the SNAPSHOT. `actor` is never touched again.
-  const kind = snapshot.kind;
+  const kind = record.kind;
   if (!isActorKind(kind)) return null;
+
   const permitted = new Set(ACTOR_FIELDS[kind]);
-  for (const field of Object.keys(snapshot)) {
+  for (const field of Object.keys(record)) {
     if (!permitted.has(field)) return null;
   }
 
@@ -178,7 +180,7 @@ export function plainActor(
   // disagreed with the validator on all of them.
   const rules: Readonly<Record<string, string>> = ACTOR_FIELD_RULES[kind];
   for (const [field, rule] of Object.entries(rules)) {
-    const value = snapshot[field];
+    const value = record[field];
     if (value === undefined) {
       if (rule.endsWith("?")) continue;
       return null;
@@ -203,9 +205,16 @@ export function plainActor(
     }
   }
 
-  return Object.freeze(snapshot);
+  return Object.freeze(record);
 }
 
+/**
+ * Does this record carry exactly the fields its own `kind` permits?
+ *
+ * Shared by anything that inspects an actor, so a predicate and a validator
+ * cannot answer differently — which they did: for a verifier carrying a
+ * `workerId`, one said consistent and the other refused.
+ */
 /**
  * Does this record carry exactly the fields its own `kind` permits?
  *

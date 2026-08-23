@@ -3,7 +3,32 @@ import { plainActor } from "@vinci/contracts";
 import { validateEvidenceRecord } from "./schema.ts";
 
 /**
- * The exported helper and the validator must agree about every actor.
+ * The exported helper must never be MORE PERMISSIVE than the validator.
+ *
+ * An earlier version of this file promised something stronger and false: that
+ * the two agree on every actor shape. An independent review falsified it with
+ *
+ *   { get kind() { return "worker"; }, workerId: "w" }
+ *
+ * which plainActor REJECTS and validateEvidenceRecord ACCEPTS. Both are right
+ * for their own contract, and the promise was the thing that was wrong. They
+ * receive different things: plainActor is handed a raw, possibly-live object
+ * and must refuse an accessor, because an accessor can answer differently on
+ * the read after the one that was checked. validateEvidenceRecord snapshots
+ * through toPlainRecord first, which serializes the getter exactly once and
+ * then validates inert data — so by the time it decides, the accessor is gone
+ * and what remains is honest.
+ *
+ * The property that actually protects anything is DIRECTIONAL. A helper
+ * stricter than the validator costs a caller a rejection. A helper looser than
+ * the validator is an alternate, unwatched route to authority — which is what
+ * both real divergences here were: a verifier carrying a workerId, and a worker
+ * carrying no identity at all.
+ *
+ * So: equality is asserted for plain-data actors, where the two see the same
+ * value and any difference is a genuine defect; and the one-way implication is
+ * asserted for live objects, where a difference is expected and only the
+ * permissive direction is a bug.
  *
  * They have now disagreed twice, and both times the helper was the permissive
  * one: first for a verifier carrying a workerId, then for a worker carrying no
@@ -50,6 +75,48 @@ function mutations(actor: Readonly<Record<string, unknown>>): Array<[string, unk
   out.push(["extra foreign field", { ...actor, workerId: "w", verifierId: "v" }]);
   out.push(["all fields inherited", Object.create({ ...actor })]);
   return out;
+}
+
+/**
+ * Actors that are LIVE objects rather than plain data.
+ *
+ * The mutation class the previous corpus omitted, and the omission is the
+ * reason the false promise survived: every generated case above is plain data,
+ * so the two functions saw identical values and could not disagree.
+ */
+function liveObjectActors(): Array<[string, () => unknown]> {
+  // FACTORIES, not instances. A stateful trap advances on every call, so
+  // handing the SAME object to the helper and then to the validator compares
+  // two different object states and calls the difference a disagreement. That
+  // flaw was real in the first version of this file, and it is the kind of
+  // thing that manufactures a finding out of nothing.
+  const base = () => ({ kind: "worker", workerId: "w" });
+  return [
+    ["kind is an accessor", () => ({ get kind() { return "worker"; }, workerId: "w" })],
+    ["identifier is an accessor", () => ({ kind: "worker", get workerId() { return "w"; } })],
+    ["accessor returning a foreign kind", () => ({ get kind() { return "verifier"; }, workerId: "w" })],
+    ["a throwing getter", () => ({ get kind(): never { throw new Error("hostile"); }, workerId: "w" })],
+    ["a two-faced proxy", () => new Proxy(base(), {
+      get: (target, prop, receiver) =>
+        prop === "kind" ? "verifier" : prop === "independent" ? true : Reflect.get(target, prop, receiver),
+      getOwnPropertyDescriptor: (target, prop) => Reflect.getOwnPropertyDescriptor(target, prop),
+      ownKeys: (target) => Reflect.ownKeys(target),
+    })],
+    ["a proxy whose descriptor shifts between reads", () => {
+      let flips = 0;
+      return new Proxy(base(), {
+      getOwnPropertyDescriptor(target, prop) {
+        flips += 1;
+        if (prop === "kind") {
+          return { value: flips > 2 ? "verifier" : "worker", writable: true, enumerable: true, configurable: true };
+        }
+        return Reflect.getOwnPropertyDescriptor(target, prop);
+      },
+      ownKeys: (target) => Reflect.ownKeys(target),
+      });
+    }],
+    ["a proxy that throws from ownKeys", () => new Proxy(base(), { ownKeys() { throw new Error("ownKeys"); } })],
+  ];
 }
 
 /**
@@ -101,6 +168,47 @@ describe("plainActor agrees with validateEvidenceRecord on every actor shape", (
       });
     }
   }
+
+  for (const [label, make] of liveObjectActors()) {
+    it(`live object / ${label}: helper is never more permissive`, () => {
+      // A FRESH instance for each call, so a stateful trap cannot make one
+      // call observe what the other advanced past.
+      let helperAccepts = false;
+      let validator = false;
+      expect(() => { helperAccepts = plainActor(make() as never) !== null; }).not.toThrow();
+      expect(() => { validator = validatorAccepts(make()); }).not.toThrow();
+      if (helperAccepts) {
+        expect(
+          validator,
+          `plainActor accepted what the validator refused: ${label} — an unwatched route to authority`,
+        ).toBe(true);
+      }
+    });
+  }
+
+  it("agrees on the accessor case a review used to falsify the promise", () => {
+    // This case previously DIVERGED — the helper refused it and the validator
+    // accepted it — because the two used different read disciplines. They now
+    // share one, so they agree, and the divergence is eliminated rather than
+    // documented.
+    const accessor = { get kind() { return "worker"; }, workerId: "w" };
+    expect(plainActor(accessor as never) !== null).toBe(validatorAccepts(accessor));
+    // And the captured value is the getter's single invocation, as data.
+    expect(plainActor(accessor as never)?.kind).toBe("worker");
+  });
+
+  it("sees the same actor the validator sees, even through a two-faced proxy", () => {
+    // The gap the directional check caught: descriptors said "worker" while
+    // serialization said "verifier", so the stored record and the authority
+    // decision described different actors.
+    const proxy = new Proxy({ kind: "worker", workerId: "w" }, {
+      get: (target, prop, receiver) =>
+        prop === "kind" ? "verifier" : prop === "independent" ? true : Reflect.get(target, prop, receiver),
+      getOwnPropertyDescriptor: (target, prop) => Reflect.getOwnPropertyDescriptor(target, prop),
+      ownKeys: (target) => Reflect.ownKeys(target),
+    });
+    expect(plainActor(proxy as never) !== null).toBe(validatorAccepts(proxy));
+  });
 
   it("accepts every genuinely valid actor (positive control)", () => {
     // Without this the suite is satisfied by a helper and a validator that

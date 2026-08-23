@@ -779,8 +779,12 @@ describe("provenance is decided from the snapshot, never from a re-read", () => 
       ownKeys: (t) => Reflect.ownKeys(t),
     });
     expect(isProvenanceConsistent("independent_verifier" as never, proxy as never)).toBe(false);
-    // And it is still correctly read as the honest worker it wraps.
-    expect(isProvenanceConsistent("worker_provided" as never, proxy as never)).toBe(true);
+    // And it is refused for EVERY provenance, not reclassified as a worker.
+    // Serialization sees {kind:"verifier", workerId:"w"} — a verifier carrying
+    // a field its kind does not permit — so the actor is rejected outright,
+    // which is both stricter than before and identical to what the validator
+    // concludes about the same object.
+    expect(isProvenanceConsistent("worker_provided" as never, proxy as never)).toBe(false);
   });
 
   it("still accepts genuine provenance, and still refuses undisclosed non-independence", () => {
