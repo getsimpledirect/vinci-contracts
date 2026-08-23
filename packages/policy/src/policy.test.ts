@@ -254,3 +254,47 @@ describe("policy decisions", () => {
     if (!result.ok) expect(result.issues.some((issue) => issue.path === "/availableOptions")).toBe(true);
   });
 });
+
+describe("credential material cannot reach a policy", () => {
+  // A denylist of known secret-ish field names is the wrong shape for a
+  // security boundary: it is only as good as the imagination of whoever wrote
+  // the list. These are the names real providers actually use.
+  const REAL_WORLD_SECRET_FIELDS = [
+    "clientSecret", // OAuth
+    "secretAccessKey", // AWS
+    "privateKeyPem", // service accounts
+    "connectionString", // databases, often with the password inline
+    "webhookSecret", // GitHub, Stripe
+    "sasToken", // Azure
+  ];
+
+  it.each(REAL_WORLD_SECRET_FIELDS)("rejects a secret under %s", (field) => {
+    const manifest = structuredClone(validManifest);
+    (manifest.credentials.references[0] as Record<string, unknown>)[field] = "s3cr3t-value";
+
+    const result = validatePolicyManifest(manifest);
+    expect(result.ok).toBe(false);
+  });
+
+  it("never preserves an unrecognised credential field as an unknown field", () => {
+    // The failure this guards is subtler than acceptance: if validation passes
+    // and the field is retained in unknownFields, the secret is now inside a
+    // record that FR-6 says gets exported and SR-3 says must never carry
+    // secrets. Preserving it is worse than dropping it.
+    const manifest = structuredClone(validManifest);
+    (manifest.credentials.references[0] as Record<string, unknown>).clientSecret = "s3cr3t-value";
+
+    const result = validatePolicyManifest(manifest);
+    if (result.ok) {
+      expect(JSON.stringify(result.unknownFields)).not.toContain("s3cr3t-value");
+      throw new Error("a credential carrying secret material must not validate");
+    }
+    expect(result.issues.some((i) => i.code === "credential_material_forbidden")).toBe(true);
+  });
+
+  it("still accepts the reference-and-metadata shape it is supposed to allow", () => {
+    // The fix must not make the credentials section unusable — a legitimate
+    // reference with only safe metadata has to keep validating.
+    expect(validatePolicyManifest(structuredClone(validManifest)).ok).toBe(true);
+  });
+});

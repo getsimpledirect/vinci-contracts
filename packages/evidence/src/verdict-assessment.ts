@@ -54,7 +54,7 @@ export const VERDICT_STALENESS_TRIGGERS = [
   "worker_resumed_and_modified",
 ] as const;
 
-export type VerdictStalenessTriggger = (typeof VERDICT_STALENESS_TRIGGERS)[number];
+export type VerdictStalenessTrigger = (typeof VERDICT_STALENESS_TRIGGERS)[number];
 
 /**
  * A verdict assessment: either a current assessment or an explicitly stale one.
@@ -86,7 +86,7 @@ export type VerdictAssessment =
    *
    * The `reason` is a human-readable explanation for the staleness. The
    * `triggers` list the conditions that made it stale, drawn from
-   * `VerdictStalenessTriggger`.
+   * `VerdictStalenessTrigger`.
    */
   | {
       readonly kind: "stale";
@@ -101,7 +101,7 @@ export type VerdictAssessment =
        * verdict become stale because the policy changed, or because the code
        * changed?"
        */
-      readonly triggers: readonly string[];
+      readonly triggers: readonly VerdictStalenessTrigger[];
     };
 
 /**

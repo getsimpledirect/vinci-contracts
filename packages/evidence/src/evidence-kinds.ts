@@ -8,7 +8,7 @@
  */
 
 /**
- * The eighteen kinds of evidence that can support an acceptance criterion.
+ * The nineteen kinds of evidence that can support an acceptance criterion.
  *
  * Each kind carries different reliability signals and drives different
  * verification strategies. A criterion requiring `unit_test` evidence cannot

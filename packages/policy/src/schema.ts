@@ -28,6 +28,11 @@ export const POLICY_MANIFEST_SCHEMA_META = {
   id: "vinci.policy-manifest",
   version: 1,
   compatibility: "additive-only",
+  /**
+   * Preserved everywhere except under `/credentials`, where an unrecognised
+   * field is rejected because it may be secret material. See
+   * `strictObjectValue` and docs/E0-decisions.md D4.
+   */
   unknownFields: "preserve",
   malformedData: "fail-closed",
   migration: "none",
@@ -93,6 +98,54 @@ function objectValue(
   const known = new Set(knownFields);
   for (const [field, fieldValue] of Object.entries(result)) {
     if (!known.has(field)) unknownFields[pointer(path, field)] = fieldValue;
+  }
+  return result;
+}
+
+/**
+ * Like `objectValue`, but REJECTS unrecognised fields instead of preserving
+ * them.
+ *
+ * This is the second exception to D4's "unknown fields are preserved" rule,
+ * and it exists only under `/credentials`. Everywhere else, preserving an
+ * unknown field is right: it lets an older consumer round-trip a newer
+ * producer's record without losing data.
+ *
+ * Under `/credentials` it is exactly backwards. An unrecognised field there
+ * may be secret material, and preserving it puts the secret inside a record
+ * that FR-6.5 says is exported and SR-3 says must never carry secrets — so
+ * preserving is strictly worse than dropping, and dropping is worse than
+ * refusing the policy outright.
+ *
+ * A denylist of known secret-ish names cannot do this job. It is only as good
+ * as the imagination of whoever wrote it, and misses `clientSecret`,
+ * `secretAccessKey`, `connectionString` and every name a future provider
+ * invents. An allowlist fails closed on all of them by construction.
+ */
+function strictObjectValue(
+  value: unknown,
+  path: string,
+  knownFields: readonly string[],
+  issues: ValidationIssue[],
+): JsonObject | undefined {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    addIssue(issues, path, "invalid_type", "expected an object");
+    return undefined;
+  }
+  const result = value as JsonObject;
+  const known = new Set(knownFields);
+  for (const field of Object.keys(result)) {
+    if (known.has(field)) continue;
+    addIssue(
+      issues,
+      pointer(path, field),
+      "credential_material_forbidden",
+      "unrecognised field in a credential section; policies may contain references and safe metadata only, and an unknown field here may be secret material",
+    );
   }
   return result;
 }
@@ -349,40 +402,20 @@ function rejectCredentialMaterial(object: JsonObject, path: string, issues: Vali
   }
 }
 
-function validateCredentialBinding(
-  value: unknown,
-  path: string,
-  issues: ValidationIssue[],
-  unknown: UnknownFields,
-): void {
-  const object = objectValue(value, path, ["kind", "runId", "capability"], issues, unknown);
+function validateCredentialBinding(value: unknown, path: string, issues: ValidationIssue[]): void {
+  const object = strictObjectValue(value, path, ["kind", "runId", "capability"], issues);
   if (!object) return;
   if (!enumValue(object.kind, ["run", "capability"] as const, `${path}/kind`, issues)) return;
   if (object.kind === "run") requiredString(object.runId, `${path}/runId`, issues);
   if (object.kind === "capability") requiredString(object.capability, `${path}/capability`, issues);
 }
 
-function validateCredentialReference(
-  value: unknown,
-  path: string,
-  issues: ValidationIssue[],
-  unknown: UnknownFields,
-): void {
-  const object = objectValue(
+function validateCredentialReference(value: unknown, path: string, issues: ValidationIssue[]): void {
+  const object = strictObjectValue(
     value,
     path,
-    [
-      "credentialId",
-      "issuer",
-      "scopes",
-      "revocable",
-      "lifetime",
-      "boundTo",
-      "expiresAt",
-      ...CREDENTIAL_MATERIAL_FIELD_NAMES,
-    ],
+    ["credentialId", "issuer", "scopes", "revocable", "lifetime", "boundTo", "expiresAt"],
     issues,
-    unknown,
   );
   if (!object) return;
   rejectCredentialMaterial(object, path, issues);
@@ -393,7 +426,7 @@ function validateCredentialReference(
     addIssue(issues, `${path}/revocable`, "invalid_literal", "credential references must be revocable");
   }
   const lifetimeValid = enumValue(object.lifetime, CREDENTIAL_LIFETIMES, `${path}/lifetime`, issues);
-  validateCredentialBinding(object.boundTo, `${path}/boundTo`, issues, unknown);
+  validateCredentialBinding(object.boundTo, `${path}/boundTo`, issues);
   if (lifetimeValid && object.lifetime === "short_lived") {
     requiredString(object.expiresAt, `${path}/expiresAt`, issues);
   } else if (object.expiresAt !== undefined) {
@@ -401,23 +434,13 @@ function validateCredentialReference(
   }
 }
 
-function validateCredentials(
-  value: unknown,
-  issues: ValidationIssue[],
-  unknown: UnknownFields,
-): void {
+function validateCredentials(value: unknown, issues: ValidationIssue[]): void {
   const path = "/credentials";
-  const object = objectValue(
-    value,
-    path,
-    ["references", ...CREDENTIAL_MATERIAL_FIELD_NAMES],
-    issues,
-    unknown,
-  );
+  const object = strictObjectValue(value, path, ["references"], issues);
   if (!object) return;
   rejectCredentialMaterial(object, path, issues);
   objectArray(object.references, `${path}/references`, issues, (entry, entryPath) => {
-    validateCredentialReference(entry, entryPath, issues, unknown);
+    validateCredentialReference(entry, entryPath, issues);
   });
 }
 
@@ -647,7 +670,7 @@ export function validatePolicyManifest(input: unknown): ValidationResult<PolicyM
   validateFilesystem(object.filesystem, issues, unknownFields);
   validateApplications(object.applications, issues, unknownFields);
   validateNetwork(object.network, issues, unknownFields);
-  validateCredentials(object.credentials, issues, unknownFields);
+  validateCredentials(object.credentials, issues);
   validateExternalSideEffects(object.external_side_effects, issues, unknownFields);
   validateSpend(object.spend, issues, unknownFields);
   validateRuntime(object.runtime, issues, unknownFields);
