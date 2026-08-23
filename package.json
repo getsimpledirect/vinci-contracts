@@ -1,0 +1,25 @@
+{
+  "name": "vinci-contracts",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "tsc --build",
+    "test": "vitest run",
+    "lint": "eslint packages",
+    "typecheck": "tsc --build --dry && npm run typecheck --workspaces --if-present",
+    "check:graph": "node scripts/check-dependency-graph.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.1",
+    "eslint": "9.39.1",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.49.0",
+    "vitest": "3.2.4"
+  }
+}
