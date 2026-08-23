@@ -5,6 +5,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
   toPlainRecord,
+  isNonBlankText,
 } from "@vinci/contracts";
 import {
   EVIDENCE_KINDS,
@@ -79,8 +80,14 @@ function requiredString(value: unknown, path: string, issues: ValidationIssue[])
     addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
     return false;
   }
-  if (typeof value !== "string" || value.length === 0) {
-    addIssue(issues, path, "invalid_string", "expected a non-empty string");
+  // trim, not length. `"   "` has a non-zero length and carries nothing: it
+  // satisfies a typeof check and a length check while telling a reader
+  // nothing, which is exactly the shape a field takes when a schema demanded
+  // it and the producer had nothing to put there. This helper backs every
+  // actor identifier on an evidence record, so a blank workerId or verifierId
+  // was attributable to nobody while still passing validation.
+  if (!isNonBlankText(value)) {
+    addIssue(issues, path, "invalid_string", "expected a non-empty, non-blank string");
     return false;
   }
   return true;

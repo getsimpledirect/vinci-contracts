@@ -3,6 +3,7 @@ import {
   isCanonicalTimestamp,
   ok,
   toPlainRecord,
+  type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
 } from "@vinci/contracts";
@@ -230,3 +231,22 @@ export function validateRemoteDecisionState(
   if (issues.length > 0) return fail(issues);
   return ok(record as unknown as RemoteDecisionState, {});
 }
+
+export const REMOTE_DECISION_STATE_SCHEMA_META: SchemaMeta = {
+  id: "vinci.remote-decision-state",
+  version: 1,
+  /**
+   * Frozen, like the session binding beside it: the validator rejects unknown
+   * fields, and a schema that refuses additions has not left room for them.
+   */
+  compatibility: "frozen",
+  unknownFields: "reject",
+  malformedData: "fail-closed",
+  /**
+   * An unrecognised `kind` is rejected rather than preserved — the documented
+   * exception to the unknown-field rule for state members. A decision state
+   * nobody understands must not be carried forward as though it were
+   * understood, because the thing it decides is authority.
+   */
+  migration: "none",
+};

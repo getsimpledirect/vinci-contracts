@@ -679,3 +679,46 @@ describe("a verdict cannot claim more than its evidence supports", () => {
     expect(validateVerdictRecord(verdict({ status: "FAILED" })).ok).toBe(false);
   });
 });
+
+describe("a required string must carry content, not just length", () => {
+  it("accepts the valid record unchanged", () => {
+    // Positive control. Every negative case below mutates exactly one field of
+    // this record, so a failure localises rather than meaning "something else
+    // in a fifteen-field fixture broke".
+    expect(validateEvidenceRecord(validEvidenceRecord()).ok).toBe(true);
+  });
+
+  it("rejects a blank id or summary", () => {
+    for (const blank of ["   ", "\t", "\n", " "]) {
+      expect(
+        validateEvidenceRecord({ ...validEvidenceRecord(), id: blank }).ok,
+        `id=${JSON.stringify(blank)}`,
+      ).toBe(false);
+      expect(
+        validateEvidenceRecord({ ...validEvidenceRecord(), summary: blank }).ok,
+        `summary=${JSON.stringify(blank)}`,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects a blank actor identifier", () => {
+    // A blank workerId passed a typeof check and a length check while being
+    // attributable to nobody — on the field that says who produced the
+    // evidence, which is the whole point of an attestation.
+    const record = {
+      ...validEvidenceRecord(),
+      attestation: {
+        provenance: "worker_provided",
+        actor: { kind: "worker", workerId: "   " },
+      },
+    };
+    expect(validateEvidenceRecord(record).ok).toBe(false);
+  });
+
+  it("still accepts identifiers with internal or surrounding content", () => {
+    // The check is trim-based, so it must not reject a legitimate value that
+    // merely contains whitespace.
+    const record = { ...validEvidenceRecord(), summary: "ran 3 tests, all passed" };
+    expect(validateEvidenceRecord(record).ok).toBe(true);
+  });
+});
