@@ -5,6 +5,7 @@ import {
   VERDICT_ASSESSMENT_SCHEMA_META,
   FAILURE_OWNERS,
   countsAgainstSubmittedWork,
+  validateVerdictRecord,
   isProvenanceConsistent,
   verdictAssessmentFor,
   validateEvidenceRecord,
@@ -575,5 +576,106 @@ describe("what was not checked has to be said", () => {
     expect(
       withNotTested([{ description: "d", reason: "r", severity: "low" }]).ok,
     ).toBe(false);
+  });
+});
+
+describe("a verdict cannot claim more than its evidence supports", () => {
+  const verdict = (o: Record<string, unknown> = {}) => ({
+    schemaVersion: 1,
+    status: "VERIFIED_PASS",
+    snapshotDigest: "a".repeat(64),
+    summary: "The requested endpoint behaves as specified",
+    scope: "the /orders endpoint at commit abc123, by execution",
+    criterionResults: [
+      { criterionId: "c-1", status: "supported", summary: "returns 404 for unknown ids", evidenceIds: ["e-1"] },
+    ],
+    decisiveEvidenceIds: ["e-1"],
+    unresolvedConditions: [],
+    residualRisks: [],
+    notTested: [],
+    policyVersion: "policy-v3",
+    evaluatorVersion: "acceptance-2026.08",
+    issuedAt: "2026-08-23T12:34:56.789Z",
+    expiresAt: null,
+    staleWhen: [],
+    ...o,
+  });
+
+  it("accepts a pass whose criteria are all supported", () => {
+    expect(validateVerdictRecord(verdict()).ok).toBe(true);
+  });
+
+  it("refuses VERIFIED_PASS while a criterion is contradicted", () => {
+    // Something was found not to work and the verdict says it all works.
+    const result = validateVerdictRecord(
+      verdict({
+        criterionResults: [
+          { criterionId: "c-1", status: "contradicted", summary: "returns 500", evidenceIds: ["e-1"] },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "unearned_pass")).toBe(true);
+  });
+
+  it("refuses VERIFIED_PASS while a criterion is unknown", () => {
+    // Unknown means the check ran and settled nothing. Treating that as passing
+    // is issuing confidence that was not earned.
+    expect(
+      validateVerdictRecord(
+        verdict({
+          criterionResults: [
+            { criterionId: "c-1", status: "unknown", summary: "could not reach the service", evidenceIds: ["e-1"] },
+          ],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("permits CONDITIONAL and BLOCKED to carry the same results", () => {
+    // Those statuses exist precisely for "holds with caveats" and "could not be
+    // settled", so the same criteria must be expressible under them.
+    for (const status of ["CONDITIONAL", "BLOCKED"] as const) {
+      expect(
+        validateVerdictRecord(
+          verdict({
+            status,
+            criterionResults: [
+              { criterionId: "c-1", status: "contradicted", summary: "returns 500", evidenceIds: ["e-1"] },
+            ],
+          }),
+        ).ok,
+        status,
+      ).toBe(true);
+    }
+  });
+
+  it("refuses a criterion result citing no evidence", () => {
+    // A conclusion resting on nothing is an opinion.
+    expect(
+      validateVerdictRecord(
+        verdict({
+          criterionResults: [
+            { criterionId: "c-1", status: "supported", summary: "looks fine", evidenceIds: [] },
+          ],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("requires a scope, because a verdict that will not say what it covers claims everything", () => {
+    for (const scope of ["", "   ", undefined]) {
+      expect(validateVerdictRecord(verdict({ scope })).ok, String(scope)).toBe(false);
+    }
+  });
+
+  it("requires the snapshot digest that binds it to what it examined", () => {
+    expect(validateVerdictRecord(verdict({ snapshotDigest: "not-a-digest" })).ok).toBe(false);
+  });
+
+  it("refuses an unknown field and a bad status", () => {
+    expect(validateVerdictRecord(verdict({ extra: 1 })).ok).toBe(false);
+    // FAILED and CANCELLED are job terminations, not assessments.
+    expect(validateVerdictRecord(verdict({ status: "FAILED" })).ok).toBe(false);
   });
 });
