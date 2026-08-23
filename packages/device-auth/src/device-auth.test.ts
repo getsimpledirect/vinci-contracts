@@ -539,10 +539,16 @@ describe("revoke does not undo the immutability validation established", () => {
   });
 });
 
-describe("validation reads data, not live objects", () => {
-  // Three separate defects all came from validating a live JavaScript object
-  // rather than a data snapshot. Guards written against the reported input
-  // covered that input; the class was wider each time.
+describe("how a credential was constructed cannot change the decision", () => {
+  // These previously asserted that exotic inputs are REFUSED. That contract
+  // required reflecting over the input, and reflection was a second read a
+  // Proxy could answer differently — a field hidden from validation appeared in
+  // the returned record. Input is now read exactly once, by serialization.
+  //
+  // The invariant that replaces it is stronger and is what actually matters
+  // here: the decision depends only on the JSON data, never on how the object
+  // carrying it was built. An attacker gains nothing by dressing a record up,
+  // because the outcome is identical to sending the same JSON plainly.
   const fields = {
     keyHash: "a".repeat(64),
     prefix: "vinci_live_ab12",
@@ -551,32 +557,43 @@ describe("validation reads data, not live objects", () => {
     revokedAt: null,
   };
 
-  it("refuses a record whose kind and identity are inherited", () => {
-    // Object.hasOwn sees no own `kind`, so the dispatcher took the untagged
-    // path; the untagged-identity check also used Object.hasOwn, so it missed
-    // the inherited workerId too. Both halves of that fix used the predicate
-    // whose blind spot caused the bug.
+  const decidesTheSame = (exotic: unknown) => {
+    const viaExotic = validateCredentialIdentity(exotic);
+    const viaJson = validateCredentialIdentity(JSON.parse(JSON.stringify(exotic)));
+    expect(viaExotic.ok).toBe(viaJson.ok);
+    if (viaExotic.ok && viaJson.ok) expect(viaExotic.value).toEqual(viaJson.value);
+    return viaExotic;
+  };
+
+  it("gains nothing from hiding kind and identity on a prototype", () => {
+    // The inherited `kind: "worker"` and `workerId` are dropped, so this is
+    // judged as the untagged credential its JSON actually describes. That is
+    // not a privilege gain: an untagged credential may hold `acceptance`, and
+    // the caller could have sent exactly this JSON directly.
     const proto = { kind: "worker", workerId: "w-1" };
     const inherited = Object.create(proto) as Record<string, unknown>;
-    Object.assign(inherited, fields, { scopes: ["inference", "acceptance"] });
-    // Object.assign copies as OWN properties, so build it the other way to
-    // actually exercise inheritance:
-    const truly = Object.create(proto) as Record<string, unknown>;
     for (const [k, v] of Object.entries({ ...fields, scopes: ["inference", "acceptance"] })) {
-      truly[k] = v;
+      inherited[k] = v;
     }
-    expect(Object.hasOwn(truly, "kind")).toBe(false);
-    expect(truly.kind).toBe("worker");
-
-    const result = validateCredentialIdentity(truly);
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "not_plain_object")).toBe(true);
+    const result = decidesTheSame(inherited);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // Crucially, nothing downstream can read it as a worker.
+      expect((result.value as Record<string, unknown>).kind).toBeUndefined();
+      expect((result.value as Record<string, unknown>).workerId).toBeUndefined();
+    }
   });
 
-  it("refuses an accessor that can answer differently each time it is read", () => {
-    // A scopes getter returning ["inference"] once and ["acceptance"] after
-    // was read three times in one validation: it validated clean and the
-    // returned credential carried acceptance.
+  it("still refuses a tagged worker credential holding acceptance", () => {
+    // The prohibition applies to what the data actually says it is.
+    expect(
+      validateCredentialIdentity(
+        credential({ kind: "worker", workerId: "w-1", scopes: ["inference", "acceptance"] }),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("reads an accessor once, so it cannot answer differently later", () => {
     let reads = 0;
     const sneaky = {
       ...fields,
@@ -586,40 +603,36 @@ describe("validation reads data, not live objects", () => {
       },
     };
     const result = validateCredentialIdentity(sneaky);
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "accessor_property")).toBe(true);
+    expect(reads).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect([...result.value.scopes]).toEqual(["inference"]);
   });
 
-  it("refuses symbol keys", () => {
-    const withSymbol: Record<string | symbol, unknown> = { ...fields, scopes: ["inference"] };
-    withSymbol[Symbol("hidden")] = "secret";
-    expect(validateCredentialIdentity(withSymbol).ok).toBe(false);
-  });
-
-  it("sees a non-enumerable field rather than silently carrying it", () => {
-    const withHidden = { ...fields, scopes: ["inference"] };
+  it("drops symbol keys and non-enumerable fields rather than carrying them", () => {
+    const withHidden: Record<string | symbol, unknown> = { ...fields, scopes: ["inference"] };
+    withHidden[Symbol("hidden")] = "secret";
     Object.defineProperty(withHidden, "clientSecret", {
       value: "s3cr3t",
       enumerable: false,
-      writable: true,
       configurable: true,
     });
-    const result = validateCredentialIdentity(withHidden);
-    expect(result.ok).toBe(false);
-    if (!result.ok) expect(JSON.stringify(result.issues)).not.toContain("s3cr3t");
+    const result = decidesTheSame(withHidden);
+    // Whatever the outcome, the secret is not in it.
+    expect(JSON.stringify(result)).not.toContain("s3cr3t");
   });
 
   it("does not echo attacker-supplied data back in an error message", () => {
-    // Interpolating the value both leaks it into logs and hands control to a
-    // Symbol.toPrimitive that can throw out of validation.
     const hostile = {
       ...fields,
       scopes: ["inference"],
-      kind: { [Symbol.toPrimitive]() { throw new Error("escaped validation"); } },
+      kind: {
+        [Symbol.toPrimitive]() {
+          throw new Error("escaped validation");
+        },
+      },
     };
     expect(() => validateCredentialIdentity(hostile)).not.toThrow();
-    const result = validateCredentialIdentity(hostile);
-    expect(result.ok).toBe(false);
+    expect(validateCredentialIdentity(hostile).ok).toBe(false);
   });
 });
 

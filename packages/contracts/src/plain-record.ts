@@ -327,25 +327,29 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
     return fail([issue(path, "not_object", "expected an object")]);
   }
 
-  // ── Pass 1: reflect, for precise errors. ──────────────────────────────────
+  // ── Read the input EXACTLY ONCE. ──────────────────────────────────────────
   //
-  // Runs against the ORIGINAL input and produces the diagnostics this
-  // repository's rules call for — no inherited fields, no accessors, no symbol
-  // keys, no extra array properties, no sparse arrays, no cycles. For an honest
-  // caller this is the whole story, and it runs BEFORE serialization so a
-  // getter is refused rather than invoked.
-  const issues: ValidationIssue[] = [];
-  try {
-    normalize(value, path, 0, new Set(), issues);
-  } catch {
-    return fail([
-      issue(path, "hostile_object", "inspecting this value raised an error; a data record must be inert"),
-    ]);
-  }
-  if (issues.length > 0) return fail(issues);
-
-
-  // ── Pass 2: serialize once, for truth. ────────────────────────────────────
+  // Not "once per pass" — once, total. An earlier design reflected over the
+  // input for precise diagnostics and then serialized it, and called that "one
+  // read". It was two, and a Proxy whose `ownKeys` answered `["a"]` the first
+  // time and `["a","b"]` the second put a field into the returned record that
+  // validation never inspected. The guarantee was stated as a property of the
+  // boundary when it was only a property of one half of it.
+  //
+  // So the input is serialized before anything else looks at it, and every
+  // check below runs on the parsed, inert result. Whatever a hostile object
+  // chooses to say, it says once, and that single answer is both what is
+  // validated and what is returned.
+  //
+  // The cost is diagnostic, and it is worth naming. Features that cannot be
+  // represented as JSON — accessors, inherited fields, symbol keys,
+  // non-enumerable properties — are no longer REFUSED with a specific error;
+  // serialization neutralizes them. A getter is invoked once and its value
+  // becomes the data. Everything else is dropped, exactly as it would be if the
+  // caller had sent the record over a wire, which is how these records actually
+  // arrive. A contract that says "this is JSON data" is one this can enforce;
+  // "this is a JavaScript object with no exotic features" is one it demonstrably
+  // cannot.
   //
   // Reflection cannot validate a Proxy, because reflection IS the Proxy. Seven
   // rounds of hardening reflected over the input and each was defeated by a
@@ -454,12 +458,10 @@ export function toPlainRecord(value: unknown, path = ""): ValidationResult<Plain
     return fail([issue(path, "not_object", "expected an object")]);
   }
 
-  const inertIssues: ValidationIssue[] = [];
-  const normalized = normalize(inert, path, 0, new Set(), inertIssues);
-  if (inertIssues.length > 0 || normalized === undefined) {
-    return fail(
-      inertIssues.length > 0 ? inertIssues : [issue(path, "not_object", "expected an object")],
-    );
+  const issues: ValidationIssue[] = [];
+  const normalized = normalize(inert, path, 0, new Set(), issues);
+  if (issues.length > 0 || normalized === undefined) {
+    return fail(issues.length > 0 ? issues : [issue(path, "not_object", "expected an object")]);
   }
   return ok(normalized as PlainRecord);
 }

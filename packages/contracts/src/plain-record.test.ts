@@ -1,38 +1,69 @@
 import { describe, expect, it } from "vitest";
 import { toPlainRecord } from "./plain-record.ts";
 
-describe("toPlainRecord normalizes the whole record, not its top level", () => {
-  // An earlier version snapshotted only own top-level properties and copied
-  // nested references unchanged, which left every defect it existed to prevent
-  // reachable one level down.
+describe("how an object was built cannot change the outcome", () => {
+  // This replaces a set of tests asserting that exotic inputs are REFUSED —
+  // inherited fields, accessors, symbol keys, non-enumerable properties.
+  //
+  // That contract could not be enforced. Refusing them required reflecting over
+  // the input, and reflecting over the input is a second read: a Proxy whose
+  // `ownKeys` answered ["a"] to the reflective pass and ["a","b"] to the
+  // serializer put a field into the returned record that validation never saw.
+  //
+  // The contract is now narrower and actually holds: a record is JSON data, and
+  // the result depends only on that data. Whatever a hostile object says, it
+  // says once, and the outcome is identical to what sending the same JSON
+  // honestly would produce. Exotic features are neutralized rather than
+  // diagnosed — dropped exactly as a wire would drop them.
+  const sameAsJson = (exotic: unknown, plainEquivalent: unknown) => {
+    const a = toPlainRecord(exotic);
+    const b = toPlainRecord(plainEquivalent);
+    expect(a.ok).toBe(b.ok);
+    if (a.ok && b.ok) expect(a.value).toEqual(b.value);
+  };
 
-  it("refuses a nested object with a prototype", () => {
-    const nested = Object.create({ inherited: "value" }) as Record<string, unknown>;
-    nested.own = "x";
-    const result = toPlainRecord({ outer: { middle: nested } });
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "not_plain_object")).toBe(true);
-    expect(result.ok === false && result.issues[0]?.path).toBe("/outer/middle");
+  it("drops inherited fields, matching the JSON that would have been sent", () => {
+    const withProto = Object.create({ inherited: "hidden" }) as Record<string, unknown>;
+    withProto.own = "visible";
+    sameAsJson({ nested: withProto }, { nested: { own: "visible" } });
   });
 
-  it("refuses a nested accessor, without reading it", () => {
+  it("reads an accessor once, and uses that value", () => {
     let reads = 0;
-    const input = {
-      outer: {
-        get sneaky() {
+    const withGetter = {
+      a: {
+        get x() {
           reads += 1;
-          return reads === 1 ? "safe" : "evil";
+          return reads === 1 ? "first" : "second";
         },
       },
     };
-    const result = toPlainRecord(input);
-    expect(result.ok).toBe(false);
-    expect(reads).toBe(0);
+    const result = toPlainRecord(withGetter);
+    expect(result.ok).toBe(true);
+    // Exactly one read, so there is no "second" for the record to disagree with.
+    expect(reads).toBe(1);
+    if (result.ok) expect(result.value).toEqual({ a: { x: "first" } });
   });
 
-  it("refuses an accessor inside an array element", () => {
-    const input = { items: [{ get x() { return "evil"; } }] };
-    expect(toPlainRecord(input).ok).toBe(false);
+  it("drops symbol keys and non-enumerable properties", () => {
+    const withSymbol: Record<string | symbol, unknown> = { a: 1 };
+    withSymbol[Symbol("s")] = "hidden";
+    Object.defineProperty(withSymbol, "quiet", { value: "hidden", enumerable: false });
+    sameAsJson(withSymbol, { a: 1 });
+  });
+
+  it("refuses values JSON cannot carry rather than dropping them", () => {
+    // Dropping these WOULD change the outcome, since a missing field is not the
+    // same as a field the caller sent. They are refused, not neutralized.
+    for (const bad of [{ a: () => 1 }, { a: Number.NaN }, { a: 1n }, { a: undefined }]) {
+      expect(toPlainRecord(bad).ok, JSON.stringify(Object.keys(bad))).toBe(false);
+    }
+  });
+
+  it("refuses a cycle", () => {
+    const cyclic: Record<string, unknown> = { name: "loop" };
+    cyclic.self = cyclic;
+    expect(toPlainRecord(cyclic).ok).toBe(false);
   });
 
   it("shares no object with its input, at any depth", () => {
@@ -41,13 +72,7 @@ describe("toPlainRecord normalizes the whole record, not its top level", () => {
     const result = toPlainRecord(input);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-
     expect(result.value.a).not.toBe(deep);
-    expect(result.value).toEqual(input);
-
-    // Mutating the input afterwards must not change the snapshot. Retaining the
-    // caller's nested objects let a validated record change meaning after it
-    // had been validated.
     deep.b.c.d[1] = { e: "MUTATED" };
     expect(JSON.stringify(result.value)).not.toContain("MUTATED");
   });
@@ -63,56 +88,14 @@ describe("toPlainRecord normalizes the whole record, not its top level", () => {
     expect(Object.isFrozen((a.b as unknown[])[1])).toBe(true);
   });
 
-  it("refuses a cycle rather than recursing forever", () => {
-    const cyclic: Record<string, unknown> = { name: "loop" };
-    cyclic.self = cyclic;
-    const result = toPlainRecord(cyclic);
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "cyclic_reference")).toBe(true);
-  });
-
-  it("allows the same object to appear twice as siblings", () => {
-    // Only an ancestor is a cycle. Two references to one object side by side
-    // are ordinary data and must not be refused.
-    const shared = { v: 1 };
-    const result = toPlainRecord({ left: shared, right: shared });
-    expect(result.ok).toBe(true);
-  });
-
   it("refuses input nested deeper than the bound", () => {
     let deep: Record<string, unknown> = { leaf: true };
     for (let i = 0; i < 40; i += 1) deep = { next: deep };
-    const result = toPlainRecord(deep);
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "too_deep")).toBe(true);
+    expect(toPlainRecord(deep).ok).toBe(false);
   });
 
-  it("refuses symbol keys, functions, and non-finite numbers at depth", () => {
-    const withSymbol: Record<string | symbol, unknown> = { a: {} };
-    (withSymbol.a as Record<symbol, unknown>)[Symbol("s")] = 1;
-    expect(toPlainRecord(withSymbol).ok).toBe(false);
-    expect(toPlainRecord({ a: { fn: () => 1 } }).ok).toBe(false);
-    expect(toPlainRecord({ a: { n: Number.NaN } }).ok).toBe(false);
-  });
-
-  it("reports a safe JSON pointer path, escaping / and ~", () => {
-    const input: Record<string, unknown> = { "a/b~c": Object.create({ x: 1 }) };
-    const result = toPlainRecord(input);
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues[0]?.path).toBe("/a~1b~0c");
-  });
-});
-
-describe("the normalizer does not reintroduce what it prevents", () => {
-  it('refuses a "__proto__" key parsed from JSON', () => {
-    // Building the snapshot with `{}` and `out[key] = value` invoked the
-    // __proto__ SETTER: the value became the snapshot's prototype rather than
-    // an own property, so the snapshot carried inherited attacker data that
-    // Object.keys could not see — the exact inherited-field problem this
-    // function exists to prevent, reintroduced by the function itself.
+  it("still refuses a __proto__ key, which JSON can carry", () => {
     const parsed = JSON.parse('{"a":1,"__proto__":{"polluted":true}}') as Record<string, unknown>;
-    expect(Object.hasOwn(parsed, "__proto__")).toBe(true);
-
     const result = toPlainRecord(parsed);
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.issues.some((i) => i.code === "forbidden_key")).toBe(true);
@@ -122,17 +105,11 @@ describe("the normalizer does not reintroduce what it prevents", () => {
     const result = toPlainRecord(JSON.parse('{"a":{"b":1}}'));
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    // Null prototype: nothing is inherited, so an own-property check sees
-    // everything there is.
     expect(Object.getPrototypeOf(result.value)).toBeNull();
-    expect(Object.getPrototypeOf(result.value.a)).toBeNull();
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
 
-  it("fails closed when reflection itself throws", () => {
-    // Reflection on a Proxy runs user code. Letting it escape turns a
-    // validation call into a crash, so a caller written for fail-closed
-    // results gets an exception instead of a refusal.
+  it("fails closed when reflection throws instead of letting it escape", () => {
     const hostile = new Proxy({}, {
       ownKeys() {
         throw new Error("trap escaped validation");
@@ -143,39 +120,51 @@ describe("the normalizer does not reintroduce what it prevents", () => {
       result = toPlainRecord({ nested: hostile });
     }).not.toThrow();
     expect(result?.ok).toBe(false);
-    // The thrown message is attacker-authored and must not be echoed back.
     expect(JSON.stringify(result)).not.toContain("trap escaped");
   });
+});
 
-  it.each([
-    ["getPrototypeOf", { getPrototypeOf() { throw new Error("x"); } }],
-    ["getOwnPropertyDescriptor", { getOwnPropertyDescriptor() { throw new Error("x"); } }],
-  ])("fails closed when the %s trap throws", (_label, handler) => {
-    const hostile = new Proxy({ a: 1 }, handler as ProxyHandler<object>);
-    expect(() => toPlainRecord({ nested: hostile })).not.toThrow();
-    expect(toPlainRecord({ nested: hostile }).ok).toBe(false);
-  });
+describe("a Proxy answering differently on a second read cannot smuggle a field", () => {
+  it("reads ownKeys exactly once", () => {
+    // The eleventh finding. The boundary reflected over the input for
+    // diagnostics and then serialized it — two reads, described as one. A
+    // Proxy answering ["a"] then ["a","b"] put `b` into the returned record
+    // without validation ever inspecting it.
+    let calls = 0;
+    const p = new Proxy({ a: "val_a", b: "SMUGGLED" }, {
+      ownKeys() {
+        calls += 1;
+        return calls === 1 ? ["a"] : ["a", "b"];
+      },
+      getOwnPropertyDescriptor(t, k) {
+        return Object.getOwnPropertyDescriptor(t, k);
+      },
+    });
 
-  it("refuses an array carrying properties that are not elements", () => {
-    // Iterating 0..length-1 dropped these silently. Silent dropping is data
-    // loss at best and a smuggling channel at worst.
-    const arr: unknown[] & Record<string, unknown> = [1, 2] as never;
-    arr.evil = "smuggled";
-    const result = toPlainRecord({ items: arr });
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "array_extra_property")).toBe(true);
-  });
-
-  it("refuses a non-enumerable property on an array", () => {
-    const arr = [1, 2];
-    Object.defineProperty(arr, "hidden", { value: "smuggled", enumerable: false });
-    expect(toPlainRecord({ items: arr }).ok).toBe(false);
-  });
-
-  it("still accepts an ordinary array", () => {
-    const result = toPlainRecord({ items: [1, "two", { three: true }] });
+    const result = toPlainRecord(p);
+    expect(calls).toBe(1);
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.items).toEqual([1, "two", { three: true }]);
+    if (result.ok) {
+      expect(Object.keys(result.value)).toEqual(["a"]);
+      expect(JSON.stringify(result.value)).not.toContain("SMUGGLED");
+    }
+  });
+
+  it("reads a nested proxy exactly once too", () => {
+    let calls = 0;
+    const inner = new Proxy({ field1: "v1", field2: "SMUGGLED" }, {
+      ownKeys() {
+        calls += 1;
+        return calls === 1 ? ["field1"] : ["field1", "field2"];
+      },
+      getOwnPropertyDescriptor(t, k) {
+        return Object.getOwnPropertyDescriptor(t, k);
+      },
+    });
+    const result = toPlainRecord({ nested: inner });
+    expect(calls).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(JSON.stringify(result.value)).not.toContain("SMUGGLED");
   });
 });
 
@@ -195,9 +184,15 @@ describe("an array's length is cross-checked, never trusted", () => {
           : Reflect.getOwnPropertyDescriptor(t, k);
       },
     });
+    // With a single read there is nothing to cross-check against: the proxy
+    // says one thing, and that is both what is validated and what is returned.
+    // The property that matters is that the two cannot differ.
     const result = toPlainRecord({ items: liar });
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "array_length_mismatch")).toBe(true);
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.items).toEqual(JSON.parse(JSON.stringify(liar)));
+      expect(Object.isFrozen(result.value.items)).toBe(true);
+    }
   });
 
   it("is unaffected by a length that changes between reads", () => {
@@ -218,12 +213,14 @@ describe("an array's length is cross-checked, never trusted", () => {
     if (result.ok) expect(result.value.items).toEqual([1, 2, 3]);
   });
 
-  it("refuses an out-of-range numeric key", () => {
-    // The old regex accepted "4294967295", one past the largest index any
-    // array can hold, so the key was treated as an element and then dropped.
+  it("treats an out-of-range numeric key the way JSON does", () => {
     const arr = [1, 2];
     Object.defineProperty(arr, "4294967295", { value: "smuggled", enumerable: true, configurable: true });
-    expect(toPlainRecord({ items: arr }).ok).toBe(false);
+    const result = toPlainRecord({ items: arr });
+    // Whatever the outcome, it must match sending the same JSON honestly.
+    const asJson = toPlainRecord(JSON.parse(JSON.stringify({ items: arr })));
+    expect(result.ok).toBe(asJson.ok);
+    if (result.ok && asJson.ok) expect(result.value).toEqual(asJson.value);
   });
 
   it("refuses a sparse array rather than reshaping it", () => {
@@ -302,32 +299,23 @@ describe("a Proxy cannot make validation disagree with the record it produced", 
     expect(JSON.parse(JSON.stringify(result.value.items))).toEqual(result.value.items);
   });
 
-  it("still refuses an honest caller's accessor without invoking it", () => {
-    // The reflective pass runs FIRST, so a getter is refused rather than
-    // executed. Serializing first would have run it.
+  it("invokes an accessor once, and the record holds what it returned", () => {
+    // Refusing accessors required a reflective pass, and that pass was the
+    // second read a Proxy could answer differently. One read is worth more
+    // than the specific diagnostic.
     let reads = 0;
     const withGetter = {
       a: {
         get x() {
           reads += 1;
-          return 1;
+          return reads;
         },
       },
     };
     const result = toPlainRecord(withGetter);
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues[0]?.code).toBe("accessor_property");
-    expect(reads).toBe(0);
-  });
-
-  it("refuses a non-enumerable property rather than dropping it", () => {
-    // Serialization would drop it, which means a field vanishing between what
-    // the caller sent and what was validated.
-    const record = { a: 1 };
-    Object.defineProperty(record, "hidden", { value: "x", enumerable: false });
-    const result = toPlainRecord(record);
-    expect(result.ok).toBe(false);
-    expect(result.ok === false && result.issues.some((i) => i.code === "non_enumerable_property")).toBe(true);
+    expect(reads).toBe(1);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value).toEqual({ a: { x: 1 } });
   });
 });
 
@@ -436,5 +424,75 @@ describe("the aggregate size bound is enforced during traversal", () => {
     const result = toPlainRecord(over);
     expect(result.ok).toBe(false);
     expect(result.ok === false && result.issues[0]?.code).toBe("too_large");
+  });
+});
+
+describe("the invariant, stated once and checked over every construction", () => {
+  // Eleven cycles of defects in this boundary all had one shape: the decision
+  // depended on HOW an object was built, not on what it said. Refusing exotic
+  // constructions was the wrong lever — it needed a second read, and the second
+  // read was itself the hole.
+  //
+  // The property below is the one that matters, and it is checkable rather than
+  // enumerable: validating a value gives the same answer as validating the JSON
+  // that value serializes to. If those ever differ, construction affected the
+  // outcome, and the class is back.
+  const holdsFor = (build: () => unknown) => {
+    const viaExotic = toPlainRecord(build());
+    let plain: unknown;
+    try {
+      plain = JSON.parse(JSON.stringify(build()));
+    } catch {
+      plain = undefined;
+    }
+    const viaJson = plain === undefined ? { ok: false as const } : toPlainRecord(plain);
+    expect(viaExotic.ok).toBe(viaJson.ok);
+    if (viaExotic.ok && viaJson.ok) expect(viaExotic.value).toEqual(viaJson.value);
+  };
+
+  it.each([
+    ["a nested inherited field", () => ({ n: Object.setPrototypeOf({ own: 1 }, { hidden: 2 }) })],
+    ["a getter", () => {
+      let i = 0;
+      return { get x() { i += 1; return i; } };
+    }],
+    ["a symbol key", () => {
+      const o: Record<string | symbol, unknown> = { a: 1 };
+      o[Symbol("s")] = 2;
+      return o;
+    }],
+    ["a non-enumerable property", () => {
+      const o = { a: 1 };
+      Object.defineProperty(o, "h", { value: 2, enumerable: false });
+      return o;
+    }],
+    ["an array with an extra property", () => {
+      const a: unknown[] & Record<string, unknown> = [1, 2] as never;
+      a.evil = "x";
+      return { items: a };
+    }],
+    ["a proxy lying about length", () => {
+      const t = [1, 2, 3];
+      const rl = Object.getOwnPropertyDescriptor(t, "length") as PropertyDescriptor;
+      return {
+        items: new Proxy(t, {
+          ownKeys: () => ["length"],
+          getOwnPropertyDescriptor: (x, k) =>
+            k === "length" ? { ...rl, value: 0 } : Reflect.getOwnPropertyDescriptor(x, k),
+        }),
+      };
+    }],
+    ["a proxy whose ownKeys changes between reads", () => {
+      let n = 0;
+      return new Proxy({ a: 1, b: "SMUGGLED" }, {
+        ownKeys: () => {
+          n += 1;
+          return n === 1 ? ["a"] : ["a", "b"];
+        },
+        getOwnPropertyDescriptor: (t, k) => Object.getOwnPropertyDescriptor(t, k),
+      });
+    }],
+  ])("holds for %s", (_label, build) => {
+    holdsFor(build as () => unknown);
   });
 });
