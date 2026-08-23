@@ -128,13 +128,39 @@ function isTimestamp(value: unknown): value is Timestamp {
 }
 
 /**
- * Validates a credential identity record.
+ * Validates a credential identity record, dispatching on its `kind`.
  *
- * Fail-closed on malformed data (D4): nothing is coerced or defaulted. Unknown
- * fields are preserved verbatim and reported on the success arm so a newer
- * producer's record round-trips through this consumer without loss.
+ * The dispatch is the security-relevant part. This used to validate the base
+ * shape only, so a record tagged `kind: "worker"` carrying
+ * `scopes: ["acceptance"]` passed here cleanly — the prohibition lived in
+ * `validateWorkerCredential`, and nothing forced a caller through it. A record
+ * that declares what it is must be held to that variant's rules; otherwise the
+ * variant validators are optional, and an optional security check is not one.
+ *
+ * Fail-closed on malformed data (D4), and unrecognised fields are rejected
+ * rather than preserved, because an unknown field on a credential may be the
+ * secret itself.
  */
 export function validateCredentialIdentity(value: unknown): ValidationResult<CredentialIdentity> {
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const kind = (value as Record<string, unknown>).kind;
+    if (kind === "device") return validateDeviceCredential(value);
+    if (kind === "worker") return validateWorkerCredential(value);
+    if (kind !== undefined) {
+      return fail([
+        {
+          path: "/kind",
+          code: "unknown_credential_kind",
+          message: `unrecognised credential kind "${String(kind)}"; a credential is either a device credential, a worker credential, or untagged`,
+        },
+      ]);
+    }
+  }
+  return validateBaseCredential(value);
+}
+
+
+function validateBaseCredential(value: unknown): ValidationResult<CredentialIdentity> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     return fail([{ path: "", code: "not_object", message: "credential identity must be an object" }]);
   }
@@ -223,11 +249,30 @@ export function validateCredentialIdentity(value: unknown): ValidationResult<Cre
  * requires a concrete (non-null) `clientType` and a `deviceId`.
  */
 export function validateDeviceCredential(value: unknown): ValidationResult<DeviceCredential> {
-  const base = validateCredentialIdentity(value);
+  const base = validateBaseCredential(value);
   if (!base.ok) return base;
   const known = base.value;
 
   const issues: ValidationIssue[] = [];
+  const raw = value as Record<string, unknown>;
+  // Without this, `{ kind: "device", workerId: "w1" }` validated as a device
+  // and `{ kind: "worker", deviceId: "d1" }` as a worker — each validator
+  // rewrote the discriminator to the variant it produces, so the tag a caller
+  // supplied was decorative. A record that says what it is has to be it.
+  if (raw.kind !== undefined && raw.kind !== "device") {
+    issues.push({
+      path: "/kind",
+      code: "wrong_credential_kind",
+      message: `expected a device credential, got kind "${String(raw.kind)}"`,
+    });
+  }
+  if (raw.workerId !== undefined) {
+    issues.push({
+      path: "/workerId",
+      code: "field_not_valid_for_kind",
+      message: "workerId does not belong on a device credential",
+    });
+  }
   if (known.clientType === null) {
     issues.push({
       path: "/clientType",
@@ -246,7 +291,7 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
   if (issues.length > 0) return fail(issues);
 
   return ok(
-    {
+    Object.freeze({
       kind: "device",
       deviceId: deviceId as DeviceId,
       keyHash: known.keyHash,
@@ -255,7 +300,7 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
       scopes: Object.freeze([...known.scopes]) as readonly DeviceScope[],
       createdAt: known.createdAt,
       revokedAt: known.revokedAt,
-    },
+    }),
     {},
   );
 }
@@ -294,15 +339,30 @@ export const CREDENTIAL_IDENTITY_SCHEMA_META: SchemaMeta = {
  * architectural principle 2 says it does not get to.
  */
 export function validateWorkerCredential(value: unknown): ValidationResult<WorkerCredential> {
-  const base = validateCredentialIdentity(value);
+  const base = validateBaseCredential(value);
   if (!base.ok) return base;
   const known = base.value;
 
   const issues: ValidationIssue[] = [];
+  const raw = value as Record<string, unknown>;
+  if (raw.kind !== undefined && raw.kind !== "worker") {
+    issues.push({
+      path: "/kind",
+      code: "wrong_credential_kind",
+      message: `expected a worker credential, got kind "${String(raw.kind)}"`,
+    });
+  }
+  if (raw.deviceId !== undefined) {
+    issues.push({
+      path: "/deviceId",
+      code: "field_not_valid_for_kind",
+      message: "deviceId does not belong on a worker credential",
+    });
+  }
   if (known.scopes.some((s) => s === "acceptance")) {
     issues.push(ACCEPTANCE_FORBIDDEN_ISSUE);
   }
-  const workerId = (value as Record<string, unknown>).workerId;
+  const workerId = raw.workerId;
   if (typeof workerId !== "string" || workerId.length === 0) {
     issues.push({
       path: "/workerId",
@@ -314,7 +374,7 @@ export function validateWorkerCredential(value: unknown): ValidationResult<Worke
   if (issues.length > 0) return fail(issues);
 
   return ok(
-    {
+    Object.freeze({
       kind: "worker",
       workerId: workerId as WorkerId,
       keyHash: known.keyHash,
@@ -323,7 +383,7 @@ export function validateWorkerCredential(value: unknown): ValidationResult<Worke
       scopes: Object.freeze([...known.scopes]) as readonly DeviceScope[],
       createdAt: known.createdAt,
       revokedAt: known.revokedAt,
-    },
+    }),
     {},
   );
 }

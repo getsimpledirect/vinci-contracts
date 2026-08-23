@@ -266,6 +266,33 @@ function validateAttestation(
         `evidence with ${String(object.provenance)} provenance must be attested by an actor of kind "${expected}", not "${String(actor.kind)}"`,
       );
     }
+    // An actor claiming one kind must not carry another kind's identity. A
+    // record with kind:"verifier", independent:true AND a workerId is a worker
+    // wearing a verifier's label, and it validated.
+    //
+    // What a schema can do here has a limit worth stating: it can reject a
+    // self-contradictory claim, but it cannot establish that the party which
+    // submitted the record IS the verifier it names. That requires
+    // authenticated issuer identity, which belongs to whatever accepts these
+    // records, not to a type. This check narrows the claim; it does not
+    // establish independence, and nothing here should be read as doing so.
+    const FOREIGN_IDENTITY_FIELDS: Readonly<Record<string, readonly string[]>> = {
+      worker: ["userId", "deviceId", "verifierId", "policyId", "component"],
+      system: ["userId", "deviceId", "workerId", "verifierId", "policyId"],
+      user: ["workerId", "verifierId", "policyId", "component"],
+      verifier: ["userId", "deviceId", "workerId", "policyId", "component"],
+      policy: ["userId", "deviceId", "workerId", "verifierId", "component"],
+    };
+    for (const foreign of FOREIGN_IDENTITY_FIELDS[String(actor.kind)] ?? []) {
+      if (Object.hasOwn(actor, foreign)) {
+        addIssue(
+          issues,
+          `${path}/actor/${foreign}`,
+          "actor_identity_mismatch",
+          `an actor of kind "${String(actor.kind)}" must not carry ${foreign}`,
+        );
+      }
+    }
     if (object.provenance === "independent_verifier" && actor.independent !== true) {
       addIssue(
         issues,
@@ -342,7 +369,10 @@ function rejectPresentField(
   path: string,
   issues: ValidationIssue[],
 ): void {
-  if (Object.hasOwn(object, field) && object[field] !== undefined) {
+  // Presence alone, not presence-with-a-value: `{ kind: "stale", status: undefined }`
+  // still asserts the field belongs on this arm, and survives serialization
+  // round-trips inconsistently.
+  if (Object.hasOwn(object, field)) {
     addIssue(
       issues,
       path,
@@ -355,14 +385,22 @@ function rejectPresentField(
 export function validateVerdictAssessment(input: unknown): ValidationResult<VerdictAssessment> {
   const issues: ValidationIssue[] = [];
   const unknownFields: UnknownFields = {};
-  const object = objectValue(
-    input,
-    "",
-    ["kind", "status", "reason", "triggers"],
-    issues,
-    unknownFields,
-  );
+  // VERDICT_ASSESSMENT_SCHEMA_META declares unknownFields: "reject", and this
+  // previously preserved them — the metadata asserted a guarantee the code did
+  // not provide, which is the exact defect this package was corrected for one
+  // commit earlier. An unrecognised field on an assessment could carry
+  // something like `verified: true` alongside a stale record, readable by
+  // anything that does not know to ignore it.
+  const object = objectValue(input, "", ["kind", "status", "reason", "triggers"], issues, unknownFields);
   if (!object) return fail(issues);
+  for (const key of Object.keys(unknownFields)) {
+    addIssue(
+      issues,
+      key,
+      "unknown_assessment_field",
+      "unrecognised field on a verdict assessment; an assessment decides whether something may be called verified, so it carries only what it declares",
+    );
+  }
   if (!enumValue(object.kind, ["current", "stale"] as const, "/kind", issues)) {
     return fail(issues);
   }

@@ -70,6 +70,13 @@ export function isProvenanceConsistent(
     case "human_provided":
       return actor.kind === "user";
     case "independent_verifier":
-      return actor.kind === "verifier";
+      // The independence flag is part of the invariant, not a detail beside
+      // it. This returned true for a verifier carrying `independent: false`,
+      // which made it an alternate path around the check in schema.ts —
+      // agreeing on the actor kind and disagreeing on the thing that matters.
+      // FR-7.3 permits a non-independent verifier and requires that it be
+      // DISCLOSED; evidence claiming independent-verifier provenance is the
+      // opposite of disclosing it.
+      return actor.kind === "verifier" && actor.independent === true;
   }
 }

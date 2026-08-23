@@ -3,6 +3,7 @@ import { assertSchemaMetaComplete } from "@vinci/contracts";
 import {
   EVIDENCE_RECORD_SCHEMA_META,
   VERDICT_ASSESSMENT_SCHEMA_META,
+  isProvenanceConsistent,
   validateEvidenceRecord,
   validateVerdictAssessment,
 } from "./index.ts";
@@ -192,19 +193,24 @@ describe("validateVerdictAssessment", () => {
     );
   });
 
-  it("preserves an unknown field verbatim", () => {
-    const futureValue = { confidence: 0.95 };
+  it("refuses an unknown field rather than preserving it", () => {
+    // This test previously asserted the opposite, and passed — while the
+    // package's own SchemaMeta declared unknownFields: "reject". The test and
+    // the metadata contradicted each other and nothing noticed, because each
+    // was checked against the code separately and never against the other.
+    //
+    // Assessments are the exception to D4's preserve rule for the same reason
+    // credentials are: what an unrecognised field might carry is worse than
+    // what is lost by refusing it. Here that is a field like `verified: true`
+    // riding along with a stale record.
     const result = validateVerdictAssessment({
       kind: "current",
       status: "CONDITIONAL",
-      futureAssessment: futureValue,
+      futureAssessment: { confidence: 0.95 },
     });
 
-    expect(result.ok).toBe(true);
-    if (result.ok) {
-      expect(result.unknownFields["/futureAssessment"]).toBe(futureValue);
-      expect(result.value).toHaveProperty("futureAssessment", futureValue);
-    }
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "unknown_assessment_field")).toBe(true);
   });
 });
 
@@ -319,5 +325,76 @@ describe("schema metadata", () => {
     for (const meta of [EVIDENCE_RECORD_SCHEMA_META, VERDICT_ASSESSMENT_SCHEMA_META]) {
       expect(() => assertSchemaMetaComplete(meta)).not.toThrow();
     }
+  });
+});
+
+describe("independence cannot be claimed around the guard", () => {
+  const base = () => validEvidenceRecord();
+
+  it("refuses an actor carrying another kind's identity", () => {
+    // kind:"verifier", independent:true, AND a workerId — a worker wearing a
+    // verifier's label. It validated.
+    const result = validateEvidenceRecord({
+      ...base(),
+      attestation: {
+        provenance: "independent_verifier",
+        actor: { kind: "verifier", verifierId: "v-1", independent: true, workerId: "w-1" },
+      },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "actor_identity_mismatch")).toBe(true);
+  });
+
+  it("keeps isProvenanceConsistent agreeing with the validator", () => {
+    // This exported helper returned true for a verifier with
+    // independent: false — an alternate path that agreed on the actor kind and
+    // disagreed on the thing that matters.
+    const notIndependent = { kind: "verifier", verifierId: "v-1", independent: false } as const;
+    expect(isProvenanceConsistent("independent_verifier", notIndependent)).toBe(false);
+    const independent = { kind: "verifier", verifierId: "v-1", independent: true } as const;
+    expect(isProvenanceConsistent("independent_verifier", independent)).toBe(true);
+
+    // The two must not be able to disagree: whatever the helper permits, the
+    // validator must permit, and vice versa.
+    for (const actor of [notIndependent, independent]) {
+      const viaValidator = validateEvidenceRecord({
+        ...base(),
+        attestation: { provenance: "independent_verifier", actor },
+      }).ok;
+      expect(viaValidator).toBe(isProvenanceConsistent("independent_verifier", actor));
+    }
+  });
+});
+
+describe("an assessment carries only what it declares", () => {
+  it("rejects an unknown field instead of preserving it", () => {
+    // The metadata said reject; the validator preserved. An unrecognised field
+    // like `verified: true` sat alongside a stale record for any reader that
+    // did not know to ignore it.
+    const result = validateVerdictAssessment({
+      kind: "stale",
+      reason: "r",
+      triggers: ["mutation_any"],
+      verified: true,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "unknown_assessment_field")).toBe(true);
+  });
+
+  it("behaves the way its metadata says it does", () => {
+    // The claim and the behaviour are asserted together, so they cannot drift
+    // apart the way they just did.
+    expect(VERDICT_ASSESSMENT_SCHEMA_META.unknownFields).toBe("reject");
+    const withUnknown = validateVerdictAssessment({
+      kind: "current",
+      status: "VERIFIED_PASS",
+      somethingNew: 1,
+    });
+    expect(withUnknown.ok).toBe(false);
+  });
+
+  it("rejects a cross-arm field even when its value is undefined", () => {
+    expect(validateVerdictAssessment({ kind: "stale", reason: "r", triggers: ["mutation_any"], status: undefined }).ok).toBe(false);
+    expect(validateVerdictAssessment({ kind: "current", status: "VERIFIED_PASS", triggers: undefined }).ok).toBe(false);
   });
 });

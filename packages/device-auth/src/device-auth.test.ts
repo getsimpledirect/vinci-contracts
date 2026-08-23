@@ -380,3 +380,57 @@ describe("a worker credential cannot hold the acceptance scope either", () => {
     }
   });
 });
+
+describe("variant validation cannot be bypassed", () => {
+  // Each of these was reachable at 9d3cce0. The guards existed; the paths
+  // around them did too, which is the same thing as not having the guards.
+  const cred = (o: Record<string, unknown> = {}) => credential(o);
+
+  it("holds a tagged worker credential to the worker rules", () => {
+    // validateCredentialIdentity validated the base shape only, so a record
+    // tagged kind:"worker" carrying the acceptance scope passed here without
+    // ever reaching validateWorkerCredential. An optional security check is
+    // not a security check.
+    const result = validateCredentialIdentity(
+      cred({ kind: "worker", workerId: "w-1", scopes: ["inference", "acceptance"] }),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("holds a tagged device credential to the device rules", () => {
+    const result = validateCredentialIdentity(
+      cred({ kind: "device", deviceId: "d-1", scopes: ["inference", "acceptance"] }),
+    );
+    expect(result.ok).toBe(false);
+  });
+
+  it("refuses an unrecognised credential kind rather than falling back", () => {
+    expect(validateCredentialIdentity(cred({ kind: "superuser" })).ok).toBe(false);
+  });
+
+  it("refuses a device credential submitted to the worker validator", () => {
+    // Each validator rewrote the discriminator to the variant it produces, so
+    // the tag the caller supplied was decorative.
+    expect(validateWorkerCredential(cred({ kind: "device", workerId: "w-1" })).ok).toBe(false);
+    expect(validateDeviceCredential(cred({ kind: "worker", deviceId: "d-1" })).ok).toBe(false);
+  });
+
+  it("refuses a credential carrying the other variant's identity field", () => {
+    expect(validateWorkerCredential(cred({ kind: "worker", workerId: "w-1", deviceId: "d-1" })).ok).toBe(false);
+    expect(validateDeviceCredential(cred({ kind: "device", deviceId: "d-1", workerId: "w-1" })).ok).toBe(false);
+  });
+
+  it("freezes the credential itself, not only its scopes array", () => {
+    // Freezing the array stopped a push; it did not stop the whole array being
+    // replaced with ["acceptance"].
+    const result = validateWorkerCredential(cred({ kind: "worker", workerId: "w-1" }));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(Object.isFrozen(result.value)).toBe(true);
+      expect(() => {
+        (result.value as { scopes: readonly string[] }).scopes = ["acceptance"];
+      }).toThrow();
+      expect(result.value.scopes).not.toContain("acceptance");
+    }
+  });
+});
