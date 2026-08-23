@@ -117,7 +117,23 @@ These are opposite behaviours and are frequently conflated. They are separated:
   append-only log silently loses data. Unknown fields are retained verbatim and
   excluded from validation.
 
-The one exception is a field whose absence would let a consumer *overstate* a
-guarantee. An unrecognised verdict status must not be treated as unknown-and-
-preserved and then rendered as anything; it fails closed, because FR-6.4 forbids
-displaying "Verified" without a current, correctly-associated evaluation.
+There are two exceptions, and they share a shape: **preserve an unknown field
+wherever losing it costs a round trip; reject it wherever keeping it lets the
+system assert something untrue.**
+
+*Unrecognised state and verdict members.* These are rejected rather than
+preserved. Preserving one lets it reach a display layer, and FR-6.4 forbids
+showing "Verified" without a current, correctly-associated evaluation. A value
+nothing recognises must not be rendered as anything.
+
+*Unrecognised fields under `/credentials`.* Also rejected. An unknown field
+there may be secret material, and preserving it puts a secret inside a record
+that FR-6.5 exports and SR-3 says must never carry secrets. Here preserving is
+strictly worse than dropping, and dropping is worse than refusing the policy.
+
+The second exception was found by review, not by design. The credential section
+originally excluded secrets with a denylist of twelve field names, which passed
+`clientSecret`, `secretAccessKey`, `connectionString` and every name a future
+provider invents. A denylist cannot express a security boundary — it is only as
+good as the imagination of whoever wrote it. The rule is an allowlist:
+under `/credentials`, a field not explicitly known is refused.
