@@ -106,20 +106,26 @@ export type VerdictAssessment =
     };
 
 /**
- * Convert a VerificationOutcome stale boolean into the discriminated-union form.
+ * Build a verdict assessment, validated.
  *
- * Callers often receive a verdict with a boolean `staled` flag; this helper
- * allows migration from the boolean model to the union model while both are
- * in use.
+ * Pass `null` for a current assessment, or the reason and triggers that made
+ * the verdict stale. A stale assessment must name at least one trigger from
+ * `VERDICT_STALENESS_TRIGGERS`: FR-7.4 enumerates the staleness conditions
+ * precisely so a stale verdict remains useful as historical evidence, and one
+ * that records no reason defeats that.
  *
- * If `staled` is false, returns `{ kind: "current"; status }`.
- * If `staled` is true, returns `{ kind: "stale"; reason: "stale"; triggers: [] }`.
+ * Returns a `ValidationResult`, not a bare assessment. A constructor that can
+ * produce values its own validator refuses is a second, unchecked way into the
+ * type, and this one could: `{ reason: "", triggers: [] }` built cleanly and
+ * then failed `validateVerdictAssessment`.
  *
- * The triggers list is empty because the boolean form does not carry which
- * triggers caused the staleness. A caller that needs that detail must look up
- * the full verdict record.
+ * This was `verdictAssessmentFromBoolean(status, staled: boolean)`, a bridge
+ * from an older boolean model. A boolean cannot say WHY something went stale,
+ * so it fabricated `reason: "stale"` and `triggers: []` — which the validator
+ * now rejects. The name and this documentation outlived that behaviour and
+ * were instructing callers toward code that fails.
  */
-export function verdictAssessmentFromBoolean(
+export function verdictAssessmentFor(
   status: VerdictStatus,
   staleness: { readonly reason: string; readonly triggers: readonly VerdictStalenessTrigger[] } | null,
 ): ValidationResult<VerdictAssessment> {

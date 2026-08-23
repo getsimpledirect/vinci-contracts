@@ -4,7 +4,7 @@ import {
   EVIDENCE_RECORD_SCHEMA_META,
   VERDICT_ASSESSMENT_SCHEMA_META,
   isProvenanceConsistent,
-  verdictAssessmentFromBoolean,
+  verdictAssessmentFor,
   validateEvidenceRecord,
   validateVerdictAssessment,
 } from "./index.ts";
@@ -458,10 +458,10 @@ describe("a stale assessment must say why", () => {
 
   it("no longer lets a caller fabricate a contentless staleness record", () => {
     // The old signature took a boolean and invented reason:"stale", triggers:[].
-    const current = verdictAssessmentFromBoolean("VERIFIED_PASS", null);
+    const current = verdictAssessmentFor("VERIFIED_PASS", null);
     expect(current.ok).toBe(true);
 
-    const stale = verdictAssessmentFromBoolean("VERIFIED_PASS", {
+    const stale = verdictAssessmentFor("VERIFIED_PASS", {
       reason: "the artifact digest changed after the verdict was issued",
       triggers: ["artifact_digest_changed"],
     });
@@ -474,7 +474,7 @@ describe("the constructor cannot manufacture what the validator refuses", () => 
   it("refuses a staleness record with no reason and no triggers", () => {
     // This constructed cleanly and then failed the package's own validator —
     // a second, unchecked way into the type.
-    const result = verdictAssessmentFromBoolean("VERIFIED_PASS", { reason: "", triggers: [] });
+    const result = verdictAssessmentFor("VERIFIED_PASS", { reason: "", triggers: [] });
     expect(result.ok).toBe(false);
   });
 
@@ -485,7 +485,7 @@ describe("the constructor cannot manufacture what the validator refuses", () => 
       { reason: "digest changed", triggers: ["artifact_digest_changed"] },
     ] as const;
     for (const staleness of cases) {
-      const built = verdictAssessmentFromBoolean("VERIFIED_PASS", staleness as never);
+      const built = verdictAssessmentFor("VERIFIED_PASS", staleness as never);
       expect(built.ok, JSON.stringify(staleness)).toBe(true);
       if (built.ok) expect(validateVerdictAssessment(built.value).ok).toBe(true);
     }
@@ -495,7 +495,7 @@ describe("the constructor cannot manufacture what the validator refuses", () => 
     // Emptying the caller's array afterwards emptied the assessment's, turning
     // a valid record into one recording no reason for staleness.
     const triggers: string[] = ["artifact_digest_changed"];
-    const built = verdictAssessmentFromBoolean("VERIFIED_PASS", { reason: "r", triggers: triggers as never });
+    const built = verdictAssessmentFor("VERIFIED_PASS", { reason: "r", triggers: triggers as never });
     expect(built.ok).toBe(true);
     if (!built.ok) return;
     triggers.length = 0;
