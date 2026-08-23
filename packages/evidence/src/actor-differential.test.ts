@@ -84,6 +84,33 @@ function mutations(actor: Readonly<Record<string, unknown>>): Array<[string, unk
  * reason the false promise survived: every generated case above is plain data,
  * so the two functions saw identical values and could not disagree.
  */
+/**
+ * Actors that are not objects at all.
+ *
+ * The mutation class the corpus omitted, found by an independent review. Every
+ * generated case elsewhere in this file starts from a valid actor object and
+ * mutates a FIELD, so nothing ever asked what happens when the actor is not an
+ * object in the first place.
+ */
+function nonObjectActors(): Array<[string, () => unknown]> {
+  return [
+    ["a function", () => function actor() {}],
+    ["an arrow function", () => () => undefined],
+    ["a class", () => class Actor {}],
+    ["an array", () => []],
+    ["an array of one valid actor", () => [{ kind: "worker", workerId: "w" }]],
+    ["a number", () => 7],
+    ["a string", () => "worker"],
+    ["a boolean", () => true],
+    ["null", () => null],
+    ["undefined", () => undefined],
+    ["a symbol", () => Symbol("worker")],
+    ["a bigint", () => 1n],
+    ["a Date", () => new Date(0)],
+    ["a Map", () => new Map([["kind", "worker"]])],
+  ];
+}
+
 function liveObjectActors(): Array<[string, () => unknown]> {
   // FACTORIES, not instances. A stateful trap advances on every call, so
   // handing the SAME object to the helper and then to the validator compares
@@ -145,6 +172,21 @@ function validatorAccepts(actor: unknown): boolean {
   };
   const result = validateEvidenceRecord(record);
   if (result.ok) return true;
+
+  // A ROOT-level failure means the record never validated at all, so the
+  // validator cannot be said to have accepted anything inside it.
+  //
+  // This oracle previously looked only for issues under "/actor", and a
+  // function-valued actor is refused with `unsupported_value` at path "" —
+  // which does not contain "/actor". So the harness reported ACCEPTED for a
+  // record the validator had wholly refused. Every root-level rejection was
+  // invisible to it: unsupported values, cycles, size caps, non-objects.
+  //
+  // An oracle that reports acceptance for rejected input can only mask a
+  // permissive gap, never create one, which is exactly why it would have gone
+  // unnoticed until it mattered.
+  if (result.issues.some((issue) => issue.path === "")) return false;
+
   return !result.issues.some(
     (issue) => issue.path.includes("/actor") && issue.code !== "provenance_actor_mismatch",
   );
@@ -185,6 +227,31 @@ describe("plainActor agrees with validateEvidenceRecord on every actor shape", (
       }
     });
   }
+
+  for (const [label, make] of nonObjectActors()) {
+    it(`non-object / ${label}: helper is never more permissive`, () => {
+      let helperAccepts = false;
+      let validator = false;
+      expect(() => { helperAccepts = plainActor(make() as never) !== null; }).not.toThrow();
+      expect(() => { validator = validatorAccepts(make()); }).not.toThrow();
+      if (helperAccepts) {
+        expect(
+          validator,
+          `plainActor accepted a ${label} that the validator refused — an unwatched route to authority`,
+        ).toBe(true);
+      }
+    });
+  }
+
+  it("refuses every non-object actor outright", () => {
+    // Stronger than the directional check: none of these is an actor at all,
+    // so both sides must refuse. If any starts being accepted, something has
+    // begun coercing non-objects into records.
+    for (const [label, make] of nonObjectActors()) {
+      expect(plainActor(make() as never), label).toBe(null);
+      expect(validatorAccepts(make()), label).toBe(false);
+    }
+  });
 
   it("agrees on the accessor case a review used to falsify the promise", () => {
     // This case previously DIVERGED — the helper refused it and the validator
