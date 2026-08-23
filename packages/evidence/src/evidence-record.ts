@@ -1,4 +1,4 @@
-import type { Actor, EvidenceId, Timestamp } from "@vinci/contracts";
+import type { EvidenceId, Timestamp } from "@vinci/contracts";
 import type { EvidenceKind, EvidenceMode, EvidenceReliability, EvidenceSourceKind } from "./evidence-kinds.ts";
 import type { EvidenceAttestation } from "./provenance.ts";
 
