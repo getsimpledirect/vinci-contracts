@@ -112,6 +112,15 @@ describe("statusIsSupportedBy is a gate, not a helper", () => {
     expect(statusIsSupportedBy("BLOCKED", [])).toBe(true);
   });
 
+  it("refuses a status that is not a status", () => {
+    // The old order tested `status !== "VERIFIED_PASS"` first, so anything that
+    // was not literally that string returned TRUE — garbage in, endorsement
+    // out, from a predicate whose whole job is withholding endorsement.
+    for (const status of ["NOT_A_STATUS", "", "verified_pass", null, 7, undefined, {}]) {
+      expect(statusIsSupportedBy(status as never, []), JSON.stringify(status)).toBe(false);
+    }
+  });
+
   it("refuses hostile input instead of throwing", () => {
     // An external caller has not necessarily snapshotted anything.
     expect(() => statusIsSupportedBy("VERIFIED_PASS", null as never)).not.toThrow();
@@ -151,6 +160,50 @@ describe("a pass must be earned", () => {
     const result = validateVerdictRecord(record);
     expect(result.ok).toBe(false);
     expect(result.ok ? [] : result.issues.map((i) => i.code)).toContain("uncited_evidence");
+  });
+});
+
+describe("exact duplicates in the descriptive arrays are refused", () => {
+  it("rejects an entry identical in every field to one already present", () => {
+    const record = validRecord();
+    record.status = "CONDITIONAL";
+    record.residualRisks = [
+      { description: "Untested auth", severity: "medium" },
+      { description: "Untested auth", severity: "medium" },
+    ];
+    const result = validateVerdictRecord(record);
+    expect(result.ok).toBe(false);
+    expect(result.ok ? [] : result.issues.map((i) => i.code)).toContain("duplicate_entry");
+  });
+
+  it("rejects a duplicate disguised by key order", () => {
+    // Comparison is by canonical encoding, so reordering keys does not create
+    // a distinct entry.
+    const record = validRecord();
+    record.status = "CONDITIONAL";
+    record.residualRisks = [
+      { description: "Untested auth", severity: "medium" },
+      { severity: "medium", description: "Untested auth" },
+    ];
+    expect(validateVerdictRecord(record).ok).toBe(false);
+  });
+
+  it("still allows entries that differ in any field", () => {
+    // Positive control, and the actual boundary of the decision: only EXACT
+    // duplicates are refused. Two risks sharing a description but differing in
+    // severity are two genuine risks.
+    const record = validRecord();
+    record.status = "CONDITIONAL";
+    record.residualRisks = [
+      { description: "Untested auth", severity: "medium" },
+      { description: "Untested auth", severity: "high" },
+    ];
+    record.notTested = [
+      { description: "Auth paths", reason: "No credentials" },
+      { description: "Rate limits", reason: "No credentials" },
+    ];
+    const result = validateVerdictRecord(record);
+    expect(result.ok ? [] : result.issues).toEqual([]);
   });
 });
 

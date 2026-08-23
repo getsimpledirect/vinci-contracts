@@ -2,6 +2,7 @@ import {
   fail,
   isVerdictStatus,
   ok,
+  canonicalize,
   isCanonicalTimestamp,
   isDigest,
   isIdentifier,
@@ -123,6 +124,18 @@ export function statusIsSupportedBy(
   // already validated anything: an external caller reaches it directly with
   // whatever it has, including a hostile array.
   if (!Array.isArray(criterionResults)) return false;
+
+  // Establish the status is a status BEFORE applying status semantics.
+  //
+  // The old order asked `status !== "VERIFIED_PASS"` first, so every value that
+  // is not literally that string — "NOT_A_STATUS", "", null, 7, undefined —
+  // returned TRUE. For a predicate named "is this status supported by these
+  // criteria", answering true for a status that does not exist is the same
+  // unearned-confidence failure as the vacuous pass, reached from the other
+  // side: garbage in, endorsement out. A caller checking a status it failed to
+  // validate was told yes.
+  if (!isVerdictStatus(status)) return false;
+
   if (status !== "VERIFIED_PASS") return true;
 
   // The vacuous pass. `.every()` on an empty array is `true`, so the previous
@@ -349,6 +362,39 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
         add("/decisiveEvidenceIds", "evidence_required", "a pass must name the evidence that decided it");
       }
     }
+  }
+
+  // Exact duplicates in the descriptive arrays are refused.
+  //
+  // This was an open question in the repair matrix, so here is the decision and
+  // its reasoning rather than silence. An entry identical in EVERY field to one
+  // already present carries no information: it cannot describe a second,
+  // different risk or condition, because everything that distinguishes one from
+  // another is the same. Its only effect is to inflate a count, which matters
+  // because "three residual risks" reads as more thorough scrutiny than "one".
+  //
+  // Deliberately EXACT duplicates only. Two risks sharing a description but
+  // differing in severity are two genuine risks and are allowed, as are two
+  // untested items with the same reason and different descriptions. Comparison
+  // is by canonical encoding so key order cannot be used to smuggle a duplicate
+  // past a shallow check.
+  for (const field of ["unresolvedConditions", "residualRisks", "notTested", "staleWhen"] as const) {
+    const entries = record[field];
+    if (!Array.isArray(entries)) continue;
+    const seen = new Set<string>();
+    entries.forEach((entry, i) => {
+      let key: string;
+      try {
+        key = canonicalize(entry);
+      } catch {
+        // Not canonicalizable; the shape checks above have already recorded why.
+        return;
+      }
+      if (seen.has(key)) {
+        add(`/${field}/${i}`, "duplicate_entry", "an identical entry is already present and adds nothing");
+      }
+      seen.add(key);
+    });
   }
 
   // Decisive evidence must actually appear in the reasoning. Otherwise a record

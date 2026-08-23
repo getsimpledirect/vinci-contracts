@@ -208,6 +208,16 @@ describe("an authority check refuses hostile input rather than throwing", () => 
     ["a proxy with a throwing get trap", new Proxy({}, { get() { throw new Error("trap"); } })],
     ["an object whose toString throws", { toString() { throw new Error("toString"); } }],
     ["a null-prototype object", Object.create(null)],
+    // Inherited keys. Every one of these IS a string, so a typeof guard passes
+    // them, and an ordinary object lookup then finds Object.prototype's member
+    // rather than undefined. The first fix here guarded coercion and missed
+    // these entirely.
+    ["the string toString", "toString"],
+    ["the string constructor", "constructor"],
+    ["the string valueOf", "valueOf"],
+    ["the string hasOwnProperty", "hasOwnProperty"],
+    ["the string __proto__", "__proto__"],
+    ["the string isPrototypeOf", "isPrototypeOf"],
     ["a symbol", Symbol("owner")],
     ["null", null],
     ["undefined", undefined],
@@ -250,6 +260,16 @@ describe("a remote decision state is validated, not assumed", () => {
     expect(validateRemoteDecisionState({
       kind: "rejected_by_host", reason: "expired",
     }).ok).toBe(true);
+  });
+
+  it("rejects an inherited property name as a kind", () => {
+    // `"toString" in KEYS` is true for an ordinary object literal, because the
+    // `in` operator walks the prototype chain. The lookup then returned a
+    // function and `.includes` threw out of a fail-closed validator.
+    for (const kind of ["toString", "constructor", "valueOf", "hasOwnProperty", "__proto__"]) {
+      expect(() => validateRemoteDecisionState({ kind }), kind).not.toThrow();
+      expect(validateRemoteDecisionState({ kind }).ok, kind).toBe(false);
+    }
   });
 
   it("rejects an unrecognised kind rather than carrying it forward", () => {

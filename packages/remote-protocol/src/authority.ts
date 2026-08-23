@@ -7,7 +7,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
 } from "@vinci/contracts";
-import type { SessionRole } from "./session.ts";
+import { isSessionRole, type SessionRole } from "./session.ts";
 
 /**
  * What a remote device may ask a host to do.
@@ -114,9 +114,26 @@ export function mayIssue(role: SessionRole, command: RemoteCommandKind): boolean
   // swallow a genuine programming error alongside hostile input and report
   // both as "no authority", hiding real bugs. Refusing non-strings up front
   // separates the two.
-  if (typeof role !== "string" || typeof command !== "string") return false;
+  // Membership in the CLOSED VOCABULARY, before any indexing happens.
+  //
+  // A typeof guard was not enough, and the reason is worth stating because the
+  // first fix looked complete. `"toString"` IS a string, so it passed the
+  // typeof check; `PERMITTED["toString"]` then resolved through the prototype
+  // chain to Object.prototype.toString, which is a function and therefore not
+  // `undefined`, so the undefined-guard let it through, and `.includes` threw.
+  // Same for constructor, valueOf, hasOwnProperty and __proto__.
+  //
+  // The lesson is that `PERMITTED[role] === undefined` asks "is this key
+  // absent?" and gets the wrong answer for every key JavaScript puts on every
+  // object. Asking `isSessionRole(role)` instead asks the question actually
+  // meant — is this one of the five roles we defined — and no inherited
+  // property can satisfy it.
+  if (!isSessionRole(role)) return false;
+  if (typeof command !== "string") return false;
   const permitted = PERMITTED[role];
-  if (permitted === undefined) return false;
+  // Belt and braces: a role in the vocabulary that is missing from the map is a
+  // programming error, and denying is the safe reading of it.
+  if (!Array.isArray(permitted)) return false;
   return permitted.includes(command);
 }
 
@@ -191,14 +208,19 @@ export function validateRemoteDecisionState(
   const issues: ValidationIssue[] = [];
   const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
 
-  const KEYS: Record<string, readonly string[]> = {
+  // A null-prototype map, so `in` and indexing cannot reach Object.prototype.
+  // With an ordinary object literal, `"toString" in KEYS` is TRUE — the `in`
+  // operator walks the prototype chain — and the lookup then returned a
+  // function whose `.includes` threw. Object.hasOwn below is the explicit
+  // own-key question; the null prototype makes it impossible to get wrong twice.
+  const KEYS: Record<string, readonly string[]> = Object.assign(Object.create(null), {
     provisional: ["kind", "submittedAt"],
     confirmed: ["kind", "confirmedAt"],
     rejected_by_host: ["kind", "reason"],
-  };
+  });
 
   const kind = record.kind;
-  if (typeof kind !== "string" || !(kind in KEYS)) {
+  if (typeof kind !== "string" || !Object.hasOwn(KEYS, kind)) {
     // Fail closed and stop: without a known kind there is no shape to check
     // the remaining fields against, and guessing one would invent authority.
     return fail([
