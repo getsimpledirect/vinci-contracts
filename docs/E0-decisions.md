@@ -83,7 +83,7 @@ glossary nouns of §7.
 
 `Verdict` lives in `contracts` rather than in `evidence`, even though a verdict
 is an assessment *of* evidence. The deciding factor is
-`terminalStateOfVerdict()`: it is the single function preventing Code and
+`terminalStateOfVerification()`: it is the single function preventing Code and
 Acceptance from drifting apart on how a verdict collapses into a final state,
 and it must sit beside the `TerminalState` it returns. Putting `Verdict` in
 `evidence` would force `contracts` to depend on `evidence` and invert the graph.
