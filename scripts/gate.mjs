@@ -25,6 +25,7 @@ const STEPS = [
   ["dependency graph", "node scripts/check-dependency-graph.mjs"],
   ["SchemaMeta conformance", "node scripts/check-schema-meta.mjs"],
   ["hostile-key conformance", "node scripts/check-hostile-keys.mjs"],
+  ["no stray scripts", "node scripts/check-no-stray-scripts.mjs"],
 ];
 
 const results = [];
