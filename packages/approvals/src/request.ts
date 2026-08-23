@@ -68,6 +68,19 @@ export type ApprovalRequest = {
   readonly runObjective: string;
   readonly affectedResource: AffectedResourceId;
   readonly reason: string;
+  /**
+   * ADVISORY ONLY. Supplied by the worker, and it confers no authority.
+   *
+   * Whether approval is required, who may approve, which options may be
+   * offered, and whether an action is forbidden are decided by policy — never
+   * by a label the requesting worker chose for its own request. A worker that
+   * could widen its own permissions by calling an action "low" would be
+   * granting itself authority, which is the thing this package exists to
+   * prevent.
+   *
+   * It is carried because it helps a human understand a request quickly, and
+   * nothing in this package reads it to make a decision.
+   */
   readonly riskLevel: RiskLevel;
   readonly evidenceId: EvidenceId;
   readonly estimatedCostOrImpact: string;

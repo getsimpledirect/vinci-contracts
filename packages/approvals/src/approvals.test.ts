@@ -342,3 +342,26 @@ describe("the notification payload cannot be edited after projection", () => {
     expect(JSON.stringify(payload)).not.toContain("ghp_");
   });
 });
+
+describe("worker-supplied risk confers no authority", () => {
+  it("does not change any decision this package makes", () => {
+    // A worker that could widen its own permissions by labelling an action
+    // "low" would be granting itself authority. Nothing here reads riskLevel,
+    // and this pins that: the same request at every risk level produces the
+    // same satisfaction outcome for the same decision.
+    const decide = (riskLevel: "low" | "medium" | "high" | "critical") => {
+      const req = { ...request, riskLevel };
+      const decision = {
+        kind: "approve-once" as const,
+        approvalId: req.approvalId,
+        runId: req.runId,
+        decidedBy: { kind: "user" as const, userId: "user-1" as never },
+        decidedAt: "2026-08-23T12:05:00.000Z" as never,
+        deliveryState: { kind: "acted-upon-by-worker" as const },
+      };
+      return applyApprovalDecision(req, { kind: "pending" }, decision).kind;
+    };
+    const outcomes = new Set(["low", "medium", "high", "critical"].map((r) => decide(r as never)));
+    expect(outcomes.size).toBe(1);
+  });
+});
