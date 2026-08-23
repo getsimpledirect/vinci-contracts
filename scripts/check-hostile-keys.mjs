@@ -173,7 +173,16 @@ const AUTHORITY_GUARDS = [
     // returned null. The control pins both directions.
     control: (fn) =>
       fn({ kind: "worker", workerId: "w" })?.kind === "worker"
-      && fn({ kind: "verifier", verifierId: "v", workerId: "w" }) === null,
+      && fn({ kind: "verifier", verifierId: "v", independent: true })?.independent === true
+      && fn({ kind: "user", userId: "u" })?.kind === "user"
+      && fn({ kind: "policy", policyId: "p", policyVersion: 3 })?.kind === "policy"
+      // Foreign field, and the missing-identity cases: a worker with no
+      // workerId and an anonymous verifier asserting its own independence.
+      && fn({ kind: "verifier", verifierId: "v", workerId: "w" }) === null
+      && fn({ kind: "worker" }) === null
+      && fn({ kind: "verifier", independent: true }) === null
+      && fn({ kind: "worker", workerId: "   " }) === null
+      && fn({ kind: "verifier", verifierId: "v", independent: "yes" }) === null,
   },
   {
     pkg: "evidence",
@@ -202,7 +211,10 @@ const AUTHORITY_GUARDS = [
     call: (fn, hostile) => fn("worker_provided", hostile),
     control: (fn) =>
       fn("worker_provided", { kind: "worker", workerId: "w" }) === true
-      && fn("independent_verifier", { kind: "verifier", verifierId: "v", independent: true }) === true,
+      && fn("independent_verifier", { kind: "verifier", verifierId: "v", independent: true }) === true
+      // Identity-less actors must not satisfy any provenance.
+      && fn("worker_provided", { kind: "worker" }) === false
+      && fn("independent_verifier", { kind: "verifier", independent: true }) === false,
   },
   {
     pkg: "evidence",
@@ -276,6 +288,10 @@ const NOT_AUTHORITY_GUARDS = {
   "contracts.isEnumToken": "pure string/regex predicate",
   "contracts.isIdentifier": "pure string/regex predicate",
   "contracts.isNonBlankText": "pure string predicate",
+  // Total function: returns a string for every input and never throws.
+  // Its own no-throw property is pinned by unit tests, including the
+  // null-prototype case that made String() throw in the first place.
+  "contracts.safeLabel": "total value-to-label function, never a decision",
   "contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
   // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.
   // Returning true for an accessor is correct — the key is own-present — so

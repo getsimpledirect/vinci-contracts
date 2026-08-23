@@ -6,6 +6,7 @@ import {
   type ValidationResult,
   toPlainRecord,
   isNonBlankText,
+  safeLabel,
 } from "@vinci/contracts";
 import {
   EVIDENCE_KINDS,
@@ -273,7 +274,7 @@ function validateAttestation(
         issues,
         `${path}/actor/kind`,
         "provenance_actor_mismatch",
-        `evidence with ${String(object.provenance)} provenance must be attested by an actor of kind "${expected}", not "${String(actor.kind)}"`,
+        `evidence with ${safeLabel(object.provenance)} provenance must be attested by an actor of kind "${expected}", not "${safeLabel(actor.kind)}"`,
       );
     }
     // An actor must carry exactly the fields its own kind permits.
@@ -294,7 +295,7 @@ function validateAttestation(
         issues,
         `${path}/actor`,
         "actor_identity_mismatch",
-        `an actor of kind "${String(actor.kind)}" carries a field that kind does not permit`,
+        `an actor of kind "${safeLabel(actor.kind)}" carries a field that kind does not permit`,
       );
     }
     if (object.provenance === "independent_verifier" && actor.independent !== true) {

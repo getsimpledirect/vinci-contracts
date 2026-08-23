@@ -10,6 +10,7 @@ import {
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
+  safeLabel,
 } from "@vinci/contracts";
 import { isRunEventType } from "./event-types.ts";
 import { PAYLOAD_FIELDS } from "./payload.ts";
@@ -139,7 +140,7 @@ function validateActor(raw: unknown, issues: ValidationIssue[]): void {
       issue(
         "/actor",
         "actor_identity_mismatch",
-        `an actor of kind "${String(actor.kind)}" carries a field that kind does not permit`,
+        `an actor of kind "${safeLabel(actor.kind)}" carries a field that kind does not permit`,
       ),
     );
   }

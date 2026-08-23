@@ -70,3 +70,38 @@ export function isEnumToken(value: unknown): value is string {
 export function isNonBlankText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
+
+/**
+ * A short, safe label for an unexpected value, for use in error messages.
+ *
+ * Never throws. `String(x)` and `${x}` both throw "Cannot convert object to
+ * primitive value" on a null-prototype object — and every value a validator
+ * inspects is null-prototype, because that is exactly what `toPlainRecord`
+ * produces. So a validator handed `{ kind: {...} }` crashed while building the
+ * message that reports the problem: the diagnostic path was the one path that
+ * had never been exercised, since it only runs when input is already wrong.
+ *
+ * Non-primitives are described by shape rather than content. That is
+ * deliberate beyond avoiding the throw: an error message is a place a value
+ * can escape to a log, and SR-3 says secrets must never reach one. A caller
+ * learns "object", not what was in it. Strings are truncated for the same
+ * reason a log line is.
+ */
+export function safeLabel(value: unknown): string {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  switch (typeof value) {
+    case "string":
+      return value.length > 64 ? `${value.slice(0, 64)}…` : value;
+    case "number":
+    case "boolean":
+    case "bigint":
+      return String(value);
+    case "symbol":
+      return "symbol";
+    case "function":
+      return "function";
+    default:
+      return Array.isArray(value) ? "array" : "object";
+  }
+}

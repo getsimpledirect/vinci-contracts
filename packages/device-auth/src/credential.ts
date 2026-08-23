@@ -8,6 +8,7 @@ import {
   type Timestamp,
   type ValidationIssue,
   type ValidationResult,
+  safeLabel,
 } from "@vinci/contracts";
 import type { DeviceId, WorkerId } from "@vinci/contracts";
 import type { ClientType } from "./client-type.ts";
@@ -346,7 +347,7 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
     issues.push({
       path: "/kind",
       code: "wrong_credential_kind",
-      message: `expected a device credential, got kind "${String(raw.kind)}"`,
+      message: `expected a device credential, got kind "${safeLabel(raw.kind)}"`,
     });
   }
   if (hasField(raw, "workerId")) {
@@ -434,7 +435,7 @@ export function validateWorkerCredential(value: unknown): ValidationResult<Worke
     issues.push({
       path: "/kind",
       code: "wrong_credential_kind",
-      message: `expected a worker credential, got kind "${String(raw.kind)}"`,
+      message: `expected a worker credential, got kind "${safeLabel(raw.kind)}"`,
     });
   }
   if (hasField(raw, "deviceId")) {

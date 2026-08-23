@@ -1,3 +1,4 @@
+import { isNonBlankText } from "./scalars.ts";
 import type { DeviceId, UserId, WorkerId } from "./ids.ts";
 
 /**
@@ -61,13 +62,43 @@ export type StateTransition<S extends string> = {
  * Kept beside the `Actor` union rather than in a consumer, so adding an arm and
  * forgetting the field list is a type error rather than a silent hole.
  */
-export const ACTOR_FIELDS: Readonly<Record<Actor["kind"], readonly string[]>> = {
-  user: ["kind", "userId", "deviceId"],
-  worker: ["kind", "workerId"],
-  policy: ["kind", "policyId", "policyVersion"],
-  system: ["kind", "component"],
-  verifier: ["kind", "verifierId", "independent"],
-};
+/**
+ * What each kind of actor must carry, and of what type.
+ *
+ * This is the single source of truth: {@link ACTOR_FIELDS} is DERIVED from it,
+ * so the permitted-field list and the required-field rules cannot disagree.
+ * They already had. `plainActor` enforced only "no foreign fields" while
+ * `validateEvidenceRecord` also required each arm's identity, so
+ *
+ *   plainActor({ kind: "worker" })                               -> a snapshot
+ *   plainActor({ kind: "verifier", independent: true })          -> a snapshot
+ *
+ * both succeeded: a worker with no identity, and an anonymous verifier
+ * asserting its own independence. The exported helper was again a more
+ * permissive path to a question the validator answered strictly — the exact
+ * divergence the comment in provenance.ts says was closed once already.
+ *
+ * "?" marks optional. Everything else must be present.
+ */
+const ACTOR_FIELD_RULES = {
+  user: { userId: "string", deviceId: "string?" },
+  worker: { workerId: "string" },
+  policy: { policyId: "string", policyVersion: "positiveInteger" },
+  system: { component: "string" },
+  verifier: { verifierId: "string", independent: "boolean" },
+} as const satisfies Record<Actor["kind"], Readonly<Record<string, string>>>;
+
+/**
+ * Which fields each kind of actor may carry. Derived, never hand-maintained.
+ */
+export const ACTOR_FIELDS: Readonly<Record<Actor["kind"], readonly string[]>> = Object.freeze(
+  Object.fromEntries(
+    Object.entries(ACTOR_FIELD_RULES).map(([kind, rules]) => [
+      kind,
+      Object.freeze(["kind", ...Object.keys(rules)]),
+    ]),
+  ),
+) as Readonly<Record<Actor["kind"], readonly string[]>>;
 
 export function isActorKind(value: unknown): value is Actor["kind"] {
   return typeof value === "string" && Object.hasOwn(ACTOR_FIELDS, value);
@@ -141,6 +172,37 @@ export function plainActor(
   for (const field of Object.keys(snapshot)) {
     if (!permitted.has(field)) return null;
   }
+
+  // Each arm's OWN requirements, not merely the absence of foreign fields.
+  // Without this the helper accepted every malformed actor it was handed and
+  // disagreed with the validator on all of them.
+  const rules: Readonly<Record<string, string>> = ACTOR_FIELD_RULES[kind];
+  for (const [field, rule] of Object.entries(rules)) {
+    const value = snapshot[field];
+    if (value === undefined) {
+      if (rule.endsWith("?")) continue;
+      return null;
+    }
+    switch (rule) {
+      case "string":
+      case "string?":
+        // Non-blank: an identifier of spaces names nobody while satisfying
+        // both a typeof check and a length check.
+        if (!isNonBlankText(value)) return null;
+        break;
+      case "boolean":
+        // Strictly boolean. `independent: "yes"` is truthy and is not a
+        // disclosure of anything.
+        if (typeof value !== "boolean") return null;
+        break;
+      case "positiveInteger":
+        if (typeof value !== "number" || !Number.isInteger(value) || value < 1) return null;
+        break;
+      default:
+        return null;
+    }
+  }
+
   return Object.freeze(snapshot);
 }
 
