@@ -1,5 +1,6 @@
 import {
   fail,
+  isCanonicalTimestamp,
   ok,
   type ValidationIssue,
   type ValidationResult,
@@ -168,12 +169,7 @@ function timestamp(value: unknown, path: string, issues: ValidationIssue[]): val
     addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
     return false;
   }
-  if (
-    typeof value !== "string"
-    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
-    || Number.isNaN(Date.parse(value))
-    || new Date(value).toISOString() !== value
-  ) {
+  if (!isCanonicalTimestamp(value)) {
     addIssue(
       issues,
       path,

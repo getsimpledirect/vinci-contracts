@@ -5,6 +5,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
   toPlainRecord,
+  isCanonicalTimestamp,
   isNonBlankText,
   safeLabel,
 } from "@vinci/contracts";
@@ -152,18 +153,7 @@ function timestamp(value: unknown, path: string, issues: ValidationIssue[]): val
     addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
     return false;
   }
-  // The round-trip is the load-bearing part. Date.parse normalises impossible
-  // dates rather than rejecting them, so "2026-02-29T12:34:56.789Z" — a date
-  // that does not exist, 2026 not being a leap year — parses to March 1 and
-  // passes both the shape and the NaN check. model-classes and approvals both
-  // carry this comparison; evidence did not, so the two packages disagreed
-  // about what a malformed timestamp is.
-  if (
-    typeof value !== "string"
-    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
-    || Number.isNaN(Date.parse(value))
-    || new Date(value).toISOString() !== value
-  ) {
+  if (!isCanonicalTimestamp(value)) {
     addIssue(issues, path, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
     return false;
   }

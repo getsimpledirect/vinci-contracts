@@ -1,6 +1,7 @@
 import {
   fail,
   hasField,
+  isCanonicalTimestamp,
   toPlainRecord,
   type PlainRecord,
   ok,
@@ -179,12 +180,7 @@ const ACCEPTANCE_FORBIDDEN_ISSUE: ValidationIssue = {
  * and left this package on the wrong side of that disagreement.
  */
 function isTimestamp(value: unknown): value is Timestamp {
-  return (
-    typeof value === "string"
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
-    && !Number.isNaN(Date.parse(value))
-    && new Date(value).toISOString() === value
-  );
+  return isCanonicalTimestamp(value);
 }
 
 /**

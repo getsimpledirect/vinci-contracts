@@ -3,6 +3,7 @@ import {
   fail,
   hasField,
   isActorKind,
+  isCanonicalTimestamp,
   ok,
   toPlainRecord,
   type PlainRecord,
@@ -17,19 +18,9 @@ import type { VerificationRecord } from "./verdict.ts";
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
-const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 
 function issue(path: string, code: string, message: string): ValidationIssue {
   return { path, code, message };
-}
-
-function isCanonicalTimestamp(value: unknown): value is string {
-  return (
-    typeof value === "string"
-    && TIMESTAMP_PATTERN.test(value)
-    && !Number.isNaN(Date.parse(value))
-    && new Date(value).toISOString() === value
-  );
 }
 
 function isTerminalState(value: unknown): value is string {
