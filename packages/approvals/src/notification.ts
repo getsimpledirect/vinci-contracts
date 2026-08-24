@@ -2,7 +2,7 @@ import {
   CONSEQUENTIAL_ACTION_LABELS,
   type ConsequentialActionClass,
   type Timestamp,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import type { GrantShape } from "./grant.ts";
 import type { ApprovalRequest, RiskLevel } from "./request.ts";
 

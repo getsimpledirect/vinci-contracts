@@ -1,4 +1,4 @@
-import type { Actor, RunId, Timestamp } from "@vinci/contracts";
+import type { Actor, RunId, Timestamp } from "@getsimpledirect/vinci-contracts";
 import type { RunEventType } from "./event-types.ts";
 import type { PayloadFor } from "./payload.ts";
 

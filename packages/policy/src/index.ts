@@ -1,5 +1,5 @@
 /**
- * @vinci/policy — the run-authority policy manifest.
+ * @getsimpledirect/vinci-policy — the run-authority policy manifest.
  *
  * This governs what a WORKER may do during a RUN: which paths it may touch,
  * what it may reach on the network, which credentials it may reference, what
@@ -31,4 +31,4 @@ export {
   type SchemaMeta,
   type Timestamp,
   type ValidationResult,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";

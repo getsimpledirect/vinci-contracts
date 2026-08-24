@@ -1,4 +1,4 @@
-import { ownData } from "@vinci/contracts";
+import { ownData } from "@getsimpledirect/vinci-contracts";
 /**
  * Who or what a failure belongs to.
  *

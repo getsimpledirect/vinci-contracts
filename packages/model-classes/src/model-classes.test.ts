@@ -1,4 +1,4 @@
-import { assertSchemaMetaComplete } from "@vinci/contracts";
+import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import { describe, expect, it } from "vitest";
 import {
   CUSTOMER_ENDPOINT_SCHEMA_META,

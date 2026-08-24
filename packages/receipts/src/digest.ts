@@ -1,4 +1,4 @@
-import { canonicalize } from "@vinci/contracts";
+import { canonicalize } from "@getsimpledirect/vinci-contracts";
 
 /**
  * Re-exported, not reimplemented.

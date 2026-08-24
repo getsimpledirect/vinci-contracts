@@ -1,4 +1,4 @@
-import type { DeviceId, OrganizationId, RunId, WorkspaceId } from "@vinci/contracts";
+import type { DeviceId, OrganizationId, RunId, WorkspaceId } from "@getsimpledirect/vinci-contracts";
 
 /**
  * A remote session is TRANSPORT identity. A run is WORK identity. They are not

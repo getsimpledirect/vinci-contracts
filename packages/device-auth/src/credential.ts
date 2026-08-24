@@ -10,8 +10,8 @@ import {
   type ValidationIssue,
   type ValidationResult,
   safeLabel,
-} from "@vinci/contracts";
-import type { DeviceId, WorkerId } from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
+import type { DeviceId, WorkerId } from "@getsimpledirect/vinci-contracts";
 import type { ClientType } from "./client-type.ts";
 import { isClientType } from "./client-type.ts";
 import type { DeviceScope, Scope } from "./scopes.ts";
@@ -244,7 +244,7 @@ function validateBaseCredential(value: unknown): ValidationResult<CredentialIden
   if (!plain.ok) return plain;
   const record = plain.value;
   const issues: ValidationIssue[] = [];
-  // D4 exception, matching /credentials in @vinci/policy: an unrecognised
+  // D4 exception, matching /credentials in @getsimpledirect/vinci-policy: an unrecognised
   // field on a credential may BE the secret, and preserving it would carry
   // that secret into a record SR-3 says must never hold one. Reject instead.
   for (const key of Object.keys(record)) {
@@ -394,7 +394,7 @@ export const CREDENTIAL_IDENTITY_SCHEMA_META: SchemaMeta = {
   compatibility: "additive-only",
   /**
    * Rejected, not preserved — the D4 exception that also governs /credentials
-   * in @vinci/policy. An unrecognised field on a credential may be the secret
+   * in @getsimpledirect/vinci-policy. An unrecognised field on a credential may be the secret
    * itself, and preserving it would carry that secret into a record SR-3 says
    * must never hold one.
    */

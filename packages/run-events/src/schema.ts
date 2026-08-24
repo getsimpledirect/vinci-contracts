@@ -11,7 +11,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
   safeLabel,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import { isRunEventType } from "./event-types.ts";
 import { PAYLOAD_FIELDS } from "./payload.ts";
 import type { RunEvent } from "./event.ts";
@@ -19,9 +19,9 @@ import type { RunEvent } from "./event.ts";
 /**
  * Re-exported from layer 0, not re-implemented.
  *
- * This rule used to live here. The verdict record in `@vinci/evidence` (layer
+ * This rule used to live here. The verdict record in `@getsimpledirect/vinci-evidence` (layer
  * 1) needs the identical rule and cannot import upward, so the definition moved
- * to `@vinci/contracts` and this is now a re-export. The wire format is
+ * to `@getsimpledirect/vinci-contracts` and this is now a re-export. The wire format is
  * unchanged — same regex, same round-trip — and there is exactly one copy, so
  * the two cannot drift the way the duplicated canonicalizer already had.
  */
@@ -109,7 +109,7 @@ function validatePayloadValue(
 /**
  * The exact fields each actor arm requires, and their types.
  *
- * `actorFieldsAreConsistent` from @vinci/contracts answers "does this carry a
+ * `actorFieldsAreConsistent` from @getsimpledirect/vinci-contracts answers "does this carry a
  * field its kind does not permit". That is only half the question, and relying
  * on it alone accepted `{kind:"worker"}` with no workerId at all, and
  * `{kind:"worker", workerId: 5}` with a number where an identifier belongs.

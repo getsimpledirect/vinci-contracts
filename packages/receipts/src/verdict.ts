@@ -1,4 +1,4 @@
-import type { Timestamp } from "@vinci/contracts";
+import type { Timestamp } from "@getsimpledirect/vinci-contracts";
 
 /**
  * Whether a receipt may be shown as verified.

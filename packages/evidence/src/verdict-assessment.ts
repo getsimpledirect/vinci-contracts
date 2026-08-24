@@ -1,4 +1,4 @@
-import type { ValidationResult, VerdictStatus } from "@vinci/contracts";
+import type { ValidationResult, VerdictStatus } from "@getsimpledirect/vinci-contracts";
 import { validateVerdictAssessment } from "./schema.ts";
 
 /**
@@ -64,7 +64,7 @@ export type VerdictStalenessTrigger = (typeof VERDICT_STALENESS_TRIGGERS)[number
  * a stale verdict as if it were current. A caller must first check the `kind`
  * field and explicitly handle the stale case before accessing `status`.
  *
- * This follows the pattern from @vinci/contracts/src/states.ts where
+ * This follows the pattern from @getsimpledirect/vinci-contracts/src/states.ts where
  * `VerificationOutcome` is a union: issuers cannot accidentally render "no
  * verdict" as a pass because the type forces them to handle it first.
  *

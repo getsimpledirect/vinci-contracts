@@ -10,7 +10,7 @@ import {
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import { validateAttentionBudget, type AttentionBudget } from "./attention.ts";
 
 /**

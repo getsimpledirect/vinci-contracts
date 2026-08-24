@@ -9,13 +9,13 @@ import {
   isIdentifier,
   isNonBlankText,
   safeLabel,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import {
   EVIDENCE_KINDS,
   EVIDENCE_SOURCE_KINDS,
 } from "./evidence-kinds.ts";
 import type { EvidenceRecord } from "./evidence-record.ts";
-import { actorFieldsAreConsistent } from "@vinci/contracts";
+import { actorFieldsAreConsistent } from "@getsimpledirect/vinci-contracts";
 import { EVIDENCE_OUTCOMES, isFailureOwner } from "./attribution.ts";
 import { EVIDENCE_PROVENANCE_CASES, type EvidenceProvenance } from "./provenance.ts";
 import {
@@ -286,7 +286,7 @@ function validateAttestation(
     // `independent` and `policyVersion` — so a worker could carry
     // `independent: true` and assert its own independence. A denylist of
     // foreign fields has that failure mode by construction; an allowlist of
-    // permitted ones, derived from the Actor union in @vinci/contracts, does
+    // permitted ones, derived from the Actor union in @getsimpledirect/vinci-contracts, does
     // not.
     //
     // What this still cannot do is establish that whoever submitted the record

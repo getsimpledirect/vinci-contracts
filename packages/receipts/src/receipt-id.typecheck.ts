@@ -1,4 +1,4 @@
-import type { ReceiptId, toReceiptId } from "@vinci/contracts";
+import type { ReceiptId, toReceiptId } from "@getsimpledirect/vinci-contracts";
 
 import type { Receipt } from "./receipt.ts";
 

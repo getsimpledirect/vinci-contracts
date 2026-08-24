@@ -6,7 +6,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
   toPlainRecord,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import {
   POLICY_ALLOWED_REASON_CODES,
   POLICY_DECISION_OPTION_KINDS,

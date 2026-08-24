@@ -6,9 +6,9 @@ import type {
   Timestamp,
   VerdictStatus,
   WorkspaceRef,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 
-export type { ReceiptId } from "@vinci/contracts";
+export type { ReceiptId } from "@getsimpledirect/vinci-contracts";
 
 /**
  * A receipt records what a run accomplished, with evidence and digest for verification.

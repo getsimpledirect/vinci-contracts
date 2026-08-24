@@ -14,7 +14,7 @@
  * to express who may clear a request without it.
  *
  * Note `approver` is a person's role in an organization. It is unrelated to
- * the `verifier` arm of `Actor` in @vinci/contracts, which is an independent
+ * the `verifier` arm of `Actor` in @getsimpledirect/vinci-contracts, which is an independent
  * verification service. Naming a role `verifier` would collide with that and
  * is deliberately avoided.
  *

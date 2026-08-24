@@ -1,4 +1,4 @@
-import type { WorkspaceRef } from "@vinci/contracts";
+import type { WorkspaceRef } from "@getsimpledirect/vinci-contracts";
 import type {
   ExplicitValue,
   ModelCapabilityProfile,

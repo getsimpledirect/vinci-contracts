@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plainActor } from "@vinci/contracts";
+import { plainActor } from "@getsimpledirect/vinci-contracts";
 import { validateEvidenceRecord } from "./schema.ts";
 
 /**

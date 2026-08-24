@@ -10,7 +10,7 @@ import {
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import { receiptDigest } from "./digest.ts";
 import type { Correction } from "./correction.ts";
 import type { Receipt } from "./receipt.ts";

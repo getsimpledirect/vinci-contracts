@@ -1,4 +1,4 @@
-import type { Actor, PolicyId } from "@vinci/contracts";
+import type { Actor, PolicyId } from "@getsimpledirect/vinci-contracts";
 
 export type PolicyReference = {
   readonly policyId: PolicyId;

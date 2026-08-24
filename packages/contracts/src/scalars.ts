@@ -113,7 +113,7 @@ export function safeLabel(value: unknown): string {
  * ways a value can lie about itself, refused in one place.
  *
  * This lives at layer 0 because it was about to exist twice. A private copy in
- * `@vinci/evidence` already guards attribution, and the first thing written
+ * `@getsimpledirect/vinci-evidence` already guards attribution, and the first thing written
  * against a new package needed the identical rule — a direct `budget.decisions`
  * read threw on a proxy whose get trap throws, in a predicate documented to
  * refuse rather than throw. Every duplicated helper in this repository has

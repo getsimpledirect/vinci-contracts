@@ -6,7 +6,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
   toPlainRecord,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import type { CustomerEndpointConfig } from "./customer-endpoint.ts";
 import type { FallbackRecord } from "./fallback.ts";
 import type { ModelProvenanceRecord } from "./provenance.ts";

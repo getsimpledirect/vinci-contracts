@@ -1,14 +1,14 @@
 import { createHash } from "node:crypto";
-import { canonicalize } from "@vinci/contracts";
+import { canonicalize } from "@getsimpledirect/vinci-contracts";
 
 /** Re-exported so callers need not reach past this package for it. */
 export { canonicalize };
 import type { RunEvent } from "./event.ts";
 
 /**
- * Event identity, built on the shared canonical encoding in @vinci/contracts.
+ * Event identity, built on the shared canonical encoding in @getsimpledirect/vinci-contracts.
  *
- * That encoding used to live here. It moved to layer 0 because @vinci/receipts
+ * That encoding used to live here. It moved to layer 0 because @getsimpledirect/vinci-receipts
  * needs the same rule and cannot import this package — same layer — so the two
  * would have been separate hand-written implementations of one wire format.
  * Two canonicalizers that disagree by a byte cannot verify each other's

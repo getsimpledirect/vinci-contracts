@@ -1,4 +1,4 @@
-import { plainActor, type Actor } from "@vinci/contracts";
+import { plainActor, type Actor } from "@getsimpledirect/vinci-contracts";
 
 /**
  * Who vouches for this evidence. This is the FR-6.3 requirement to distinguish
@@ -26,7 +26,7 @@ import { plainActor, type Actor } from "@vinci/contracts";
  *   disclose when an assessment comes from someone other than the worker, and
  *   the verifier's independence is part of the claim.
  *
- * Each case maps to the `Actor` type from @vinci/contracts in the way that
+ * Each case maps to the `Actor` type from @getsimpledirect/vinci-contracts in the way that
  * makes sense: `worker_provided` uses `Actor.kind: "worker"`, `human_provided`
  * uses `Actor.kind: "user"`, `system_observed` uses `Actor.kind: "system"`,
  * and `independent_verifier` uses `Actor.kind: "verifier"` with the

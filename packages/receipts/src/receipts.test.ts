@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSchemaMetaComplete, type ReceiptId, type RunId } from "@vinci/contracts";
+import { assertSchemaMetaComplete, type ReceiptId, type RunId } from "@getsimpledirect/vinci-contracts";
 import {
   CORRECTION_SCHEMA_META,
   RECEIPT_COVERED_FIELDS,
@@ -283,7 +283,7 @@ describe("corrections", () => {
     const receiptId = "receipt-1" as ReceiptId;
     const acceptsReceipt = (_value: ReceiptId): void => undefined;
     acceptsReceipt(receiptId);
-    // @ts-expect-error RunId and ReceiptId are distinct brands from @vinci/contracts.
+    // @ts-expect-error RunId and ReceiptId are distinct brands from @getsimpledirect/vinci-contracts.
     acceptsReceipt(runId);
   });
 });

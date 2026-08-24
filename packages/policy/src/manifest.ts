@@ -6,7 +6,7 @@ import {
   type RunId,
   type Timestamp,
   type UserId,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 
 export const SYMLINK_HANDLING = ["deny", "allow_within_roots", "read_target_only"] as const;
 export type SymlinkHandling = (typeof SYMLINK_HANDLING)[number];
@@ -112,7 +112,7 @@ export type CredentialPolicy = CredentialMaterialExclusions & {
 };
 
 /**
- * Re-exported from @vinci/contracts rather than defined here. @vinci/approvals
+ * Re-exported from @getsimpledirect/vinci-contracts rather than defined here. @getsimpledirect/vinci-approvals
  * needs the same vocabulary to describe a pending request without quoting free
  * text, and two copies of a list this specific would drift.
  */
@@ -171,7 +171,7 @@ export type ApprovalRequirement =
     };
 
 /**
- * Canonical grant type promoted to layer 0 (@vinci/contracts) to prevent drift
+ * Canonical grant type promoted to layer 0 (@getsimpledirect/vinci-contracts) to prevent drift
  * between policy and approvals packages. See CanonicalGrant documentation in
  * packages/contracts/src/grants.ts for rationale.
  */
