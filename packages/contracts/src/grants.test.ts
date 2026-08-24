@@ -37,7 +37,7 @@ describe("canonical grant contract", () => {
     expect(grant.durationMs).toBe(3_600_000);
   });
 
-  it("has grant shapes compatible with @vinci/approvals vocabulary", () => {
+  it("has grant shapes compatible with @getsimpledirect/vinci-approvals vocabulary", () => {
     const grantKindCount = GRANT_KINDS.length;
     expect(grantKindCount).toBe(3);
     expect(GRANT_KINDS).toContain("allow-once");

@@ -1,6 +1,8 @@
-# @vinci/contracts
+# @getsimpledirect/vinci-contracts
 
 Shared types and validators for the Vinci platform, used by five repositories (vinci-code, vinci-work, vinci-mobile, vinci-platform, vinci-chat) that currently maintain drifting local copies. This monorepo closes that divergence by defining one canonical set of record types, their shapes, and their validation rules—so teams can build against the same definitions instead of against guesses about what they meant to agree on.
+
+Package names use the organization-owned `@getsimpledirect` scope required by GitHub Packages. The deliberate `vinci-` prefix keeps these contracts namespaced without claiming generic package names.
 
 ## The Layer Hierarchy
 
@@ -23,11 +25,11 @@ Every major record type has a TypeScript type definition and a validation functi
 A single piece of evidence supporting or contradicting an acceptance criterion. Evidence records carry the actor vouching for them, the kind of evidence, and how it was produced (deterministic, execution-based, visual, model-judged, or human-approved).
 
 ```typescript
-import { toEvidenceId, toWorkerId } from "@vinci/contracts";
+import { toEvidenceId, toWorkerId } from "@getsimpledirect/vinci-contracts";
 import {
   validateEvidenceRecord,
   type EvidenceRecord,
-} from "@vinci/evidence";
+} from "@getsimpledirect/vinci-evidence";
 
 const evidence: EvidenceRecord = {
   schemaVersion: 1,
@@ -60,11 +62,11 @@ const result = validateEvidenceRecord(evidence);
 An independent assessment of whether completed work satisfied its request. Binds the conclusion to the exact artifact evaluated via `snapshotDigest`, states what it covered via `scope`, and lists what was not tested. A verdict with an unscoped or floating assessment cannot be checked later, and cannot be distinguished from a stale one.
 
 ```typescript
-import { toEvidenceId } from "@vinci/contracts";
+import { toEvidenceId } from "@getsimpledirect/vinci-contracts";
 import {
   validateVerdictRecord,
   type VerdictRecord,
-} from "@vinci/evidence";
+} from "@getsimpledirect/vinci-evidence";
 
 const verdict: VerdictRecord = {
   schemaVersion: 1,
@@ -103,7 +105,7 @@ A bounded grant of authority to do a specific piece of work. Specifies what "don
 import {
   validateWorkOrder,
   type WorkOrder,
-} from "@vinci/work-orders";
+} from "@getsimpledirect/vinci-work-orders";
 
 const workOrder: WorkOrder = {
   schemaVersion: 1,
@@ -140,11 +142,11 @@ const result = validateWorkOrder(workOrder);
 Everything a human needs to make one decision, carried rather than referenced. Carries the question, the options, what each option causes, and the evidence the choice rests on. A decision with a link and "see dashboard" charges the person twice: once to be interrupted, then again to assemble context. By then they are deciding while annoyed.
 
 ```typescript
-import { toEvidenceId } from "@vinci/contracts";
+import { toEvidenceId } from "@getsimpledirect/vinci-contracts";
 import {
   validateDecisionPacket,
   type DecisionPacket,
-} from "@vinci/work-orders";
+} from "@getsimpledirect/vinci-work-orders";
 
 const decision: DecisionPacket = {
   schemaVersion: 1,
@@ -183,7 +185,7 @@ A remote decision is provisional until the host confirms it. The relay carries a
 import {
   validateRemoteDecisionState,
   type RemoteDecisionState,
-} from "@vinci/remote-protocol";
+} from "@getsimpledirect/vinci-remote-protocol";
 
 // Provisional: awaiting host confirmation
 const provisional: RemoteDecisionState = {
@@ -218,7 +220,7 @@ Routes metadata for a remote session. `organizationId` is nullable (personal wor
 import {
   validateSessionBinding,
   type SessionBinding,
-} from "@vinci/remote-protocol";
+} from "@getsimpledirect/vinci-remote-protocol";
 
 const binding: SessionBinding = {
   sessionId: "session-abc123" as any,

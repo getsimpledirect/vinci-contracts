@@ -1,4 +1,4 @@
-import { isCanonicalTimestamp, type Actor, type ValidationIssue } from "@vinci/contracts";
+import { isCanonicalTimestamp, type Actor, type ValidationIssue } from "@getsimpledirect/vinci-contracts";
 
 export function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

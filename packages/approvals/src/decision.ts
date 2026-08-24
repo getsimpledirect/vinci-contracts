@@ -5,8 +5,8 @@ import type {
   SchemaMeta,
   Timestamp,
   ValidationResult,
-} from "@vinci/contracts";
-import { fail, ok, toPlainRecord, ownData } from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
+import { fail, ok, toPlainRecord, ownData } from "@getsimpledirect/vinci-contracts";
 import type { DeliveryState, EffectiveDeliveryState } from "./delivery.ts";
 import { isEffectiveDeliveryState } from "./delivery.ts";
 import type { GrantShape } from "./grant.ts";

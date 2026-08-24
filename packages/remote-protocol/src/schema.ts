@@ -6,7 +6,7 @@ import {
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import { isSessionRole } from "./session.ts";
 import type { SessionBinding } from "./session.ts";
 

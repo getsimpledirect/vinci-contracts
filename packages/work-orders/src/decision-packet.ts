@@ -9,7 +9,7 @@ import {
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 
 /**
  * Everything a human needs to make one decision, carried rather than referenced.

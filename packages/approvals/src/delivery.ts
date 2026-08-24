@@ -1,5 +1,5 @@
-import type { Timestamp } from "@vinci/contracts";
-import { ownData } from "@vinci/contracts";
+import type { Timestamp } from "@getsimpledirect/vinci-contracts";
+import { ownData } from "@getsimpledirect/vinci-contracts";
 
 export const DELIVERY_STATE_KINDS = [
   "queued-locally",

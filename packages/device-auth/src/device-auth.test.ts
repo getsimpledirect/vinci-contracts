@@ -1,5 +1,5 @@
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { assertSchemaMetaComplete } from "@vinci/contracts";
+import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import {
   CREDENTIAL_IDENTITY_SCHEMA_META,
   CLIENT_TYPES,
@@ -255,7 +255,7 @@ describe("seven roles", () => {
   });
 
   it("does not name a role `verifier`", () => {
-    // `Actor` in @vinci/contracts already has a `verifier` arm meaning an
+    // `Actor` in @getsimpledirect/vinci-contracts already has a `verifier` arm meaning an
     // independent verification service. A person's org role by that name
     // would read as the same thing and is deliberately avoided.
     expect(ROLES).not.toContain("verifier");
@@ -293,7 +293,7 @@ describe("D4 behavior", () => {
     // a newer producer's record. Credentials are the documented exception: an
     // unrecognised field here may be secret material, and a preserved secret
     // sits inside a record SR-3 says must never carry one. Same rule as
-    // /credentials in @vinci/policy.
+    // /credentials in @getsimpledirect/vinci-policy.
     const future = { mode: "future", values: [1, { untouched: true }] };
     const result = validateCredentialIdentity(credential({ futureTopLevel: future }));
     expect(result.ok).toBe(false);

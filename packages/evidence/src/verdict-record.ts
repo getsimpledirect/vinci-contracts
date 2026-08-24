@@ -15,7 +15,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
   type VerdictStatus,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import type { NotTestedItem } from "./attribution.ts";
 import { VERDICT_STALENESS_TRIGGERS, type VerdictStalenessTrigger } from "./verdict-assessment.ts";
 
@@ -63,7 +63,7 @@ export type StalenessCondition = {
  * An independent assessment of whether completed work satisfied its request.
  *
  * This is the artifact the business is sold on, and until now it existed only
- * inside `vinci-acceptance/packages/protocol` while `@vinci/contracts` held the
+ * inside `vinci-acceptance/packages/protocol` while `@getsimpledirect/vinci-contracts` held the
  * status and the staleness rules but not the record carrying them. That is the
  * drift this repository exists to close, sitting on the one thing customers buy.
  *

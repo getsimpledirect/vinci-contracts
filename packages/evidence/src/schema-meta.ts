@@ -1,4 +1,4 @@
-import type { SchemaMeta } from "@vinci/contracts";
+import type { SchemaMeta } from "@getsimpledirect/vinci-contracts";
 
 /**
  * The schema contract for EvidenceRecord.

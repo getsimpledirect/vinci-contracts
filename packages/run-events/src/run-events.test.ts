@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSchemaMetaComplete } from "@vinci/contracts";
+import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import {
   PAYLOAD_FIELDS,
   RUN_EVENT_SCHEMA_META,

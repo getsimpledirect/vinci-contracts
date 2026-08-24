@@ -1,4 +1,4 @@
-import type { Actor } from "@vinci/contracts";
+import type { Actor } from "@getsimpledirect/vinci-contracts";
 import type { Receipt, ReceiptId } from "./receipt.ts";
 
 /**

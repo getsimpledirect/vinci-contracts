@@ -19,14 +19,18 @@
  * property, so it crosses a serialization boundary intact and reaches a
  * validator looking exactly like ordinary data.
  */
-import { readdirSync, existsSync } from "node:fs";
+import { readdirSync, existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const packages = readdirSync(join(root, "packages")).filter((d) =>
-  existsSync(join(root, "packages", d, "package.json")),
-);
+const packages = readdirSync(join(root, "packages"))
+  .filter((dir) => existsSync(join(root, "packages", dir, "package.json")))
+  .map((dir) => ({
+    dir,
+    name: JSON.parse(readFileSync(join(root, "packages", dir, "package.json"), "utf8")).name,
+  }));
+const packageDirs = new Map(packages.map(({ dir, name }) => [name, dir]));
 
 /**
  * Hostile shapes, one per way a validator reaches for a key.
@@ -75,21 +79,21 @@ function hostileInputs() {
  */
 const AUTHORITY_GUARDS = [
   {
-    pkg: "remote-protocol",
+    pkg: "@getsimpledirect/vinci-remote-protocol",
     export: "mayIssue",
     label: "mayIssue(role, 'pause')",
     call: (fn, hostile) => fn(hostile, "pause"),
     control: (fn) => fn("owner", "pause") === true && fn("viewer", "pause") === false,
   },
   {
-    pkg: "remote-protocol",
+    pkg: "@getsimpledirect/vinci-remote-protocol",
     export: "mayIssue",
     label: "mayIssue('owner', command)",
     call: (fn, hostile) => fn("owner", hostile),
     control: (fn) => fn("owner", "abort") === true && fn("collaborator", "abort") === false,
   },
   {
-    pkg: "evidence",
+    pkg: "@getsimpledirect/vinci-evidence",
     export: "statusIsSupportedBy",
     label: "statusIsSupportedBy('VERIFIED_PASS', results)",
     call: (fn, hostile) => fn("VERIFIED_PASS", hostile),
@@ -99,7 +103,7 @@ const AUTHORITY_GUARDS = [
       && fn("VERIFIED_PASS", []) === false,
   },
   {
-    pkg: "contracts",
+    pkg: "@getsimpledirect/vinci-contracts",
     export: "actorFieldsAreConsistent",
     label: "actorFieldsAreConsistent(actor)",
     call: (fn, hostile) => fn(hostile),
@@ -110,7 +114,7 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "worker", workerId: "w", independent: true }) === false,
   },
   {
-    pkg: "approvals",
+    pkg: "@getsimpledirect/vinci-approvals",
     export: "isGrantStrictlyNarrower",
     label: "isGrantStrictlyNarrower(a, b)",
     call: (fn, hostile) => fn(hostile, hostile),
@@ -119,7 +123,7 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "allow-automatically" }, { kind: "deny" }) === false,
   },
   {
-    pkg: "approvals",
+    pkg: "@getsimpledirect/vinci-approvals",
     export: "isDecisionEffective",
     label: "isDecisionEffective(decision)",
     call: (fn, hostile) => fn(hostile),
@@ -128,7 +132,7 @@ const AUTHORITY_GUARDS = [
       && fn({ deliveryState: { kind: "queued-locally" } }) === false,
   },
   {
-    pkg: "approvals",
+    pkg: "@getsimpledirect/vinci-approvals",
     export: "canAdvanceDelivery",
     label: "canAdvanceDelivery(a, b)",
     call: (fn, hostile) => fn(hostile, hostile),
@@ -137,7 +141,7 @@ const AUTHORITY_GUARDS = [
       && fn("acted-upon-by-worker", "queued-locally") === false,
   },
   {
-    pkg: "approvals",
+    pkg: "@getsimpledirect/vinci-approvals",
     export: "isEffectiveDeliveryState",
     label: "isEffectiveDeliveryState(state)",
     call: (fn, hostile) => fn(hostile),
@@ -146,7 +150,7 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "queued-locally" }) === false,
   },
   {
-    pkg: "contracts",
+    pkg: "@getsimpledirect/vinci-contracts",
     export: "isOrganizationWorkspace",
     label: "isOrganizationWorkspace(value)",
     call: (fn, hostile) => fn(hostile),
@@ -155,7 +159,7 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "personal", workspaceId: "w" }) === false,
   },
   {
-    pkg: "contracts",
+    pkg: "@getsimpledirect/vinci-contracts",
     export: "terminalStateOfVerification",
     label: "terminalStateOfVerification(value)",
     call: (fn, hostile) => fn(hostile),
@@ -164,7 +168,7 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "issued", staled: false, status: "VERIFIED_PASS" }) !== undefined,
   },
   {
-    pkg: "work-orders",
+    pkg: "@getsimpledirect/vinci-work-orders",
     export: "mayInterrupt",
     label: "mayInterrupt(budget, spend)",
     call: (fn, hostile) => fn(hostile, { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }),
@@ -175,7 +179,7 @@ const AUTHORITY_GUARDS = [
             { workOrderId: "wo-1", interruptionsUsed: 2, decisionsUsed: 0 }) === false,
   },
   {
-    pkg: "work-orders",
+    pkg: "@getsimpledirect/vinci-work-orders",
     export: "mayInterrupt",
     label: "mayInterrupt(budget, hostileSpend)",
     call: (fn, hostile) => fn({ interruptions: 2, decisions: 2, onExhaustion: "block" }, hostile),
@@ -186,7 +190,7 @@ const AUTHORITY_GUARDS = [
             { workOrderId: "wo-1", interruptionsUsed: 5, decisionsUsed: 0 }) === false,
   },
   {
-    pkg: "work-orders",
+    pkg: "@getsimpledirect/vinci-work-orders",
     export: "mayRequireDecision",
     label: "mayRequireDecision(budget, spend)",
     call: (fn, hostile) => fn(hostile, { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }),
@@ -197,7 +201,7 @@ const AUTHORITY_GUARDS = [
             { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 2 }) === false,
   },
   {
-    pkg: "work-orders",
+    pkg: "@getsimpledirect/vinci-work-orders",
     export: "mayRequireDecision",
     label: "mayRequireDecision(budget, hostileSpend)",
     call: (fn, hostile) => fn({ interruptions: 2, decisions: 2, onExhaustion: "block" }, hostile),
@@ -208,7 +212,7 @@ const AUTHORITY_GUARDS = [
             { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 9 }) === false,
   },
   {
-    pkg: "contracts",
+    pkg: "@getsimpledirect/vinci-contracts",
     export: "plainActor",
     label: "plainActor(actor)",
     call: (fn, hostile) => fn(hostile),
@@ -229,7 +233,7 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "verifier", verifierId: "v", independent: "yes" }) === null,
   },
   {
-    pkg: "evidence",
+    pkg: "@getsimpledirect/vinci-evidence",
     export: "countsAgainstSubmittedWork",
     label: "countsAgainstSubmittedWork(outcome)",
     call: (fn, hostile) => fn(hostile),
@@ -240,7 +244,7 @@ const AUTHORITY_GUARDS = [
       && fn({ outcome: "supports" }) === false,
   },
   {
-    pkg: "evidence",
+    pkg: "@getsimpledirect/vinci-evidence",
     export: "isProvenanceConsistent",
     label: "isProvenanceConsistent(provenance, actor)",
     call: (fn, hostile) => fn(hostile, { kind: "worker", workerId: "w" }),
@@ -249,7 +253,7 @@ const AUTHORITY_GUARDS = [
       && fn("worker_provided", { kind: "user", userId: "u" }) === false,
   },
   {
-    pkg: "evidence",
+    pkg: "@getsimpledirect/vinci-evidence",
     export: "isProvenanceConsistent",
     label: "isProvenanceConsistent('worker_provided', actor)",
     call: (fn, hostile) => fn("worker_provided", hostile),
@@ -261,7 +265,7 @@ const AUTHORITY_GUARDS = [
       && fn("independent_verifier", { kind: "verifier", independent: true }) === false,
   },
   {
-    pkg: "evidence",
+    pkg: "@getsimpledirect/vinci-evidence",
     export: "statusIsSupportedBy",
     label: "statusIsSupportedBy(status, [supported])",
     call: (fn, hostile) => fn(hostile, [{ status: "supported" }]),
@@ -322,88 +326,88 @@ const REQUIRED_GUARDS = [
  * the gate rather than silently going unexamined.
  */
 const NOT_AUTHORITY_GUARDS = {
-  "approvals.applyApprovalDecision": "state transition over an already-validated decision",
-  "approvals.createApprovalDecision": "constructor; its output is validated",
-  "approvals.collectActorUnknownFields": "helper used inside a validator, after the snapshot",
-  "approvals.notificationSafeProjection": "projection, not a predicate; has its own redaction suite",
-  "approvals.assertSchemaMetaComplete": "build-time assertion, not runtime input",
-  "contracts.assertSchemaMetaComplete": "build-time assertion, not runtime input",
-  "contracts.isCanonicalTimestamp": "pure string/regex predicate",
-  "contracts.isDigest": "pure string/regex predicate",
-  "contracts.isEnumToken": "pure string/regex predicate",
-  "contracts.isIdentifier": "pure string/regex predicate",
-  "contracts.isNonBlankText": "pure string predicate",
+  "@getsimpledirect/vinci-approvals.applyApprovalDecision": "state transition over an already-validated decision",
+  "@getsimpledirect/vinci-approvals.createApprovalDecision": "constructor; its output is validated",
+  "@getsimpledirect/vinci-approvals.collectActorUnknownFields": "helper used inside a validator, after the snapshot",
+  "@getsimpledirect/vinci-approvals.notificationSafeProjection": "projection, not a predicate; has its own redaction suite",
+  "@getsimpledirect/vinci-approvals.assertSchemaMetaComplete": "build-time assertion, not runtime input",
+  "@getsimpledirect/vinci-contracts.assertSchemaMetaComplete": "build-time assertion, not runtime input",
+  "@getsimpledirect/vinci-contracts.isCanonicalTimestamp": "pure string/regex predicate",
+  "@getsimpledirect/vinci-contracts.isDigest": "pure string/regex predicate",
+  "@getsimpledirect/vinci-contracts.isEnumToken": "pure string/regex predicate",
+  "@getsimpledirect/vinci-contracts.isIdentifier": "pure string/regex predicate",
+  "@getsimpledirect/vinci-contracts.isNonBlankText": "pure string predicate",
   // Total function: returns a string for every input and never throws.
   // Its own no-throw property is pinned by unit tests, including the
   // null-prototype case that made String() throw in the first place.
-  "contracts.safeLabel": "total value-to-label function, never a decision",
-  "contracts.ownData": "single own-data property read; never a decision",
+  "@getsimpledirect/vinci-contracts.safeLabel": "total value-to-label function, never a decision",
+  "@getsimpledirect/vinci-contracts.ownData": "single own-data property read; never a decision",
   // Checked id constructors. Each validates with isIdentifier and returns a
   // branded string or null. They answer "is this a well-formed identifier",
   // never "may this happen", and their refusal path is pinned by unit tests.
-  "contracts.toOrganizationId": "checked id constructor; returns a branded string or null",
-  "contracts.toWorkspaceId": "checked id constructor; returns a branded string or null",
-  "contracts.toRunId": "checked id constructor; returns a branded string or null",
-  "contracts.toWorkerId": "checked id constructor; returns a branded string or null",
-  "contracts.toAgentId": "checked id constructor; returns a branded string or null",
-  "contracts.toDeviceId": "checked id constructor; returns a branded string or null",
-  "contracts.toUserId": "checked id constructor; returns a branded string or null",
-  "contracts.toApprovalId": "checked id constructor; returns a branded string or null",
-  "contracts.toArtifactId": "checked id constructor; returns a branded string or null",
-  "contracts.toEvidenceId": "checked id constructor; returns a branded string or null",
-  "contracts.toReceiptId": "checked id constructor; returns a branded string or null",
-  "contracts.toPolicyId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toOrganizationId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toWorkspaceId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toRunId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toWorkerId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toAgentId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toDeviceId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toUserId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toApprovalId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toArtifactId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toEvidenceId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toReceiptId": "checked id constructor; returns a branded string or null",
+  "@getsimpledirect/vinci-contracts.toPolicyId": "checked id constructor; returns a branded string or null",
   // Arithmetic over an already-validated budget and spend. It answers "how
   // much is left", not "may this happen" — the guards above answer that, and
   // they validate before calling it.
-  "work-orders.attentionRemaining": "computes remaining counts; not a permission",
-  "contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
+  "@getsimpledirect/vinci-work-orders.attentionRemaining": "computes remaining counts; not a permission",
+  "@getsimpledirect/vinci-contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
   // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.
   // Returning true for an accessor is correct — the key is own-present — so
   // registering it as an authority guard was a classification error on my
   // part, not a defect in it.
-  "contracts.hasField": "own-key accessor over an inert snapshot, used inside validators",
+  "@getsimpledirect/vinci-contracts.hasField": "own-key accessor over an inert snapshot, used inside validators",
   // Constructors/among-ours enum predicates: membership tests against OUR
   // frozen arrays via includes, which coerces nothing and invokes nothing.
-  "device-auth.isClientType": "enum membership",
-  "device-auth.isDeviceScope": "enum membership",
-  "device-auth.isEnforcedRole": "enum membership",
-  "device-auth.isPairingState": "enum membership",
-  "device-auth.isRole": "enum membership",
-  "device-auth.isScope": "enum membership",
-  "device-auth.isShippingClientType": "enum membership",
-  "evidence.isFailureOwner": "enum membership",
-  "remote-protocol.isSessionRole": "enum membership",
-  "remote-protocol.isReversibleBraking": "enum membership",
-  "remote-protocol.isTerminal": "enum membership",
-  "run-events.isRunEventType": "enum membership",
-  "run-events.isCanonicalTimestamp": "pure string/regex predicate",
-  "contracts.isActorKind": "enum membership",
-  "contracts.isRunState": "enum membership",
-  "contracts.isTerminal": "enum membership",
-  "contracts.isTerminalState": "enum membership",
-  "contracts.isVerdictStatus": "enum membership",
-  "contracts.isConsequentialActionClass": "enum membership",
-  "contracts.terminalStateOf": "total map lookup, returns undefined for unknown",
-  "contracts.toPlainRecord": "IS the snapshot boundary; has its own suite",
-  "contracts.canonicalize": "encoder, not a guard; golden vectors pin its bytes",
-  "receipts.canonicalize": "re-export of contracts.canonicalize",
-  "run-events.canonicalize": "re-export of contracts.canonicalize",
-  "contracts.ok": "result constructor",
-  "contracts.fail": "result constructor",
-  "policy.ok": "result constructor",
-  "policy.fail": "result constructor",
-  "policy.assertSchemaMetaComplete": "build-time assertion, not runtime input",
-  "policy.evaluatePolicyDecision": "structured policy evaluator; fail-closed hostile inputs are pinned by its unit suite",
-  "run-events.payloadSpecIsComplete": "build-time assertion over OUR spec",
-  "evidence.blamesSubmittedWork": "enum membership over FAILURE_OWNERS",
-  "evidence.verdictAssessmentFor": "constructor; its output is validated",
-  "receipts.receiptDigest": "encoder over an already-validated record",
-  "run-events.eventDigest": "encoder over an already-validated record",
-  "receipts.verificationAgainst": "requires current state; covered by receipts suite",
-  "run-events.verifyAppend": "covered by the run-events suite",
-  "device-auth.parseKeyHash": "parser returning a ValidationResult",
-  "device-auth.revoke": "state transition over an already-validated record",
+  "@getsimpledirect/vinci-device-auth.isClientType": "enum membership",
+  "@getsimpledirect/vinci-device-auth.isDeviceScope": "enum membership",
+  "@getsimpledirect/vinci-device-auth.isEnforcedRole": "enum membership",
+  "@getsimpledirect/vinci-device-auth.isPairingState": "enum membership",
+  "@getsimpledirect/vinci-device-auth.isRole": "enum membership",
+  "@getsimpledirect/vinci-device-auth.isScope": "enum membership",
+  "@getsimpledirect/vinci-device-auth.isShippingClientType": "enum membership",
+  "@getsimpledirect/vinci-evidence.isFailureOwner": "enum membership",
+  "@getsimpledirect/vinci-remote-protocol.isSessionRole": "enum membership",
+  "@getsimpledirect/vinci-remote-protocol.isReversibleBraking": "enum membership",
+  "@getsimpledirect/vinci-remote-protocol.isTerminal": "enum membership",
+  "@getsimpledirect/vinci-run-events.isRunEventType": "enum membership",
+  "@getsimpledirect/vinci-run-events.isCanonicalTimestamp": "pure string/regex predicate",
+  "@getsimpledirect/vinci-contracts.isActorKind": "enum membership",
+  "@getsimpledirect/vinci-contracts.isRunState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isTerminal": "enum membership",
+  "@getsimpledirect/vinci-contracts.isTerminalState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isVerdictStatus": "enum membership",
+  "@getsimpledirect/vinci-contracts.isConsequentialActionClass": "enum membership",
+  "@getsimpledirect/vinci-contracts.terminalStateOf": "total map lookup, returns undefined for unknown",
+  "@getsimpledirect/vinci-contracts.toPlainRecord": "IS the snapshot boundary; has its own suite",
+  "@getsimpledirect/vinci-contracts.canonicalize": "encoder, not a guard; golden vectors pin its bytes",
+  "@getsimpledirect/vinci-receipts.canonicalize": "re-export of contracts.canonicalize",
+  "@getsimpledirect/vinci-run-events.canonicalize": "re-export of contracts.canonicalize",
+  "@getsimpledirect/vinci-contracts.ok": "result constructor",
+  "@getsimpledirect/vinci-contracts.fail": "result constructor",
+  "@getsimpledirect/vinci-policy.ok": "result constructor",
+  "@getsimpledirect/vinci-policy.fail": "result constructor",
+  "@getsimpledirect/vinci-policy.assertSchemaMetaComplete": "build-time assertion, not runtime input",
+  "@getsimpledirect/vinci-policy.evaluatePolicyDecision": "structured policy evaluator; fail-closed hostile inputs are pinned by its unit suite",
+  "@getsimpledirect/vinci-run-events.payloadSpecIsComplete": "build-time assertion over OUR spec",
+  "@getsimpledirect/vinci-evidence.blamesSubmittedWork": "enum membership over FAILURE_OWNERS",
+  "@getsimpledirect/vinci-evidence.verdictAssessmentFor": "constructor; its output is validated",
+  "@getsimpledirect/vinci-receipts.receiptDigest": "encoder over an already-validated record",
+  "@getsimpledirect/vinci-run-events.eventDigest": "encoder over an already-validated record",
+  "@getsimpledirect/vinci-receipts.verificationAgainst": "requires current state; covered by receipts suite",
+  "@getsimpledirect/vinci-run-events.verifyAppend": "covered by the run-events suite",
+  "@getsimpledirect/vinci-device-auth.parseKeyHash": "parser returning a ValidationResult",
+  "@getsimpledirect/vinci-device-auth.revoke": "state transition over an already-validated record",
 };
 
 /**
@@ -500,8 +504,8 @@ let guardProbes = 0;
 let failed = false;
 const skipped = [];
 
-for (const pkg of packages) {
-  const entry = join(root, "packages", pkg, "dist", "index.js");
+for (const { dir, name: pkg } of packages) {
+  const entry = join(root, "packages", dir, "dist", "index.js");
   if (!existsSync(entry)) {
     skipped.push(pkg);
     continue;
@@ -534,7 +538,13 @@ for (const pkg of packages) {
 
 // --- authority guards -------------------------------------------------------
 for (const guard of AUTHORITY_GUARDS) {
-  const entry = join(root, "packages", guard.pkg, "dist", "index.js");
+  const dir = packageDirs.get(guard.pkg);
+  if (dir === undefined) {
+    console.error(`  ${guard.pkg}.${guard.export}: package is not present — the registry is stale`);
+    failed = true;
+    continue;
+  }
+  const entry = join(root, "packages", dir, "dist", "index.js");
   if (!existsSync(entry)) continue;
   const mod = await import(pathToFileURL(entry).href);
   const fn = mod[guard.export];
@@ -619,8 +629,8 @@ for (const name of REQUIRED_GUARDS) {
 }
 
 // --- every exported function must be triaged --------------------------------
-for (const pkg of packages) {
-  const entry = join(root, "packages", pkg, "dist", "index.js");
+for (const { dir, name: pkg } of packages) {
+  const entry = join(root, "packages", dir, "dist", "index.js");
   if (!existsSync(entry)) continue;
   const mod = await import(pathToFileURL(entry).href);
   for (const [name, value] of Object.entries(mod)) {

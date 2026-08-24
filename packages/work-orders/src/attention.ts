@@ -7,7 +7,7 @@ import {
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 
 /**
  * What a work order may spend of a human's attention.

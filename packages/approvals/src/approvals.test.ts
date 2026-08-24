@@ -1,9 +1,9 @@
 import { GRANT_SHAPE_KINDS, validateGrantShape, type GrantShape } from "./grant.ts";
-import { GRANT_KINDS, type CanonicalGrant } from "@vinci/contracts";
+import { GRANT_KINDS, type CanonicalGrant } from "@getsimpledirect/vinci-contracts";
 import { isGrantStrictlyNarrower, isDecisionEffective, canAdvanceDelivery, isEffectiveDeliveryState } from "./index.ts";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { CONSEQUENTIAL_ACTION_CLASSES } from "@vinci/contracts";
-import type { Actor, ApprovalId, EvidenceId, RunId } from "@vinci/contracts";
+import { CONSEQUENTIAL_ACTION_CLASSES } from "@getsimpledirect/vinci-contracts";
+import type { Actor, ApprovalId, EvidenceId, RunId } from "@getsimpledirect/vinci-contracts";
 import {
   APPROVAL_DECISION_SCHEMA_META,
   APPROVAL_GRANT_SCHEMA_META,
@@ -424,13 +424,13 @@ describe("the canonical grant vocabulary and GrantShape cannot drift apart", () 
   // THIS TEST LIVES HERE DELIBERATELY.
   //
   // Its first home was packages/contracts/src/grants.test.ts, where it asserted
-  // "has grant shapes compatible with @vinci/approvals vocabulary" — and could
+  // "has grant shapes compatible with @getsimpledirect/vinci-approvals vocabulary" — and could
   // not. Layer 0 may not import layer 1, so that test compared GRANT_KINDS to
   // hardcoded copies of its own members and would have passed unchanged after
   // any rename on this side. A test named for a cross-package property, which
   // structurally cannot observe the other package.
   //
-  // @vinci/approvals is layer 1 and may import layer 0, so this is the only
+  // @getsimpledirect/vinci-approvals is layer 1 and may import layer 0, so this is the only
   // place the comparison is possible at all.
   it("every canonical grant kind exists in GRANT_SHAPE_KINDS", () => {
     for (const kind of GRANT_KINDS) {

@@ -1,4 +1,4 @@
-import { CONSEQUENTIAL_ACTION_CLASSES } from "@vinci/contracts";
+import { CONSEQUENTIAL_ACTION_CLASSES } from "@getsimpledirect/vinci-contracts";
 import { RUN_EVENT_TYPES, type RunEventType } from "./event-types.ts";
 
 /**

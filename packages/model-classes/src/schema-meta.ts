@@ -1,4 +1,4 @@
-import type { SchemaMeta } from "@vinci/contracts";
+import type { SchemaMeta } from "@getsimpledirect/vinci-contracts";
 
 const ADDITIVE_PRESERVING_SCHEMA = {
   version: 1,

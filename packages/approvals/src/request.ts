@@ -16,8 +16,8 @@ import type {
   ValidationResult,
   WorkerId,
   WorkspaceId,
-} from "@vinci/contracts";
-import { fail, isConsequentialActionClass, ok, toPlainRecord } from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
+import { fail, isConsequentialActionClass, ok, toPlainRecord } from "@getsimpledirect/vinci-contracts";
 import type { GrantShape } from "./grant.ts";
 import { validateGrantShape } from "./grant.ts";
 import {

@@ -1,5 +1,5 @@
-import type { Actor, RunId, SchemaMeta, Timestamp, ValidationResult } from "@vinci/contracts";
-import { fail, ok, toPlainRecord } from "@vinci/contracts";
+import type { Actor, RunId, SchemaMeta, Timestamp, ValidationResult } from "@getsimpledirect/vinci-contracts";
+import { fail, ok, toPlainRecord } from "@getsimpledirect/vinci-contracts";
 import { collectActorUnknownFields } from "./request.ts";
 import {
   collectUnknownFields,

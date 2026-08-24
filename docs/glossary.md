@@ -3,23 +3,25 @@
 The nouns of §7, with the type that represents each one. A term means the same
 thing in every repository, or it is not in this file.
 
+Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
+
 Where a repository already had its own word for one of these, the existing word
 is listed so migrations can be mechanical.
 
 | Term | Type | Package | Notes |
 | --- | --- | --- | --- |
-| Organization | `OrganizationId` | `@vinci/contracts` | Owns policies, workspaces, devices, records. |
-| Workspace | `WorkspaceRef` | `@vinci/contracts` | A discriminated union, not a nullable org id — personal and organizational workspaces must stay distinguishable (FR-9.4). |
-| Agent | `AgentId` | `@vinci/contracts` | The *logical* AI system. Claude Code is an agent. |
-| Worker | `WorkerId` | `@vinci/contracts` | A *running execution environment*. Claude Code wrapped by an adapter is a worker. Distinct from Agent on purpose. |
-| Model | `ModelProvenance` | `@vinci/model-classes` | Separate from the worker and replaceable (§8.1, principle 5). |
-| Capability | `Capability` | `@vinci/policy` | A resource or action a worker may use. |
-| Run | `RunId`, `RunState` | `@vinci/contracts` | A bounded attempt at an objective. |
-| Approval | `ApprovalId` | `@vinci/approvals` | A decision required before a consequential action. |
-| Artifact | `ArtifactId` | `@vinci/receipts` | A durable output. |
-| Evidence | `EvidenceId` | `@vinci/evidence` | A record supporting *or contradicting* a completion claim. |
-| Receipt | `ReceiptId`, `TerminalState` | `@vinci/receipts` | The durable record of what a run did. |
-| Verdict | `Verdict` | `@vinci/contracts` | An assessment by an independent verifier. Not a run state. |
+| Organization | `OrganizationId` | `@getsimpledirect/vinci-contracts` | Owns policies, workspaces, devices, records. |
+| Workspace | `WorkspaceRef` | `@getsimpledirect/vinci-contracts` | A discriminated union, not a nullable org id — personal and organizational workspaces must stay distinguishable (FR-9.4). |
+| Agent | `AgentId` | `@getsimpledirect/vinci-contracts` | The *logical* AI system. Claude Code is an agent. |
+| Worker | `WorkerId` | `@getsimpledirect/vinci-contracts` | A *running execution environment*. Claude Code wrapped by an adapter is a worker. Distinct from Agent on purpose. |
+| Model | `ModelProvenance` | `@getsimpledirect/vinci-model-classes` | Separate from the worker and replaceable (§8.1, principle 5). |
+| Capability | `Capability` | `@getsimpledirect/vinci-policy` | A resource or action a worker may use. |
+| Run | `RunId`, `RunState` | `@getsimpledirect/vinci-contracts` | A bounded attempt at an objective. |
+| Approval | `ApprovalId` | `@getsimpledirect/vinci-approvals` | A decision required before a consequential action. |
+| Artifact | `ArtifactId` | `@getsimpledirect/vinci-receipts` | A durable output. |
+| Evidence | `EvidenceId` | `@getsimpledirect/vinci-evidence` | A record supporting *or contradicting* a completion claim. |
+| Receipt | `ReceiptId`, `TerminalState` | `@getsimpledirect/vinci-receipts` | The durable record of what a run did. |
+| Verdict | `Verdict` | `@getsimpledirect/vinci-contracts` | An assessment by an independent verifier. Not a run state. |
 
 ## Distinctions that are load-bearing
 

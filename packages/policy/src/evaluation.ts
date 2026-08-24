@@ -4,7 +4,7 @@ import {
   plainActor,
   type Actor,
   type PolicyId,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import type {
   PolicyActionRequest,
   PolicyDecision,

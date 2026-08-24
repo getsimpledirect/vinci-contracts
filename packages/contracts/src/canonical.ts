@@ -2,8 +2,8 @@
  * A deterministic encoding, shared by every package that needs a stable
  * identity for a record.
  *
- * This lives in layer 0 for a specific reason. `@vinci/run-events` needs it to
- * compare two events; `@vinci/receipts` needs it to digest a receipt. They are
+ * This lives in layer 0 for a specific reason. `@getsimpledirect/vinci-run-events` needs it to
+ * compare two events; `@getsimpledirect/vinci-receipts` needs it to digest a receipt. They are
  * the same layer, so they cannot import each other — and two hand-written
  * canonicalizers producing subtly different bytes is exactly the drift this
  * repository exists to prevent. A digest is a wire format: two implementations
