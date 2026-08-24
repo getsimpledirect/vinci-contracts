@@ -9,6 +9,7 @@ import type {
   OrganizationId,
   PolicyId,
   ReceiptId,
+  RiskLevel as ContractRiskLevel,
   RunId,
   SchemaMeta,
   Timestamp,
@@ -17,7 +18,7 @@ import type {
   WorkerId,
   WorkspaceId,
 } from "@getsimpledirect/vinci-contracts";
-import { fail, isConsequentialActionClass, ok, toPlainRecord } from "@getsimpledirect/vinci-contracts";
+import { fail, isConsequentialActionClass, ok, RISK_LEVELS, toPlainRecord } from "@getsimpledirect/vinci-contracts";
 import type { GrantShape } from "./grant.ts";
 import { validateGrantShape } from "./grant.ts";
 import {
@@ -45,8 +46,8 @@ export type AffectedResourceId =
   | ReceiptId
   | PolicyId;
 
-export const RISK_LEVELS = ["critical", "high", "medium", "low"] as const;
-export type RiskLevel = (typeof RISK_LEVELS)[number];
+export { RISK_LEVELS };
+export type RiskLevel = ContractRiskLevel;
 
 export type ControllingPolicy = {
   readonly policyId: string;

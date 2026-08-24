@@ -8,8 +8,10 @@ import {
   isIdentifier,
   isNonBlankText,
   isStrictlyAfter,
+  RISK_LEVELS,
   toPlainRecord,
   type EvidenceId,
+  type RiskLevel,
   type SchemaMeta,
   type Timestamp,
   type ValidationIssue,
@@ -45,8 +47,9 @@ export type UnresolvedCondition = {
   readonly requiredAction: string;
 };
 
-export const RISK_SEVERITIES = ["low", "medium", "high", "critical"] as const;
-export type RiskSeverity = (typeof RISK_SEVERITIES)[number];
+/** Domain-specific name for the shared qualitative risk vocabulary. */
+export const RISK_SEVERITIES = RISK_LEVELS;
+export type RiskSeverity = RiskLevel;
 
 export type ResidualRisk = {
   readonly description: string;
