@@ -1,5 +1,5 @@
-import type { Actor, RunId, SchemaMeta, Timestamp, ValidationResult } from "@vinci/contracts";
-import { fail, ok, toPlainRecord } from "@vinci/contracts";
+import type { Actor, RunId, SchemaMeta, Timestamp, ValidationResult } from "@getsimpledirect/vinci-contracts";
+import { fail, ok, toPlainRecord, ownData } from "@getsimpledirect/vinci-contracts";
 import {
   collectUnknownFields,
   isActor,
@@ -99,7 +99,7 @@ export function validateGrantShape(input: unknown): ValidationResult<GrantShape>
     case "expire-at":
       known = [...known, "expiresAt"];
       if (!isTimestamp(input.expiresAt)) {
-        return fail([issue("/expiresAt", "invalid_timestamp", "expiresAt must be an ISO-8601 UTC timestamp")]);
+        return fail([issue("/expiresAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
       }
       break;
     case "allow-remainder-of-run":
@@ -136,7 +136,7 @@ export function validateApprovalGrant(input: unknown): ValidationResult<Approval
     return fail([issue("/approver", "invalid_actor", "approver must be a valid Actor")]);
   }
   if (input.approvedAt !== undefined && !isTimestamp(input.approvedAt)) {
-    return fail([issue("/approvedAt", "invalid_timestamp", "approvedAt must be an ISO-8601 UTC timestamp")]);
+    return fail([issue("/approvedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
   }
   const unknownFields: Record<string, unknown> = {};
   collectUnknownFields(input, ["shape", "approver", "approvedAt"], "", unknownFields);
@@ -161,21 +161,31 @@ function actorFields(actor: Readonly<Record<string, unknown>>): readonly string[
 /**
  * This is deliberately a closed, conservative subset relation. If a new shape
  * cannot be proven to grant no more authority, it is rejected instead of being
- * guessed safe; callers therefore cannot turn “narrower” into an escalation.
+ * guessed safe; callers therefore cannot turn "narrower" into an escalation.
  */
 export function isGrantStrictlyNarrower(candidate: GrantShape, requested: GrantShape): boolean {
-  if (candidate.kind === "deny") return requested.kind !== "deny";
-  if (requested.kind === "deny") return false;
-  if (requested.kind === "allow-automatically") return candidate.kind !== "allow-automatically";
+  const candidateKind = ownData(candidate, "kind");
+  const requestedKind = ownData(requested, "kind");
+  
+  if (candidateKind === "deny") return requestedKind !== "deny";
+  if (requestedKind === "deny") return false;
+  if (requestedKind === "allow-automatically") return candidateKind !== "allow-automatically";
 
-  if (candidate.kind === "allow-bounded" && requested.kind === "allow-bounded") {
-    return candidate.resourceId === requested.resourceId && candidate.durationMs < requested.durationMs;
+  if (candidateKind === "allow-bounded" && requestedKind === "allow-bounded") {
+    const candidateResourceId = ownData(candidate, "resourceId");
+    const requestedResourceId = ownData(requested, "resourceId");
+    const candidateDurationMs = ownData(candidate, "durationMs");
+    const requestedDurationMs = ownData(requested, "durationMs");
+    return candidateResourceId === requestedResourceId && typeof candidateDurationMs === "number" && typeof requestedDurationMs === "number" && candidateDurationMs < requestedDurationMs;
   }
-  if (candidate.kind === "expire-at" && requested.kind === "expire-at") {
-    return Date.parse(candidate.expiresAt) < Date.parse(requested.expiresAt);
+  if (candidateKind === "expire-at" && requestedKind === "expire-at") {
+    const candidateExpiresAt = ownData(candidate, "expiresAt");
+    const requestedExpiresAt = ownData(requested, "expiresAt");
+    if (typeof candidateExpiresAt !== "string" || typeof requestedExpiresAt !== "string") return false;
+    return Date.parse(candidateExpiresAt) < Date.parse(requestedExpiresAt);
   }
-  if (requested.kind === "allow-remainder-of-run") {
-    if (candidate.kind === "allow-once" || candidate.kind === "allow-bounded" || candidate.kind === "expire-at") {
+  if (requestedKind === "allow-remainder-of-run") {
+    if (candidateKind === "allow-once" || candidateKind === "allow-bounded" || candidateKind === "expire-at") {
       return true;
     }
     return false;

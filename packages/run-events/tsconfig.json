@@ -1,0 +1,30 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true,
+    "declaration": true,
+    "composite": true,
+    "outDir": "dist",
+    "rootDir": "src",
+    "allowImportingTsExtensions": true,
+    "rewriteRelativeImportExtensions": true
+  },
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "src/**/*.test.ts"
+  ],
+  "references": [
+    {
+      "path": "../contracts"
+    },
+    {
+      "path": "../evidence"
+    }
+  ]
+}

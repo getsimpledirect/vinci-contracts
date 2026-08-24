@@ -1,4 +1,4 @@
-import type { Actor, ValidationIssue } from "@vinci/contracts";
+import { isCanonicalTimestamp, type Actor, type ValidationIssue } from "@getsimpledirect/vinci-contracts";
 
 export function isObject(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -13,11 +13,7 @@ export function isPositiveInteger(value: unknown): value is number {
 }
 
 export function isTimestamp(value: unknown): value is string {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) {
-    return false;
-  }
-  const parsed = Date.parse(value);
-  return !Number.isNaN(parsed) && new Date(parsed).toISOString() === value;
+  return isCanonicalTimestamp(value);
 }
 
 export function isActor(value: unknown): value is Actor {

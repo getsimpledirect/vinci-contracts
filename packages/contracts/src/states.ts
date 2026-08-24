@@ -10,6 +10,8 @@
  * They are three types, not one. See docs/E0-decisions.md, D1.
  */
 
+import { ownData } from "./scalars.ts";
+
 /**
  * The live state machine (FR-2.2). What a run *is* right now.
  *
@@ -106,12 +108,6 @@ export type VerificationOutcome =
       readonly reason: "FAILED" | "CANCELLED";
     };
 
-/**
- * Backwards-compatible alias. `Verdict` in the glossary (§7) means the
- * assessment, which is `VerdictStatus`.
- */
-export type Verdict = VerdictStatus;
-
 const TERMINAL_BY_RUN_STATE: Readonly<Record<RunState, TerminalState | null>> = {
   CREATED: null,
   PLANNING: null,
@@ -166,9 +162,12 @@ export function isTerminal(state: RunState): boolean {
 export function terminalStateOfVerification(
   outcome: VerificationOutcome,
 ): TerminalState | undefined {
-  if (outcome.kind === "not-issued") return undefined;
-  if (outcome.staled) return undefined;
-  switch (outcome.status) {
+  const kind = ownData(outcome, "kind");
+  if (kind === "not-issued") return undefined;
+  const staled = ownData(outcome, "staled");
+  if (staled) return undefined;
+  const status = ownData(outcome, "status");
+  switch (status) {
     case "VERIFIED_PASS":
       return "DONE";
     case "BLOCKED":

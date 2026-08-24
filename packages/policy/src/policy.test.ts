@@ -1,17 +1,20 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import {
   EXTERNAL_SIDE_EFFECT_CLASSES,
   POLICY_DECISION_SCHEMA_META,
   POLICY_MANIFEST_SECTION_NAMES,
   POLICY_MANIFEST_SCHEMA_META,
   assertSchemaMetaComplete,
+  evaluatePolicyDecision,
   validatePolicyDecision,
   validatePolicyManifest,
   type CredentialPolicy,
+  type PolicyActionRequest,
   type PolicyDecision,
   type PolicyId,
   type PolicyManifest,
 } from "./index.ts";
+import * as policySchema from "./schema.ts";
 
 const validManifest = {
   policyId: "policy-test" as PolicyId,
@@ -90,7 +93,7 @@ const validManifest = {
         decision: {
           kind: "require_approval",
           approver: { kind: "role", role: "operator" },
-          grant: { kind: "once", expiresAfterSeconds: 900 },
+          grant: { kind: "allow-once" },
         },
       },
     ],
@@ -255,6 +258,233 @@ describe("policy decisions", () => {
   });
 });
 
+describe("evaluatePolicyDecision", () => {
+  const request = {
+    action: "deploy",
+    description: "Deploy the service",
+    target: "production",
+    requestedBy: { kind: "system", component: "policy-test" },
+  } as const satisfies PolicyActionRequest;
+
+  function manifestWithRules(
+    rules: PolicyManifest["approvals"]["rules"],
+    version = 1,
+  ): PolicyManifest {
+    return {
+      ...structuredClone(validManifest),
+      version,
+      approvals: { rules },
+    };
+  }
+
+  const allowDeploy = {
+    id: "allow-deploy",
+    description: "Deploy is safe",
+    appliesTo: { kind: "capability", capability: "deploy" },
+    decision: { kind: "allow_automatically" },
+  } as const;
+
+  const denyDeploy = {
+    id: "deny-deploy",
+    description: "Deploy is forbidden",
+    appliesTo: { kind: "capability", capability: "deploy" },
+    decision: { kind: "deny" },
+  } as const;
+
+  const approveDeploy = {
+    id: "approve-deploy",
+    description: "Deploy needs an operator",
+    appliesTo: { kind: "capability", capability: "deploy" },
+    decision: {
+      kind: "require_approval",
+      approver: { kind: "role", role: "operator" },
+      grant: { kind: "allow-once" },
+    },
+  } as const;
+
+  it("allows a genuinely exact capability match", () => {
+    const decision = evaluatePolicyDecision(manifestWithRules([allowDeploy]), request);
+
+    expect(decision).toMatchObject({
+      outcome: "allowed",
+      request,
+      reason: { code: "automatic_allow" },
+      controllingPolicy: { policyId: "policy-test", version: 1 },
+    });
+  });
+
+  it.each(["deployment", "deploy-production", "deploy.production"])(
+    "does not prefix-match the near-miss capability %s",
+    (action) => {
+      const decision = evaluatePolicyDecision(manifestWithRules([allowDeploy]), {
+        ...request,
+        action,
+      });
+
+      expect(decision.outcome).toBe("undetermined");
+      expect(decision.reason.code).toBe("unknown_action");
+    },
+  );
+
+  it("uses the most restrictive decision across multiple matching rules", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([allowDeploy, approveDeploy, denyDeploy]),
+      request,
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("explicit_deny");
+  });
+
+  it("prefers approval over automatic allowance when no deny matches", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([allowDeploy, approveDeploy]),
+      request,
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
+  it("returns approval workflow hints and identifies the matched grant", () => {
+    const decision = evaluatePolicyDecision(manifestWithRules([approveDeploy]), request);
+
+    expect(decision).toMatchObject({
+      outcome: "denied",
+      reason: { code: "approval_required" },
+      grant: { kind: "allow-once" },
+      availableOptions: [
+        { kind: "request_approval", description: expect.stringContaining("allow-once") },
+        { kind: "contact_policy_owner" },
+      ],
+    });
+    expect(validatePolicyDecision(decision).ok).toBe(true);
+  });
+
+  it("denies a genuinely exact deny match", () => {
+    const decision = evaluatePolicyDecision(manifestWithRules([denyDeploy]), request);
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("explicit_deny");
+  });
+
+  it("returns unknown_action when no rule matches", () => {
+    const decision = evaluatePolicyDecision(manifestWithRules([]), request);
+
+    expect(decision.outcome).toBe("undetermined");
+    expect(decision.reason.code).toBe("unknown_action");
+  });
+
+  it("uses any_action only as a fallback behind a specific match", () => {
+    const anyDeny = {
+      id: "default-deny",
+      description: "Deny anything not named",
+      appliesTo: { kind: "any_action" },
+      decision: { kind: "deny" },
+    } as const;
+    const specific = evaluatePolicyDecision(manifestWithRules([anyDeny, allowDeploy]), request);
+    const fallback = evaluatePolicyDecision(manifestWithRules([anyDeny, allowDeploy]), {
+      ...request,
+      action: "unlisted-action",
+    });
+
+    expect(specific.outcome).toBe("allowed");
+    expect(specific.reason.code).toBe("automatic_allow");
+    expect(fallback.outcome).toBe("denied");
+    expect(fallback.reason.code).toBe("explicit_deny");
+  });
+
+  it("matches a canonical external-side-effect class exactly", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([validManifest.approvals.rules[0]]),
+      { ...request, action: "deployment" },
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
+  it("reports malformed_policy with the first validation issue", () => {
+    const decision = evaluatePolicyDecision(
+      { ...validManifest, version: 0 } as unknown as PolicyManifest,
+      request,
+    );
+
+    expect(decision.outcome).toBe("undetermined");
+    expect(decision.reason.code).toBe("malformed_policy");
+    expect(decision.reason.explanation).toContain("/version");
+    expect(decision.reason.explanation).toContain("expected a positive integer");
+  });
+
+  it("reports unsupported_policy_version for a valid future manifest", () => {
+    const decision = evaluatePolicyDecision(manifestWithRules([allowDeploy], 2), request);
+
+    expect(decision.outcome).toBe("undetermined");
+    expect(decision.reason.code).toBe("unsupported_policy_version");
+  });
+
+  it("reports missing_context when the action cannot map to a capability or side-effect class", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([validManifest.approvals.rules[0]]),
+      { ...request, action: "not_a_known_side_effect" },
+    );
+
+    expect(decision.outcome).toBe("undetermined");
+    expect(decision.reason.code).toBe("missing_context");
+  });
+
+  it("reports conflicting_rules for incompatible approval requirements", () => {
+    const conflictingApproval = {
+      ...approveDeploy,
+      id: "approve-deploy-security",
+      decision: {
+        ...approveDeploy.decision,
+        approver: { kind: "role", role: "security" },
+      },
+    } as const;
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([approveDeploy, conflictingApproval]),
+      request,
+    );
+
+    expect(decision.outcome).toBe("undetermined");
+    expect(decision.reason.code).toBe("conflicting_rules");
+  });
+
+  it("reports evaluator_error instead of throwing an evaluator exception", () => {
+    const validation = vi.spyOn(policySchema, "validatePolicyManifest");
+    try {
+      validation.mockImplementationOnce(() => {
+        throw new Error("forced evaluator failure");
+      });
+      let decision: PolicyDecision | undefined;
+
+      expect(() => {
+        decision = evaluatePolicyDecision(validManifest, request);
+      }).not.toThrow();
+      expect(decision?.outcome).toBe("undetermined");
+      expect(decision?.reason.code).toBe("evaluator_error");
+    } finally {
+      validation.mockRestore();
+    }
+  });
+
+  it("reads request fields as own data and never invokes accessors", () => {
+    const hostileRequest = {
+      get action(): never {
+        throw new Error("request getter must not run");
+      },
+      description: request.description,
+      requestedBy: request.requestedBy,
+    } as unknown as PolicyActionRequest;
+
+    expect(() => evaluatePolicyDecision(manifestWithRules([allowDeploy]), hostileRequest)).not.toThrow();
+    expect(evaluatePolicyDecision(manifestWithRules([allowDeploy]), hostileRequest).reason.code).toBe(
+      "missing_context",
+    );
+  });
+});
+
 describe("credential material cannot reach a policy", () => {
   // A denylist of known secret-ish field names is the wrong shape for a
   // security boundary: it is only as good as the imagination of whoever wrote
@@ -296,5 +526,106 @@ describe("credential material cannot reach a policy", () => {
     // The fix must not make the credentials section unusable — a legitimate
     // reference with only safe metadata has to keep validating.
     expect(validatePolicyManifest(structuredClone(validManifest)).ok).toBe(true);
+  });
+});
+
+describe("branded identifiers use the constructor rule in policy records", () => {
+  const manifestWithRunBinding = (runId: string) => ({
+    ...validManifest,
+    credentials: {
+      references: [{
+        ...validManifest.credentials.references[0],
+        boundTo: { kind: "run", runId },
+      }],
+    },
+  });
+
+  const manifestWithNamedApprover = (userId: string) => {
+    const rule = validManifest.approvals.rules[0];
+    return {
+      ...validManifest,
+      approvals: {
+        rules: [{
+          ...rule,
+          decision: {
+            ...rule.decision,
+            approver: { kind: "named_person", userId },
+          },
+        }],
+      },
+    };
+  };
+
+  const allowedDecision = (requestedBy: Record<string, unknown>, policyId = "policy-test") => ({
+    outcome: "allowed",
+    request: { action: "read", description: "Read a repository", requestedBy },
+    reason: { code: "automatic_allow", explanation: "Read access is allowed" },
+    controllingPolicy: { policyId, version: 1 },
+  });
+
+  it.each([
+    {
+      field: "CredentialBinding.runId",
+      path: "/credentials/references/0/boundTo/runId",
+      validate: validatePolicyManifest,
+      bad: manifestWithRunBinding("has space"),
+      good: manifestWithRunBinding("run-1"),
+    },
+    {
+      field: "ApprovalRequirement.userId",
+      path: "/approvals/rules/0/decision/approver/userId",
+      validate: validatePolicyManifest,
+      bad: manifestWithNamedApprover("a/b"),
+      good: manifestWithNamedApprover("user-1"),
+    },
+    {
+      field: "PolicyManifest.policyId",
+      path: "/policyId",
+      validate: validatePolicyManifest,
+      bad: { ...validManifest, policyId: "café" },
+      good: { ...validManifest, policyId: "policy-1" },
+    },
+    {
+      field: "Actor.userId",
+      path: "/request/requestedBy/userId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "user", userId: "-leading" }),
+      good: allowedDecision({ kind: "user", userId: "user-1" }),
+    },
+    {
+      field: "Actor.deviceId",
+      path: "/request/requestedBy/deviceId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "user", userId: "user-1", deviceId: "_under" }),
+      good: allowedDecision({ kind: "user", userId: "user-1", deviceId: "device-1" }),
+    },
+    {
+      field: "Actor.workerId",
+      path: "/request/requestedBy/workerId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "worker", workerId: "x".repeat(200) }),
+      good: allowedDecision({ kind: "worker", workerId: "worker-1" }),
+    },
+    {
+      field: "Actor.policyId",
+      path: "/request/requestedBy/policyId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "policy", policyId: "has space", policyVersion: 1 }),
+      good: allowedDecision({ kind: "policy", policyId: "policy-1", policyVersion: 1 }),
+    },
+    {
+      field: "PolicyReference.policyId",
+      path: "/controllingPolicy/policyId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "system", component: "test" }, "a/b"),
+      good: allowedDecision({ kind: "system", component: "test" }, "policy-1"),
+    },
+  ])("enforces the branded constructor rule for $field", ({ path, validate, bad, good }) => {
+    const rejected = validate(bad);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.issues).toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
+    }
+    expect(validate(good).ok).toBe(true);
   });
 });

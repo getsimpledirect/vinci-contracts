@@ -1,6 +1,9 @@
+import { GRANT_SHAPE_KINDS, validateGrantShape, type GrantShape } from "./grant.ts";
+import { GRANT_KINDS, type CanonicalGrant } from "@getsimpledirect/vinci-contracts";
+import { isGrantStrictlyNarrower, isDecisionEffective, canAdvanceDelivery, isEffectiveDeliveryState } from "./index.ts";
 import { describe, expect, expectTypeOf, it } from "vitest";
-import { CONSEQUENTIAL_ACTION_CLASSES } from "@vinci/contracts";
-import type { Actor, ApprovalId, EvidenceId, RunId } from "@vinci/contracts";
+import { CONSEQUENTIAL_ACTION_CLASSES } from "@getsimpledirect/vinci-contracts";
+import type { Actor, ApprovalId, EvidenceId, RunId } from "@getsimpledirect/vinci-contracts";
 import {
   APPROVAL_DECISION_SCHEMA_META,
   APPROVAL_GRANT_SCHEMA_META,
@@ -340,5 +343,128 @@ describe("the notification payload cannot be edited after projection", () => {
       (payload as unknown as Record<string, unknown>).reason = "SECRET ghp_16C7e42F";
     }).toThrow();
     expect(JSON.stringify(payload)).not.toContain("ghp_");
+  });
+});
+
+describe("worker-supplied risk confers no authority", () => {
+  it("does not change any decision this package makes", () => {
+    // A worker that could widen its own permissions by labelling an action
+    // "low" would be granting itself authority. Nothing here reads riskLevel,
+    // and this pins that: the same request at every risk level produces the
+    // same satisfaction outcome for the same decision.
+    const decide = (riskLevel: "low" | "medium" | "high" | "critical") => {
+      const req = { ...request, riskLevel };
+      const decision = {
+        kind: "approve-once" as const,
+        approvalId: req.approvalId,
+        runId: req.runId,
+        decidedBy: { kind: "user" as const, userId: "user-1" as never },
+        decidedAt: "2026-08-23T12:05:00.000Z" as never,
+        deliveryState: { kind: "acted-upon-by-worker" as const },
+      };
+      return applyApprovalDecision(req, { kind: "pending" }, decision).kind;
+    };
+    const outcomes = new Set(["low", "medium", "high", "critical"].map((r) => decide(r as never)));
+    expect(outcomes.size).toBe(1);
+  });
+});
+
+describe("approval predicates refuse hostile input instead of throwing", () => {
+  // These four used to throw, and were waived in the gate under a
+  // MAY_STILL_THROW list on the grounds that none ever returned TRUE — they
+  // failed loudly rather than open. That waiver is now gone, so the property
+  // needs tests rather than an exemption.
+  const hostile: Array<[string, unknown]> = [
+    ["the string toString", "toString"],
+    ["the string constructor", "constructor"],
+    ["the string valueOf", "valueOf"],
+    ["the string __proto__", "__proto__"],
+    ["null", null],
+    ["undefined", undefined],
+    ["a number", 7],
+    ["an array", []],
+    ["a sparse array", new Array(1)],
+    ["a symbol", Symbol("x")],
+    ["a throwing-get proxy", new Proxy({}, { get() { throw new Error("trap"); } })],
+    ["a throwing getter", { get kind(): never { throw new Error("g"); } }],
+    ["an inherited kind", Object.create({ kind: "deny" })],
+  ];
+
+  const guards: Array<[string, (value: unknown) => unknown]> = [
+    ["isGrantStrictlyNarrower", (v) => isGrantStrictlyNarrower(v as never, v as never)],
+    ["isDecisionEffective", (v) => isDecisionEffective(v as never)],
+    ["canAdvanceDelivery", (v) => canAdvanceDelivery(v as never, v as never)],
+    ["isEffectiveDeliveryState", (v) => isEffectiveDeliveryState(v as never)],
+  ];
+
+  for (const [name, guard] of guards) {
+    it(`${name} never throws and never says yes to hostile input`, () => {
+      for (const [label, value] of hostile) {
+        expect(() => guard(value), `${name} / ${label}`).not.toThrow();
+        expect(guard(value), `${name} / ${label}`).not.toBe(true);
+      }
+    });
+  }
+
+  it("still answers correctly for genuine input", () => {
+    // Positive controls. All four returning false unconditionally would satisfy
+    // every case above, and would silently deny every real approval.
+    expect(isGrantStrictlyNarrower({ kind: "deny" }, { kind: "allow-automatically" })).toBe(true);
+    expect(isGrantStrictlyNarrower({ kind: "allow-automatically" }, { kind: "deny" })).toBe(false);
+    expect(canAdvanceDelivery("queued-locally", "delivered")).toBe(true);
+    expect(canAdvanceDelivery("acted-upon-by-worker", "queued-locally")).toBe(false);
+    expect(isEffectiveDeliveryState({ kind: "accepted-by-governor" })).toBe(true);
+    expect(isEffectiveDeliveryState({ kind: "queued-locally" })).toBe(false);
+    expect(isDecisionEffective({ deliveryState: { kind: "accepted-by-governor" } } as never)).toBe(true);
+    expect(isDecisionEffective({ deliveryState: { kind: "queued-locally" } } as never)).toBe(false);
+  });
+});
+
+describe("the canonical grant vocabulary and GrantShape cannot drift apart", () => {
+  // THIS TEST LIVES HERE DELIBERATELY.
+  //
+  // Its first home was packages/contracts/src/grants.test.ts, where it asserted
+  // "has grant shapes compatible with @getsimpledirect/vinci-approvals vocabulary" — and could
+  // not. Layer 0 may not import layer 1, so that test compared GRANT_KINDS to
+  // hardcoded copies of its own members and would have passed unchanged after
+  // any rename on this side. A test named for a cross-package property, which
+  // structurally cannot observe the other package.
+  //
+  // @getsimpledirect/vinci-approvals is layer 1 and may import layer 0, so this is the only
+  // place the comparison is possible at all.
+  it("every canonical grant kind exists in GRANT_SHAPE_KINDS", () => {
+    for (const kind of GRANT_KINDS) {
+      expect(GRANT_SHAPE_KINDS as readonly string[], `canonical kind ${kind}`).toContain(kind);
+    }
+  });
+
+  it("names the same shape with the same fields on both sides", () => {
+    // Kind names agreeing is not enough: the drift that started this was
+    // `resource`/`maximumDurationSeconds` on one side and `resourceId`/
+    // `durationMs` on the other. Construct one value and require it to satisfy
+    // both types.
+    const bounded: CanonicalGrant = {
+      kind: "allow-bounded",
+      resourceId: "workspace:alpha",
+      durationMs: 3_600_000,
+    };
+    const asShape: GrantShape = bounded;
+    expect(asShape.kind).toBe("allow-bounded");
+    expect(validateGrantShape(bounded).ok).toBe(true);
+  });
+
+  it("keeps the extra approval-workflow kinds that are deliberately not canonical", () => {
+    // GRANT_SHAPE_KINDS is a superset. deny, allow-automatically, require-person,
+    // require-role, require-two-people and expire-at describe WHO may approve and
+    // WHEN, not what duration is granted, so they stay here rather than moving to
+    // layer 0. Pinning that keeps the superset relationship deliberate rather
+    // than accidental.
+    const extras = (GRANT_SHAPE_KINDS as readonly string[]).filter(
+      (k) => !(GRANT_KINDS as readonly string[]).includes(k),
+    );
+    expect(extras).toEqual([
+      "deny", "allow-automatically", "require-person",
+      "require-role", "require-two-people", "expire-at",
+    ]);
   });
 });

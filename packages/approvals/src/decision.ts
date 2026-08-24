@@ -5,8 +5,8 @@ import type {
   SchemaMeta,
   Timestamp,
   ValidationResult,
-} from "@vinci/contracts";
-import { fail, ok, toPlainRecord } from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
+import { fail, ok, toPlainRecord, ownData } from "@getsimpledirect/vinci-contracts";
 import type { DeliveryState, EffectiveDeliveryState } from "./delivery.ts";
 import { isEffectiveDeliveryState } from "./delivery.ts";
 import type { GrantShape } from "./grant.ts";
@@ -82,7 +82,7 @@ export function createApprovalDecision(
     return fail([issue("/decidedBy", "invalid_actor", "decidedBy must be a valid Actor")]);
   }
   if (!isTimestamp(input.decidedAt)) {
-    return fail([issue("/decidedAt", "invalid_timestamp", "decidedAt must be an ISO-8601 UTC timestamp")]);
+    return fail([issue("/decidedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
   }
   if (input.kind === "approve-narrower") {
     const narrowed = validateGrantShape(input.narrowedGrant);
@@ -106,7 +106,8 @@ export function createApprovalDecision(
 }
 
 export function isDecisionEffective(decision: ApprovalDecision): decision is EffectiveApprovalDecision {
-  return isEffectiveDeliveryState(decision.deliveryState);
+  const deliveryState = ownData(decision, "deliveryState");
+  return isEffectiveDeliveryState(deliveryState as DeliveryState);
 }
 
 export type ApprovalRecord = {
@@ -200,7 +201,7 @@ export function validateApprovalDecision(input: unknown): ValidationResult<Appro
   }
   if (!isActor(input.decidedBy)) return fail([issue("/decidedBy", "invalid_actor", "decidedBy must be a valid Actor")]);
   if (!isTimestamp(input.decidedAt)) {
-    return fail([issue("/decidedAt", "invalid_timestamp", "decidedAt must be an ISO-8601 UTC timestamp")]);
+    return fail([issue("/decidedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
   }
   const deliveryIssue = validateDeliveryState(input.deliveryState);
   if (deliveryIssue) return fail([deliveryIssue]);
@@ -236,15 +237,15 @@ function validateDeliveryState(input: unknown): ReturnType<typeof issue> | undef
     case "delivered":
       return isTimestamp(input.deliveredAt)
         ? undefined
-        : issue("/deliveryState/deliveredAt", "invalid_timestamp", "deliveredAt must be an ISO-8601 UTC timestamp");
+        : issue("/deliveryState/deliveredAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
     case "accepted-by-governor":
       return isTimestamp(input.acceptedAt)
         ? undefined
-        : issue("/deliveryState/acceptedAt", "invalid_timestamp", "acceptedAt must be an ISO-8601 UTC timestamp");
+        : issue("/deliveryState/acceptedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
     case "acted-upon-by-worker":
       return isTimestamp(input.actedUponAt)
         ? undefined
-        : issue("/deliveryState/actedUponAt", "invalid_timestamp", "actedUponAt must be an ISO-8601 UTC timestamp");
+        : issue("/deliveryState/actedUponAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
     default:
       return issue("/deliveryState/kind", "invalid_discriminator", "delivery state kind is not recognized");
   }

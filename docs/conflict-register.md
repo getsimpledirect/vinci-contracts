@@ -3,6 +3,8 @@
 What the repositories actually define today, where those definitions disagree,
 and which disagreements this repository settles.
 
+Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
+
 The E0 exit gate is "no repository independently defines conflicting run
 states" (§17). Reaching it required finding the conflicts first. Several were
 not visible from the requirements document, because the requirements describe
@@ -119,7 +121,7 @@ cannot hold raises no error, and a new upstream state silently becomes
 
 ## C5 — Two event vocabularies, neither a subset of the other
 
-**Status: open. Belongs to `@vinci/run-events`.**
+**Status: open. Belongs to `@getsimpledirect/vinci-run-events`.**
 
 `vinci-acceptance` ships 23 event types
 (`ACCEPTANCE_EVENT_TYPES`, `packages/protocol/src/types.ts:24`), FR-2.3
@@ -140,7 +142,7 @@ and should win.
 
 ## C6 — Three roles exist; seven are required
 
-**Status: open. Belongs to `@vinci/device-auth` / platform.**
+**Status: open. Belongs to `@getsimpledirect/vinci-device-auth` / platform.**
 
 Reported by exploration of `vinci-platform` and consistent with what was read
 here: the only role strings in that repository are `owner`, `admin`, `member`
@@ -166,7 +168,7 @@ Reported by exploration of `vinci-platform`: `ActiveContext` uses
 use `'user'`, and `api_keys` / `usage_counters` encode the same idea a third
 way as `org_id IS NULL`.
 
-`WorkspaceRef` in `@vinci/contracts` uses `personal`, matching the
+`WorkspaceRef` in `@getsimpledirect/vinci-contracts` uses `personal`, matching the
 requirements' language (§7) and the user-facing concept. A repository storing
 `'user'` maps to `kind: "personal"`; a null organization id maps to the same
 arm. The mapping is explicit because three encodings of one concept is how the
@@ -188,7 +190,7 @@ that would import the shared package of the same name:
 | `TokenScope` | `"owner"\|"collaborator"\|"viewer"` in `vinci-work/apps/server`, **and** `["client","host","activity"]` in `vinci-work/ee`. Two incompatible definitions in one repository. |
 | `ApprovalMode` | `"standard"\|"cautious"\|"trusted"` in the desktop settings panel, **and** `"manual"\|"auto"` in the desktop server. Also two, also one repository. |
 | `ApprovalRequest` | The remote-collaborator queue record in `vinci-work/apps/server/src/types.ts`. |
-| `Actor` | `{ type: "remote"\|"host" }` in `vinci-work/apps/server` — narrower than, and incompatible with, the `Actor` in `@vinci/contracts`. |
+| `Actor` | `{ type: "remote"\|"host" }` in `vinci-work/apps/server` — narrower than, and incompatible with, the `Actor` in `@getsimpledirect/vinci-contracts`. |
 | `CodeArtifact`, `ArtifactItem`, `FoglioArtifact`, `SharedArtifact` | Four existing artifact models across `vinci-chat`, `vinci-work` and `vinci-mobile`. |
 | `Step`, `AgentRole`, `ReloadEvent` | Existing harness and event types in `vinci-chat` / `vinci-work`. |
 
@@ -204,14 +206,14 @@ expecting a bare name to be free.
 
 ## C9 — "class" and "tier" are already load-bearing, and mean two things
 
-**Status: open. Belongs to `@vinci/model-classes`.**
+**Status: open. Belongs to `@getsimpledirect/vinci-model-classes`.**
 
 Reported by exploration of `vinci-chat` and `vinci-work`.
 
 `class` is `vinci-chat`'s canonical word for a model tier: `ClassConfig`,
 `config/classes.yaml`, `classId`, `resolveClassId()`, a `/app/classes` page, and
 reserved class ids (`forte`, `fortissimo`, `vision`, `mezzo`). A package named
-`@vinci/model-classes` lands directly on top of a live registry.
+`@getsimpledirect/vinci-model-classes` lands directly on top of a live registry.
 
 `tier` is worse, because it already means two incompatible things:
 
@@ -225,7 +227,7 @@ capability to the other. The shared package should avoid the bare word.
 
 ## C10 — The same application is called `work` and `desktop`
 
-**Status: open. Constrains `@vinci/device-auth`.**
+**Status: open. Constrains `@getsimpledirect/vinci-device-auth`.**
 
 Reported by exploration of `vinci-chat`: `CLIENT_ALLOWLIST` and the
 `client_type` DB CHECK constraints use `work`, while `MODEL_SURFACES` uses
@@ -244,7 +246,7 @@ first would break writes.
 
 ## C11 — Four approve/deny alphabets, in one repository
 
-**Status: open. Belongs to `@vinci/approvals`.**
+**Status: open. Belongs to `@getsimpledirect/vinci-approvals`.**
 
 Reported by exploration of `vinci-work`. All four are live:
 
@@ -274,11 +276,11 @@ knowing before E1 is scheduled as though it were incremental.
 
 `vinci-work` does have a real worker lifecycle in its enterprise tree
 (`WorkerStatus = ["provisioning","healthy","failed","stopped"]`), which is the
-natural thing for `@vinci/worker-protocol` to reconcile with.
+natural thing for `@getsimpledirect/vinci-worker-protocol` to reconcile with.
 
 ---
 
-## C13 — `@vinci/policy` lands on an existing policy subsystem
+## C13 — `@getsimpledirect/vinci-policy` lands on an existing policy subsystem
 
 **Status: open. Constrains adoption in `vinci-work`.**
 
@@ -324,7 +326,7 @@ Acceptance is therefore collision-free, if stylistically foreign.
 
 ## C15 — There is no policy contract to reconcile with
 
-**Status: open. `@vinci/policy` is greenfield.**
+**Status: open. `@getsimpledirect/vinci-policy` is greenfield.**
 
 Verified here: `vinci-acceptance/packages/policy-engine/src/index.ts` contains
 exactly one line, `export const PACKAGE_NAME = "policy-engine";`. No policy

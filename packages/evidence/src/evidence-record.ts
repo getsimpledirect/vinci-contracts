@@ -1,4 +1,5 @@
-import type { EvidenceId, Timestamp } from "@vinci/contracts";
+import type { EvidenceId, Timestamp } from "@getsimpledirect/vinci-contracts";
+import type { EvidenceOutcome, NotTestedItem } from "./attribution.ts";
 import type { EvidenceKind, EvidenceMode, EvidenceReliability, EvidenceSourceKind } from "./evidence-kinds.ts";
 import type { EvidenceAttestation } from "./provenance.ts";
 
@@ -47,6 +48,19 @@ export type EvidenceRecord = {
    * A summary of what this evidence shows: "Unit tests passed 487/487" or
    * "Signed off by @alice".
    */
+  /**
+   * What this evidence says, and whose failure it is if it says something
+   * failed. Not an optional field: see EvidenceOutcome.
+   */
+  readonly assessment: EvidenceOutcome;
+  /**
+   * What was NOT checked while gathering this evidence, and why.
+   *
+   * Silence about coverage reads as coverage. A record listing what passed and
+   * omitting what could not be evaluated is understood as "everything was
+   * checked", which is the unearned pass this system exists to prevent.
+   */
+  readonly notTested: readonly NotTestedItem[];
   readonly summary: string;
   /**
    * When this evidence was recorded. Used to determine if evidence has expired.

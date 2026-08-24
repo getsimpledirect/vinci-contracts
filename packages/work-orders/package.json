@@ -1,0 +1,36 @@
+{
+  "name": "@getsimpledirect/vinci-work-orders",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "package.json"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getsimpledirect/vinci-contracts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@getsimpledirect/vinci-contracts": "*",
+    "@getsimpledirect/vinci-evidence": "*"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

@@ -9,6 +9,7 @@ import type {
   OrganizationId,
   PolicyId,
   ReceiptId,
+  RiskLevel as ContractRiskLevel,
   RunId,
   SchemaMeta,
   Timestamp,
@@ -16,8 +17,8 @@ import type {
   ValidationResult,
   WorkerId,
   WorkspaceId,
-} from "@vinci/contracts";
-import { fail, isConsequentialActionClass, ok, toPlainRecord } from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
+import { fail, isConsequentialActionClass, ok, RISK_LEVELS, toPlainRecord } from "@getsimpledirect/vinci-contracts";
 import type { GrantShape } from "./grant.ts";
 import { validateGrantShape } from "./grant.ts";
 import {
@@ -45,8 +46,8 @@ export type AffectedResourceId =
   | ReceiptId
   | PolicyId;
 
-export const RISK_LEVELS = ["critical", "high", "medium", "low"] as const;
-export type RiskLevel = (typeof RISK_LEVELS)[number];
+export { RISK_LEVELS };
+export type RiskLevel = ContractRiskLevel;
 
 export type ControllingPolicy = {
   readonly policyId: string;
@@ -68,6 +69,19 @@ export type ApprovalRequest = {
   readonly runObjective: string;
   readonly affectedResource: AffectedResourceId;
   readonly reason: string;
+  /**
+   * ADVISORY ONLY. Supplied by the worker, and it confers no authority.
+   *
+   * Whether approval is required, who may approve, which options may be
+   * offered, and whether an action is forbidden are decided by policy — never
+   * by a label the requesting worker chose for its own request. A worker that
+   * could widen its own permissions by calling an action "low" would be
+   * granting itself authority, which is the thing this package exists to
+   * prevent.
+   *
+   * It is carried because it helps a human understand a request quickly, and
+   * nothing in this package reads it to make a decision.
+   */
   readonly riskLevel: RiskLevel;
   readonly evidenceId: EvidenceId;
   readonly estimatedCostOrImpact: string;
@@ -125,7 +139,7 @@ export function validateApprovalRequest(input: unknown): ValidationResult<Approv
     }
   }
   if (!isTimestamp(input.requestedAt)) {
-    return fail([issue("/requestedAt", "invalid_timestamp", "requestedAt must be an ISO-8601 UTC timestamp")]);
+    return fail([issue("/requestedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
   }
   if (!isActor(input.worker)) {
     return fail([issue("/worker", "invalid_actor", "worker must be a valid Actor")]);

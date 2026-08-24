@@ -1,4 +1,4 @@
-import { assertSchemaMetaComplete } from "@vinci/contracts";
+import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import { describe, expect, it } from "vitest";
 import {
   CUSTOMER_ENDPOINT_SCHEMA_META,
@@ -352,5 +352,103 @@ describe("model provenance", () => {
       "/route/provider",
       "required_field",
     );
+  });
+});
+
+describe("branded identifiers use the constructor rule in model-class records", () => {
+  const residency = (runId: string) => ({
+    schemaVersion: 1,
+    runId,
+    recordedAt: "2026-08-23T12:34:56.789Z",
+    recordedBy: actor,
+    accountDataLocation: { kind: "unknown" },
+    projectContentLocation: { kind: "unknown" },
+    inferenceLocation: { kind: "unknown" },
+    verificationLocation: { kind: "unknown" },
+  });
+
+  const endpointWithWorkspace = (workspace: Record<string, unknown>) => ({
+    ...validEndpoint(),
+    workspace,
+  });
+
+  it.each([
+    {
+      field: "Actor.userId",
+      path: "/recordedBy/userId",
+      validate: validateFallbackRecord,
+      bad: { ...validFallback(), recordedBy: { kind: "user", userId: "has space" } },
+      good: { ...validFallback(), recordedBy: { kind: "user", userId: "user-1" } },
+    },
+    {
+      field: "Actor.deviceId",
+      path: "/recordedBy/deviceId",
+      validate: validateFallbackRecord,
+      bad: { ...validFallback(), recordedBy: { kind: "user", userId: "user-1", deviceId: "a/b" } },
+      good: { ...validFallback(), recordedBy: { kind: "user", userId: "user-1", deviceId: "device-1" } },
+    },
+    {
+      field: "Actor.workerId",
+      path: "/recordedBy/workerId",
+      validate: validateFallbackRecord,
+      bad: { ...validFallback(), recordedBy: { kind: "worker", workerId: "café" } },
+      good: { ...validFallback(), recordedBy: { kind: "worker", workerId: "worker-1" } },
+    },
+    {
+      field: "Actor.policyId",
+      path: "/recordedBy/policyId",
+      validate: validateFallbackRecord,
+      bad: { ...validFallback(), recordedBy: { kind: "policy", policyId: "-leading", policyVersion: 1 } },
+      good: { ...validFallback(), recordedBy: { kind: "policy", policyId: "policy-1", policyVersion: 1 } },
+    },
+    {
+      field: "FallbackRecord.runId",
+      path: "/runId",
+      validate: validateFallbackRecord,
+      bad: { ...validFallback(), runId: "_under" },
+      good: { ...validFallback(), runId: "run-1" },
+    },
+    {
+      field: "ModelProvenanceRecord.runId",
+      path: "/runId",
+      validate: validateModelProvenanceRecord,
+      bad: { ...validResolvedProvenance(), runId: "x".repeat(200) },
+      good: { ...validResolvedProvenance(), runId: "run-1" },
+    },
+    {
+      field: "WorkspaceRef.workspaceId",
+      path: "/workspace/workspaceId",
+      validate: validateCustomerEndpointConfig,
+      bad: endpointWithWorkspace({ kind: "personal", workspaceId: "has space", ownerId: "user-1" }),
+      good: endpointWithWorkspace({ kind: "personal", workspaceId: "workspace-1", ownerId: "user-1" }),
+    },
+    {
+      field: "WorkspaceRef.ownerId",
+      path: "/workspace/ownerId",
+      validate: validateCustomerEndpointConfig,
+      bad: endpointWithWorkspace({ kind: "personal", workspaceId: "workspace-1", ownerId: "a/b" }),
+      good: endpointWithWorkspace({ kind: "personal", workspaceId: "workspace-1", ownerId: "user-1" }),
+    },
+    {
+      field: "WorkspaceRef.organizationId",
+      path: "/workspace/organizationId",
+      validate: validateCustomerEndpointConfig,
+      bad: endpointWithWorkspace({ kind: "organization", workspaceId: "workspace-1", organizationId: "café" }),
+      good: endpointWithWorkspace({ kind: "organization", workspaceId: "workspace-1", organizationId: "organization-1" }),
+    },
+    {
+      field: "ResidencyRecord.runId",
+      path: "/runId",
+      validate: validateResidencyRecord,
+      bad: residency("-leading"),
+      good: residency("run-1"),
+    },
+  ])("enforces the branded constructor rule for $field", ({ path, validate, bad, good }) => {
+    const rejected = validate(bad);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.issues).toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
+    }
+    expect(validate(good).ok).toBe(true);
   });
 });

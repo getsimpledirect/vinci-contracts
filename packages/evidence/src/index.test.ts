@@ -1,8 +1,14 @@
+import { EVIDENCE_MODES, EVIDENCE_RELIABILITIES, EVIDENCE_SOURCE_KINDS } from "./evidence-kinds.ts";
 import { describe, expect, it } from "vitest";
-import { assertSchemaMetaComplete } from "@vinci/contracts";
+import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import {
+  countsAgainstSubmittedWork,
+  isProvenanceConsistent,
   EVIDENCE_RECORD_SCHEMA_META,
   VERDICT_ASSESSMENT_SCHEMA_META,
+  FAILURE_OWNERS,
+  countsAgainstSubmittedWork,
+  validateVerdictRecord,
   isProvenanceConsistent,
   verdictAssessmentFor,
   validateEvidenceRecord,
@@ -20,6 +26,8 @@ const validEvidenceRecord = () => ({
   mode: "execution",
   reliability: "strong",
   sourceKind: "runner",
+  assessment: { outcome: "supports" },
+  notTested: [],
   summary: "All unit tests passed",
   recordedAt: "2026-08-23T12:34:56.789Z",
 });
@@ -501,5 +509,403 @@ describe("the constructor cannot manufacture what the validator refuses", () => 
     triggers.length = 0;
     expect(built.value.kind === "stale" && built.value.triggers.length).toBe(1);
     expect(Object.isFrozen(built.value)).toBe(true);
+  });
+});
+
+describe("a failure cannot be recorded without saying whose it is", () => {
+  // The difference between an evaluator worth having and one that is worse than
+  // nothing. Reporting a broken container or a missing credential as a defect
+  // in the submitted work does not merely fail to help — it teaches people to
+  // stop believing verdicts, and a false accusation is paid every time.
+  const withAssessment = (assessment: unknown) =>
+    validateEvidenceRecord({ ...validEvidenceRecord(), assessment });
+
+  it("refuses a contradicting outcome with no owner", () => {
+    const result = withAssessment({ outcome: "contradicts" });
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "failure_owner_required")).toBe(true);
+  });
+
+  it("refuses an invalid outcome with no owner", () => {
+    expect(withAssessment({ outcome: "invalid" }).ok).toBe(false);
+  });
+
+  it("accepts a failure that names its owner", () => {
+    for (const failureOwner of FAILURE_OWNERS) {
+      expect(withAssessment({ outcome: "contradicts", failureOwner }).ok, failureOwner).toBe(true);
+    }
+  });
+
+  it("refuses a failure owner on a non-failing outcome", () => {
+    // "supports, and by the way someone is at fault" is not a coherent record.
+    expect(withAssessment({ outcome: "supports", failureOwner: "submitted_work" }).ok).toBe(false);
+  });
+
+  it("counts only submitted_work against the author", () => {
+    // Infrastructure breakage must never read as a defect in the work.
+    expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: "submitted_work" })).toBe(true);
+    for (const owner of ["vinci_infrastructure", "missing_access", "unclear_requirement"] as const) {
+      expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: owner }), owner).toBe(false);
+    }
+    expect(countsAgainstSubmittedWork({ outcome: "supports" })).toBe(false);
+    expect(countsAgainstSubmittedWork({ outcome: "inconclusive" })).toBe(false);
+  });
+
+  it("treats inconclusive as not-a-failure", () => {
+    // Reporting an inconclusive check as a contradiction is how a flaky test
+    // becomes a rejected pull request.
+    expect(withAssessment({ outcome: "inconclusive" }).ok).toBe(true);
+    expect(countsAgainstSubmittedWork({ outcome: "inconclusive" })).toBe(false);
+  });
+});
+
+describe("what was not checked has to be said", () => {
+  const withNotTested = (notTested: unknown) =>
+    validateEvidenceRecord({ ...validEvidenceRecord(), notTested });
+
+  it("accepts an empty list, meaning everything in scope was checked", () => {
+    expect(withNotTested([]).ok).toBe(true);
+  });
+
+  it("requires a reason, because 'not tested' alone is indistinguishable from an oversight", () => {
+    expect(withNotTested([{ description: "the migration path" }]).ok).toBe(false);
+    expect(withNotTested([{ description: "the migration path", reason: "" }]).ok).toBe(false);
+    expect(
+      withNotTested([{ description: "the migration path", reason: "no staging database available" }]).ok,
+    ).toBe(true);
+  });
+
+  it("refuses an entry carrying anything else", () => {
+    expect(
+      withNotTested([{ description: "d", reason: "r", severity: "low" }]).ok,
+    ).toBe(false);
+  });
+});
+
+describe("a verdict cannot claim more than its evidence supports", () => {
+  const verdict = (o: Record<string, unknown> = {}) => ({
+    schemaVersion: 1,
+    status: "VERIFIED_PASS",
+    snapshotDigest: "a".repeat(64),
+    summary: "The requested endpoint behaves as specified",
+    scope: "the /orders endpoint at commit abc123, by execution",
+    criterionResults: [
+      { criterionId: "c-1", status: "supported", summary: "returns 404 for unknown ids", evidenceIds: ["e-1"] },
+    ],
+    decisiveEvidenceIds: ["e-1"],
+    unresolvedConditions: [],
+    residualRisks: [],
+    notTested: [],
+    policyVersion: "policy-v3",
+    evaluatorVersion: "acceptance-2026.08",
+    issuedAt: "2026-08-23T12:34:56.789Z",
+    expiresAt: null,
+    staleWhen: [],
+    ...o,
+  });
+
+  it("accepts a pass whose criteria are all supported", () => {
+    expect(validateVerdictRecord(verdict()).ok).toBe(true);
+  });
+
+  it("refuses VERIFIED_PASS while a criterion is contradicted", () => {
+    // Something was found not to work and the verdict says it all works.
+    const result = validateVerdictRecord(
+      verdict({
+        criterionResults: [
+          { criterionId: "c-1", status: "contradicted", summary: "returns 500", evidenceIds: ["e-1"] },
+        ],
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.some((i) => i.code === "unearned_pass")).toBe(true);
+  });
+
+  it("refuses VERIFIED_PASS while a criterion is unknown", () => {
+    // Unknown means the check ran and settled nothing. Treating that as passing
+    // is issuing confidence that was not earned.
+    expect(
+      validateVerdictRecord(
+        verdict({
+          criterionResults: [
+            { criterionId: "c-1", status: "unknown", summary: "could not reach the service", evidenceIds: ["e-1"] },
+          ],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("permits CONDITIONAL and BLOCKED to carry the same results", () => {
+    // Those statuses exist precisely for "holds with caveats" and "could not be
+    // settled", so the same criteria must be expressible under them.
+    for (const status of ["CONDITIONAL", "BLOCKED"] as const) {
+      expect(
+        validateVerdictRecord(
+          verdict({
+            status,
+            criterionResults: [
+              { criterionId: "c-1", status: "contradicted", summary: "returns 500", evidenceIds: ["e-1"] },
+            ],
+          }),
+        ).ok,
+        status,
+      ).toBe(true);
+    }
+  });
+
+  it("refuses a criterion result citing no evidence", () => {
+    // A conclusion resting on nothing is an opinion.
+    expect(
+      validateVerdictRecord(
+        verdict({
+          criterionResults: [
+            { criterionId: "c-1", status: "supported", summary: "looks fine", evidenceIds: [] },
+          ],
+        }),
+      ).ok,
+    ).toBe(false);
+  });
+
+  it("requires a scope, because a verdict that will not say what it covers claims everything", () => {
+    for (const scope of ["", "   ", undefined]) {
+      expect(validateVerdictRecord(verdict({ scope })).ok, String(scope)).toBe(false);
+    }
+  });
+
+  it("requires the snapshot digest that binds it to what it examined", () => {
+    expect(validateVerdictRecord(verdict({ snapshotDigest: "not-a-digest" })).ok).toBe(false);
+  });
+
+  it("refuses an unknown field and a bad status", () => {
+    expect(validateVerdictRecord(verdict({ extra: 1 })).ok).toBe(false);
+    // FAILED and CANCELLED are job terminations, not assessments.
+    expect(validateVerdictRecord(verdict({ status: "FAILED" })).ok).toBe(false);
+  });
+});
+
+describe("a required string must carry content, not just length", () => {
+  it("accepts the valid record unchanged", () => {
+    // Positive control. Every negative case below mutates exactly one field of
+    // this record, so a failure localises rather than meaning "something else
+    // in a fifteen-field fixture broke".
+    expect(validateEvidenceRecord(validEvidenceRecord()).ok).toBe(true);
+  });
+
+  it("rejects a blank id or summary", () => {
+    for (const blank of ["   ", "\t", "\n", " "]) {
+      expect(
+        validateEvidenceRecord({ ...validEvidenceRecord(), id: blank }).ok,
+        `id=${JSON.stringify(blank)}`,
+      ).toBe(false);
+      expect(
+        validateEvidenceRecord({ ...validEvidenceRecord(), summary: blank }).ok,
+        `summary=${JSON.stringify(blank)}`,
+      ).toBe(false);
+    }
+  });
+
+  it("rejects a blank actor identifier", () => {
+    // A blank workerId passed a typeof check and a length check while being
+    // attributable to nobody — on the field that says who produced the
+    // evidence, which is the whole point of an attestation.
+    const record = {
+      ...validEvidenceRecord(),
+      attestation: {
+        provenance: "worker_provided",
+        actor: { kind: "worker", workerId: "   " },
+      },
+    };
+    expect(validateEvidenceRecord(record).ok).toBe(false);
+  });
+
+  it("still accepts identifiers with internal or surrounding content", () => {
+    // The check is trim-based, so it must not reject a legitimate value that
+    // merely contains whitespace.
+    const record = { ...validEvidenceRecord(), summary: "ran 3 tests, all passed" };
+    expect(validateEvidenceRecord(record).ok).toBe(true);
+  });
+});
+
+describe("attribution predicates decide from own data", () => {
+  it("refuses an outcome whose fields are inherited", () => {
+    // Attribution decided from a prototype is attribution nobody wrote.
+    const inherited = Object.create({ outcome: "contradicts", failureOwner: "submitted_work" });
+    expect(Object.keys(inherited)).toEqual([]);
+    expect(countsAgainstSubmittedWork(inherited)).toBe(false);
+  });
+
+  it("refuses hostile input instead of throwing", () => {
+    for (const hostile of [
+      null, undefined, "contradicts", 7, new Array(1),
+      { get outcome() { return "contradicts"; }, failureOwner: "submitted_work" },
+      new Proxy({}, { get() { throw new Error("t"); } }),
+    ]) {
+      expect(() => countsAgainstSubmittedWork(hostile as never)).not.toThrow();
+      expect(countsAgainstSubmittedWork(hostile as never)).toBe(false);
+    }
+  });
+
+  it("still attributes genuine failures", () => {
+    // Positive controls. Returning false for everything would silently
+    // exonerate all broken work, which is the failure that matters most here.
+    expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: "submitted_work" })).toBe(true);
+    expect(countsAgainstSubmittedWork({ outcome: "invalid", failureOwner: "submitted_work" })).toBe(true);
+    expect(countsAgainstSubmittedWork({ outcome: "contradicts", failureOwner: "vinci_harness" })).toBe(false);
+    expect(countsAgainstSubmittedWork({ outcome: "supports" })).toBe(false);
+  });
+
+  it("returns a boolean for an unrecognised provenance, not undefined", () => {
+    // The switch had no default, so it fell through and returned `undefined`
+    // from a signature declaring `boolean`. Falsy, so it failed closed by luck
+    // rather than design, and a caller comparing === false got the wrong answer.
+    const result = isProvenanceConsistent("toString" as never, { kind: "worker", workerId: "w" });
+    expect(result).toBe(false);
+    expect(typeof result).toBe("boolean");
+  });
+});
+
+describe("provenance is decided from the snapshot, never from a re-read", () => {
+  it("refuses a Proxy that shows a worker to the check and a verifier to the decision", () => {
+    // The escalation this closes: a worker authorized to vouch for its own
+    // output as an independent verifier — the one thing the evidence layer
+    // must never permit. Descriptor checking did not defeat it; it only moved
+    // which lens was lied to.
+    const proxy = new Proxy({ kind: "worker", workerId: "w" }, {
+      get(target, prop, receiver) {
+        if (prop === "kind") return "verifier";
+        if (prop === "independent") return true;
+        return Reflect.get(target, prop, receiver);
+      },
+      getOwnPropertyDescriptor: (t, p) => Reflect.getOwnPropertyDescriptor(t, p),
+      ownKeys: (t) => Reflect.ownKeys(t),
+    });
+    expect(isProvenanceConsistent("independent_verifier" as never, proxy as never)).toBe(false);
+    // And it is refused for EVERY provenance, not reclassified as a worker.
+    // Serialization sees {kind:"verifier", workerId:"w"} — a verifier carrying
+    // a field its kind does not permit — so the actor is rejected outright,
+    // which is both stricter than before and identical to what the validator
+    // concludes about the same object.
+    expect(isProvenanceConsistent("worker_provided" as never, proxy as never)).toBe(false);
+  });
+
+  it("still accepts genuine provenance, and still refuses undisclosed non-independence", () => {
+    expect(isProvenanceConsistent("worker_provided" as never, { kind: "worker", workerId: "w" } as never)).toBe(true);
+    expect(isProvenanceConsistent("independent_verifier" as never, { kind: "verifier", verifierId: "v", independent: true } as never)).toBe(true);
+    expect(isProvenanceConsistent("independent_verifier" as never, { kind: "verifier", verifierId: "v", independent: false } as never)).toBe(false);
+  });
+});
+
+describe("branded identifiers use the constructor rule in evidence records", () => {
+  const actorRecord = (provenance: string, actor: Record<string, unknown>) => ({
+    ...validEvidenceRecord(),
+    attestation: { provenance, actor },
+  });
+
+  it("test consistency of EvidenceId.id constructor with its record validator", () => {
+    expectIssue(
+      validateEvidenceRecord({ ...validEvidenceRecord(), id: "has space" }),
+      "/id",
+      "invalid_identifier",
+    );
+    expect(validateEvidenceRecord({ ...validEvidenceRecord(), id: "evidence-1" }).ok).toBe(true);
+  });
+
+  it.each([
+    {
+      field: "Actor.userId",
+      path: "/attestation/actor/userId",
+      bad: actorRecord("human_provided", { kind: "user", userId: "has space" }),
+      good: actorRecord("human_provided", { kind: "user", userId: "user-1" }),
+    },
+    {
+      field: "Actor.deviceId",
+      path: "/attestation/actor/deviceId",
+      bad: actorRecord("human_provided", { kind: "user", userId: "user-1", deviceId: "a/b" }),
+      good: actorRecord("human_provided", { kind: "user", userId: "user-1", deviceId: "device-1" }),
+    },
+    {
+      field: "Actor.workerId",
+      path: "/attestation/actor/workerId",
+      bad: actorRecord("worker_provided", { kind: "worker", workerId: "café" }),
+      good: actorRecord("worker_provided", { kind: "worker", workerId: "worker-1" }),
+    },
+    {
+      field: "Actor.policyId",
+      path: "/attestation/actor/policyId",
+      bad: actorRecord("worker_provided", { kind: "policy", policyId: "-leading", policyVersion: 1 }),
+      good: actorRecord("worker_provided", { kind: "policy", policyId: "policy-1", policyVersion: 1 }),
+    },
+  ])("enforces the branded constructor rule for $field", ({ path, bad, good }) => {
+    const rejected = validateEvidenceRecord(bad);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.issues).toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
+    }
+
+    const control = validateEvidenceRecord(good);
+    if (!control.ok) {
+      expect(control.issues).not.toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
+    } else {
+      expect(control.ok).toBe(true);
+    }
+  });
+});
+
+describe("the enforced vocabulary and the exported vocabulary are one thing", () => {
+  // These lists existed TWICE inside this package: as type unions in
+  // evidence-kinds.ts, and as private const arrays in schema.ts that the
+  // validator actually enforced. They agreed, and nothing made them keep
+  // agreeing — adding a member to the union would have left the validator
+  // silently refusing it, and the failure would have surfaced as a rejected
+  // record with no obvious cause.
+  //
+  // Each type is now derived from its array, so the compiler enforces the
+  // relationship. These tests pin the RUNTIME half: that the validator accepts
+  // exactly the members the array declares, no more and no fewer.
+  const base = () => ({
+    schemaVersion: 1,
+    id: "evidence-1",
+    attestation: { provenance: "worker_provided", actor: { kind: "worker", workerId: "worker-1" } },
+    kind: "unit_test",
+    mode: "execution",
+    reliability: "strong",
+    sourceKind: "runner",
+    assessment: { outcome: "supports" },
+    notTested: [],
+    summary: "All unit tests passed",
+    recordedAt: "2026-08-23T12:34:56.789Z",
+  });
+
+  it("accepts every declared mode and rejects one that is not declared", () => {
+    for (const mode of EVIDENCE_MODES) {
+      const result = validateEvidenceRecord({ ...base(), mode });
+      expect(result.ok, `mode ${mode}`).toBe(true);
+    }
+    expect(validateEvidenceRecord({ ...base(), mode: "vibes" }).ok).toBe(false);
+  });
+
+  it("accepts every declared reliability and rejects one that is not declared", () => {
+    for (const reliability of EVIDENCE_RELIABILITIES) {
+      const result = validateEvidenceRecord({ ...base(), reliability });
+      expect(result.ok, `reliability ${reliability}`).toBe(true);
+    }
+    expect(validateEvidenceRecord({ ...base(), reliability: "probably" }).ok).toBe(false);
+  });
+
+  it("accepts every declared source kind and rejects one that is not declared", () => {
+    for (const sourceKind of EVIDENCE_SOURCE_KINDS) {
+      expect(validateEvidenceRecord({ ...base(), sourceKind }).ok, sourceKind).toBe(true);
+    }
+    expect(validateEvidenceRecord({ ...base(), sourceKind: "guesswork" }).ok).toBe(false);
+  });
+
+  it("exports the arrays a consumer needs, not just the types", () => {
+    // A type union cannot be iterated or validated against at runtime, so a
+    // consumer handed only the union has to re-declare the members — which is
+    // exactly how vinci-acceptance ended up with its own copy.
+    expect(Array.isArray(EVIDENCE_MODES)).toBe(true);
+    expect(Array.isArray(EVIDENCE_RELIABILITIES)).toBe(true);
+    expect(EVIDENCE_MODES).toContain("model_judgment");
+    expect(EVIDENCE_RELIABILITIES).toContain("authoritative");
   });
 });

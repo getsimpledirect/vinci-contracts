@@ -1,11 +1,12 @@
 import {
   fail,
+  isIdentifier,
   ok,
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
   toPlainRecord,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 import {
   POLICY_ALLOWED_REASON_CODES,
   POLICY_DECISION_OPTION_KINDS,
@@ -158,6 +159,18 @@ function requiredString(value: unknown, path: string, issues: ValidationIssue[])
   }
   if (typeof value !== "string" || value.length === 0) {
     addIssue(issues, path, "invalid_string", "expected a non-empty string");
+    return false;
+  }
+  return true;
+}
+
+function identifier(value: unknown, path: string, issues: ValidationIssue[]): value is string {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return false;
+  }
+  if (!isIdentifier(value)) {
+    addIssue(issues, path, "invalid_identifier", "expected an identifier of at most 128 safe characters");
     return false;
   }
   return true;
@@ -407,7 +420,7 @@ function validateCredentialBinding(value: unknown, path: string, issues: Validat
   const object = strictObjectValue(value, path, ["kind", "runId", "capability"], issues);
   if (!object) return;
   if (!enumValue(object.kind, ["run", "capability"] as const, `${path}/kind`, issues)) return;
-  if (object.kind === "run") requiredString(object.runId, `${path}/runId`, issues);
+  if (object.kind === "run") identifier(object.runId, `${path}/runId`, issues);
   if (object.kind === "capability") requiredString(object.capability, `${path}/capability`, issues);
 }
 
@@ -549,7 +562,7 @@ function validateApprovalRequirement(
   if (
     !enumValue(object.kind, ["named_person", "role", "two_people"] as const, `${path}/kind`, issues)
   ) return;
-  if (object.kind === "named_person") requiredString(object.userId, `${path}/userId`, issues);
+  if (object.kind === "named_person") identifier(object.userId, `${path}/userId`, issues);
   if (object.kind === "role") requiredString(object.role, `${path}/role`, issues);
   if (object.kind === "two_people") {
     const eligiblePath = `${path}/eligible`;
@@ -569,20 +582,23 @@ function validateApprovalGrant(
   const object = objectValue(
     value,
     path,
-    ["kind", "expiresAfterSeconds", "resource", "maximumDurationSeconds"],
+    ["kind", "runId", "resourceId", "durationMs"],
     issues,
     unknown,
   );
   if (!object) return;
   if (
-    !enumValue(object.kind, ["once", "remainder_of_run", "bounded"] as const, `${path}/kind`, issues)
+    !enumValue(object.kind, ["allow-once", "allow-remainder-of-run", "allow-bounded"] as const, `${path}/kind`, issues)
   ) return;
-  positiveInteger(object.expiresAfterSeconds, `${path}/expiresAfterSeconds`, issues);
-  if (object.kind === "bounded") {
-    requiredString(object.resource, `${path}/resource`, issues);
-    positiveInteger(object.maximumDurationSeconds, `${path}/maximumDurationSeconds`, issues);
+  if (object.kind === "allow-remainder-of-run") {
+    identifier(object.runId, `${path}/runId`, issues);
+  }
+  if (object.kind === "allow-bounded") {
+    requiredString(object.resourceId, `${path}/resourceId`, issues);
+    positiveInteger(object.durationMs, `${path}/durationMs`, issues);
   }
 }
+
 
 function validateApprovalDecision(
   value: unknown,
@@ -670,7 +686,7 @@ export function validatePolicyManifest(input: unknown): ValidationResult<PolicyM
   const object = objectValue(input, "", fields, issues, unknownFields);
   if (!object) return fail(issues);
 
-  requiredString(object.policyId, "/policyId", issues);
+  identifier(object.policyId, "/policyId", issues);
   positiveInteger(object.version, "/version", issues);
   requiredString(object.displayName, "/displayName", issues);
   validateResources(object.resources, issues, unknownFields);
@@ -726,14 +742,14 @@ function validateActor(
   ) return;
   switch (object.kind) {
     case "user":
-      requiredString(object.userId, `${path}/userId`, issues);
-      if (object.deviceId !== undefined) requiredString(object.deviceId, `${path}/deviceId`, issues);
+      identifier(object.userId, `${path}/userId`, issues);
+      if (object.deviceId !== undefined) identifier(object.deviceId, `${path}/deviceId`, issues);
       break;
     case "worker":
-      requiredString(object.workerId, `${path}/workerId`, issues);
+      identifier(object.workerId, `${path}/workerId`, issues);
       break;
     case "policy":
-      requiredString(object.policyId, `${path}/policyId`, issues);
+      identifier(object.policyId, `${path}/policyId`, issues);
       positiveInteger(object.policyVersion, `${path}/policyVersion`, issues);
       break;
     case "system":
@@ -781,7 +797,7 @@ function validatePolicyReference(
 ): void {
   const object = objectValue(value, path, ["policyId", "version"], issues, unknown);
   if (!object) return;
-  requiredString(object.policyId, `${path}/policyId`, issues);
+  identifier(object.policyId, `${path}/policyId`, issues);
   positiveInteger(object.version, `${path}/version`, issues);
 }
 
@@ -825,7 +841,7 @@ export function validatePolicyDecision(input: unknown): ValidationResult<PolicyD
   const object = objectValue(
     input,
     "",
-    ["outcome", "request", "reason", "controllingPolicy", "availableOptions"],
+    ["outcome", "request", "reason", "controllingPolicy", "grant", "availableOptions"],
     issues,
     unknownFields,
   );
@@ -846,9 +862,30 @@ export function validatePolicyDecision(input: unknown): ValidationResult<PolicyD
         "availableOptions applies only to non-proceeding decisions",
       );
     }
+    if (Object.hasOwn(object, "grant")) {
+      addIssue(
+        issues,
+        "/grant",
+        "unexpected_field",
+        "grant applies only to approval-required decisions",
+      );
+    }
   } else if (object.outcome === "denied") {
     validateDecisionReason(object.reason, POLICY_DENIED_REASON_CODES, "/reason", issues, unknownFields);
     validateDecisionOptions(object.availableOptions, "/availableOptions", issues, unknownFields);
+    const reasonCode = typeof object.reason === "object" && object.reason !== null
+      ? (object.reason as JsonObject).code
+      : undefined;
+    if (reasonCode === "approval_required") {
+      validateApprovalGrant(object.grant, "/grant", issues, unknownFields);
+    } else if (Object.hasOwn(object, "grant")) {
+      addIssue(
+        issues,
+        "/grant",
+        "unexpected_field",
+        "grant applies only to approval-required decisions",
+      );
+    }
   } else {
     validateDecisionReason(
       object.reason,
@@ -858,6 +895,14 @@ export function validatePolicyDecision(input: unknown): ValidationResult<PolicyD
       unknownFields,
     );
     validateDecisionOptions(object.availableOptions, "/availableOptions", issues, unknownFields);
+    if (Object.hasOwn(object, "grant")) {
+      addIssue(
+        issues,
+        "/grant",
+        "unexpected_field",
+        "grant applies only to approval-required decisions",
+      );
+    }
   }
 
   if (issues.length > 0) return fail(issues);

@@ -1,4 +1,5 @@
-import type { Timestamp } from "@vinci/contracts";
+import type { Timestamp } from "@getsimpledirect/vinci-contracts";
+import { ownData } from "@getsimpledirect/vinci-contracts";
 
 export const DELIVERY_STATE_KINDS = [
   "queued-locally",
@@ -21,7 +22,8 @@ export type EffectiveDeliveryState = Extract<
 >;
 
 export function isEffectiveDeliveryState(state: DeliveryState): state is EffectiveDeliveryState {
-  return state.kind === "accepted-by-governor" || state.kind === "acted-upon-by-worker";
+  const kind = ownData(state, "kind");
+  return kind === "accepted-by-governor" || kind === "acted-upon-by-worker";
 }
 
 /**
@@ -50,6 +52,7 @@ const DELIVERY_ORDER: Readonly<Record<DeliveryStateKind, number>> = {
  * The four states existing is not the requirement; their progression is.
  */
 export function canAdvanceDelivery(from: DeliveryStateKind, to: DeliveryStateKind): boolean {
+  if (!DELIVERY_STATE_KINDS.includes(from) || !DELIVERY_STATE_KINDS.includes(to)) return false;
   const delta = DELIVERY_ORDER[to] - DELIVERY_ORDER[from];
   return delta === 0 || delta === 1;
 }

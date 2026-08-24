@@ -14,4 +14,4 @@ export {
   type SchemaMeta,
   type Timestamp,
   type ValidationResult,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";

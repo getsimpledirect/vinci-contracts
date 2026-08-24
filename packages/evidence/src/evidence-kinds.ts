@@ -46,8 +46,26 @@ export type EvidenceKind = (typeof EVIDENCE_KINDS)[number];
  * This drives what re-verification strategy is appropriate. A `deterministic`
  * evidence item can be re-checked by re-running its generating command. A
  * `human_approval` can only be stale if a new approval is asked for.
+ *
+ * Exported as a const array with the type DERIVED from it, not as a bare union.
+ * There were two definitions of this vocabulary inside this package: the union
+ * here, and a private `EVIDENCE_MODES` array in schema.ts that the validator
+ * actually enforced. They agreed, and nothing made them keep agreeing — adding a
+ * member to one would have left the other silently refusing it.
+ *
+ * A consumer needs the array too. Acceptance had to re-declare this vocabulary
+ * because a type union cannot be iterated or validated against at runtime, which
+ * is the drift this package exists to end, caused by the package itself.
  */
-export type EvidenceMode = "deterministic" | "execution" | "visual" | "model_judgment" | "human_approval";
+export const EVIDENCE_MODES = [
+  "deterministic",
+  "execution",
+  "visual",
+  "model_judgment",
+  "human_approval",
+] as const;
+
+export type EvidenceMode = (typeof EVIDENCE_MODES)[number];
 
 /**
  * How much weight this evidence carries in an assessment.
@@ -55,8 +73,19 @@ export type EvidenceMode = "deterministic" | "execution" | "visual" | "model_jud
  * `authoritative` evidence cannot be overridden; if a criterion requires it
  * and no authoritative evidence exists, the criterion is unverified.
  * `weak` evidence supports a verdict but does not alone justify it.
+ *
+ * Same treatment as EVIDENCE_MODES above, and for the same reason: schema.ts
+ * held a private array the validator enforced while this file held a union the
+ * types referred to.
  */
-export type EvidenceReliability = "authoritative" | "strong" | "supporting" | "weak";
+export const EVIDENCE_RELIABILITIES = [
+  "authoritative",
+  "strong",
+  "supporting",
+  "weak",
+] as const;
+
+export type EvidenceReliability = (typeof EVIDENCE_RELIABILITIES)[number];
 
 /**
  * How evidence was collected: either by a runner (Vinci's controlled execution

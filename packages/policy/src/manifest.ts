@@ -1,11 +1,12 @@
 import {
   CONSEQUENTIAL_ACTION_CLASSES,
+  type CanonicalGrant,
   type ConsequentialActionClass,
   type PolicyId,
   type RunId,
   type Timestamp,
   type UserId,
-} from "@vinci/contracts";
+} from "@getsimpledirect/vinci-contracts";
 
 export const SYMLINK_HANDLING = ["deny", "allow_within_roots", "read_target_only"] as const;
 export type SymlinkHandling = (typeof SYMLINK_HANDLING)[number];
@@ -111,7 +112,7 @@ export type CredentialPolicy = CredentialMaterialExclusions & {
 };
 
 /**
- * Re-exported from @vinci/contracts rather than defined here. @vinci/approvals
+ * Re-exported from @getsimpledirect/vinci-contracts rather than defined here. @getsimpledirect/vinci-approvals
  * needs the same vocabulary to describe a pending request without quoting free
  * text, and two copies of a list this specific would drift.
  */
@@ -169,15 +170,12 @@ export type ApprovalRequirement =
       readonly eligible: { readonly kind: "any_user" } | { readonly kind: "role"; readonly role: string };
     };
 
-export type ApprovalGrant =
-  | { readonly kind: "once"; readonly expiresAfterSeconds: number }
-  | { readonly kind: "remainder_of_run"; readonly expiresAfterSeconds: number }
-  | {
-      readonly kind: "bounded";
-      readonly resource: string;
-      readonly maximumDurationSeconds: number;
-      readonly expiresAfterSeconds: number;
-    };
+/**
+ * Canonical grant type promoted to layer 0 (@getsimpledirect/vinci-contracts) to prevent drift
+ * between policy and approvals packages. See CanonicalGrant documentation in
+ * packages/contracts/src/grants.ts for rationale.
+ */
+export type ApprovalGrant = CanonicalGrant;
 
 export type ApprovalRuleDecision =
   | { readonly kind: "allow_automatically" }

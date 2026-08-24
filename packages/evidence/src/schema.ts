@@ -5,13 +5,20 @@ import {
   type ValidationIssue,
   type ValidationResult,
   toPlainRecord,
-} from "@vinci/contracts";
+  isCanonicalTimestamp,
+  isIdentifier,
+  isNonBlankText,
+  safeLabel,
+} from "@getsimpledirect/vinci-contracts";
 import {
   EVIDENCE_KINDS,
+  EVIDENCE_MODES,
+  EVIDENCE_RELIABILITIES,
   EVIDENCE_SOURCE_KINDS,
 } from "./evidence-kinds.ts";
 import type { EvidenceRecord } from "./evidence-record.ts";
-import { actorFieldsAreConsistent } from "@vinci/contracts";
+import { actorFieldsAreConsistent } from "@getsimpledirect/vinci-contracts";
+import { EVIDENCE_OUTCOMES, isFailureOwner } from "./attribution.ts";
 import { EVIDENCE_PROVENANCE_CASES, type EvidenceProvenance } from "./provenance.ts";
 import {
   VERDICT_STALENESS_TRIGGERS,
@@ -21,20 +28,10 @@ import {
 type JsonObject = Record<string, unknown>;
 type UnknownFields = Record<string, unknown>;
 
-const EVIDENCE_MODES = [
-  "deterministic",
-  "execution",
-  "visual",
-  "model_judgment",
-  "human_approval",
-] as const;
-
-const EVIDENCE_RELIABILITIES = [
-  "authoritative",
-  "strong",
-  "supporting",
-  "weak",
-] as const;
+// Imported, not redeclared. These were private copies here while
+// evidence-kinds.ts held type unions with the same members: the validator
+// enforced one definition and the exported types described another, with
+// nothing keeping them in step.
 
 function pointer(path: string, field: string): string {
   const escaped = field.replaceAll("~", "~0").replaceAll("/", "~1");
@@ -78,8 +75,26 @@ function requiredString(value: unknown, path: string, issues: ValidationIssue[])
     addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
     return false;
   }
-  if (typeof value !== "string" || value.length === 0) {
-    addIssue(issues, path, "invalid_string", "expected a non-empty string");
+  // trim, not length. `"   "` has a non-zero length and carries nothing: it
+  // satisfies a typeof check and a length check while telling a reader
+  // nothing, which is exactly the shape a field takes when a schema demanded
+  // it and the producer had nothing to put there. This helper backs every
+  // actor identifier on an evidence record, so a blank workerId or verifierId
+  // was attributable to nobody while still passing validation.
+  if (!isNonBlankText(value)) {
+    addIssue(issues, path, "invalid_string", "expected a non-empty, non-blank string");
+    return false;
+  }
+  return true;
+}
+
+function identifier(value: unknown, path: string, issues: ValidationIssue[]): value is string {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return false;
+  }
+  if (!isIdentifier(value)) {
+    addIssue(issues, path, "invalid_identifier", "expected an identifier of at most 128 safe characters");
     return false;
   }
   return true;
@@ -143,19 +158,8 @@ function timestamp(value: unknown, path: string, issues: ValidationIssue[]): val
     addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
     return false;
   }
-  // The round-trip is the load-bearing part. Date.parse normalises impossible
-  // dates rather than rejecting them, so "2026-02-29T12:34:56.789Z" — a date
-  // that does not exist, 2026 not being a leap year — parses to March 1 and
-  // passes both the shape and the NaN check. model-classes and approvals both
-  // carry this comparison; evidence did not, so the two packages disagreed
-  // about what a malformed timestamp is.
-  if (
-    typeof value !== "string"
-    || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)
-    || Number.isNaN(Date.parse(value))
-    || new Date(value).toISOString() !== value
-  ) {
-    addIssue(issues, path, "invalid_timestamp", "expected an ISO-8601 UTC timestamp with millisecond precision");
+  if (!isCanonicalTimestamp(value)) {
+    addIssue(issues, path, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
     return false;
   }
   return true;
@@ -212,14 +216,14 @@ function validateActor(
   }
   switch (object.kind) {
     case "user":
-      requiredString(object.userId, `${path}/userId`, issues);
-      if (object.deviceId !== undefined) requiredString(object.deviceId, `${path}/deviceId`, issues);
+      identifier(object.userId, `${path}/userId`, issues);
+      if (object.deviceId !== undefined) identifier(object.deviceId, `${path}/deviceId`, issues);
       break;
     case "worker":
-      requiredString(object.workerId, `${path}/workerId`, issues);
+      identifier(object.workerId, `${path}/workerId`, issues);
       break;
     case "policy":
-      requiredString(object.policyId, `${path}/policyId`, issues);
+      identifier(object.policyId, `${path}/policyId`, issues);
       positiveInteger(object.policyVersion, `${path}/policyVersion`, issues);
       break;
     case "system":
@@ -265,7 +269,7 @@ function validateAttestation(
         issues,
         `${path}/actor/kind`,
         "provenance_actor_mismatch",
-        `evidence with ${String(object.provenance)} provenance must be attested by an actor of kind "${expected}", not "${String(actor.kind)}"`,
+        `evidence with ${safeLabel(object.provenance)} provenance must be attested by an actor of kind "${expected}", not "${safeLabel(actor.kind)}"`,
       );
     }
     // An actor must carry exactly the fields its own kind permits.
@@ -274,7 +278,7 @@ function validateAttestation(
     // `independent` and `policyVersion` — so a worker could carry
     // `independent: true` and assert its own independence. A denylist of
     // foreign fields has that failure mode by construction; an allowlist of
-    // permitted ones, derived from the Actor union in @vinci/contracts, does
+    // permitted ones, derived from the Actor union in @getsimpledirect/vinci-contracts, does
     // not.
     //
     // What this still cannot do is establish that whoever submitted the record
@@ -286,7 +290,7 @@ function validateAttestation(
         issues,
         `${path}/actor`,
         "actor_identity_mismatch",
-        `an actor of kind "${String(actor.kind)}" carries a field that kind does not permit`,
+        `an actor of kind "${safeLabel(actor.kind)}" carries a field that kind does not permit`,
       );
     }
     if (object.provenance === "independent_verifier" && actor.independent !== true) {
@@ -317,6 +321,71 @@ function isJsonObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+/**
+ * A failing outcome must name an owner.
+ *
+ * The structural rule this package exists to enforce: there is no shape for
+ * "this failed and I am not saying whose failure it is". An unattributed
+ * failure gets read as the author's fault, and a false accusation costs more
+ * than a missed finding because it is paid every time.
+ */
+function validateAssessment(raw: unknown, issues: ValidationIssue[]): void {
+  const path = "/assessment";
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    addIssue(issues, path, "invalid_assessment", "an assessment is an object");
+    return;
+  }
+  const value = raw as Record<string, unknown>;
+  const outcome = value.outcome;
+  if (!(EVIDENCE_OUTCOMES as readonly unknown[]).includes(outcome)) {
+    addIssue(issues, `${path}/outcome`, "invalid_enum", "unrecognised evidence outcome");
+    return;
+  }
+  const needsOwner = outcome === "contradicts" || outcome === "invalid";
+  const keys = Object.keys(value).sort().join(",");
+  const expected = needsOwner ? "failureOwner,outcome" : "outcome";
+  if (keys !== expected) {
+    addIssue(
+      issues,
+      path,
+      needsOwner ? "failure_owner_required" : "field_not_valid_for_outcome",
+      needsOwner
+        ? "evidence that contradicts or is invalid must name whose failure it is"
+        : "a non-failing outcome carries no failure owner",
+    );
+    return;
+  }
+  if (needsOwner && !isFailureOwner(value.failureOwner)) {
+    addIssue(issues, `${path}/failureOwner`, "invalid_enum", "unrecognised failure owner");
+  }
+}
+
+/** "Not tested" without a reason is indistinguishable from an oversight. */
+function validateNotTested(raw: unknown, issues: ValidationIssue[]): void {
+  if (!Array.isArray(raw)) {
+    addIssue(issues, "/notTested", "invalid_type", "notTested is an array, empty if everything was checked");
+    return;
+  }
+  raw.forEach((item, index) => {
+    const path = `/notTested/${index}`;
+    if (typeof item !== "object" || item === null || Array.isArray(item)) {
+      addIssue(issues, path, "invalid_type", "each entry is an object");
+      return;
+    }
+    const entry = item as Record<string, unknown>;
+    if (Object.keys(entry).sort().join(",") !== "description,reason") {
+      addIssue(issues, path, "invalid_shape", "each entry carries exactly a description and a reason");
+      return;
+    }
+    for (const field of ["description", "reason"] as const) {
+      const v = entry[field];
+      if (typeof v !== "string" || v.trim() === "") {
+        addIssue(issues, `${path}/${field}`, "required_field", `${field} must be a non-empty string`);
+      }
+    }
+  });
+}
+
 export function validateEvidenceRecord(input: unknown): ValidationResult<EvidenceRecord> {
   // Snapshot before inspecting: rejects prototypes carrying inherited
   // fields, accessors that answer differently on each read, and symbol or
@@ -337,6 +406,8 @@ export function validateEvidenceRecord(input: unknown): ValidationResult<Evidenc
       "mode",
       "reliability",
       "sourceKind",
+      "assessment",
+      "notTested",
       "summary",
       "recordedAt",
     ],
@@ -346,7 +417,7 @@ export function validateEvidenceRecord(input: unknown): ValidationResult<Evidenc
   if (!object) return fail(issues);
 
   literalOne(object.schemaVersion, "/schemaVersion", issues);
-  requiredString(object.id, "/id", issues);
+  identifier(object.id, "/id", issues);
   validateAttestation(object.attestation, issues, unknownFields);
   enumValue(object.kind, EVIDENCE_KINDS, "/kind", issues);
   enumValue(object.mode, EVIDENCE_MODES, "/mode", issues);
@@ -354,6 +425,9 @@ export function validateEvidenceRecord(input: unknown): ValidationResult<Evidenc
   enumValue(object.sourceKind, EVIDENCE_SOURCE_KINDS, "/sourceKind", issues);
   requiredString(object.summary, "/summary", issues);
   timestamp(object.recordedAt, "/recordedAt", issues);
+
+  validateAssessment(object.assessment, issues);
+  validateNotTested(object.notTested, issues);
 
   if (issues.length > 0) return fail(issues);
   return ok(input as EvidenceRecord, unknownFields);

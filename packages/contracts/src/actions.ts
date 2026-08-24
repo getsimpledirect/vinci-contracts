@@ -3,8 +3,8 @@
  * (FR-4.5).
  *
  * This lives in layer 0 because two packages need the same vocabulary for
- * different jobs, and a second copy would drift: `@vinci/policy` uses it to
- * write approval rules, and `@vinci/approvals` uses it to describe a pending
+ * different jobs, and a second copy would drift: `@getsimpledirect/vinci-policy` uses it to
+ * write approval rules, and `@getsimpledirect/vinci-approvals` uses it to describe a pending
  * request without quoting free text.
  *
  * That second use is the load-bearing one. A push notification must carry no

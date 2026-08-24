@@ -1,4 +1,4 @@
-import { actorFieldsAreConsistent, type Actor } from "@vinci/contracts";
+import { plainActor, type Actor } from "@getsimpledirect/vinci-contracts";
 
 /**
  * Who vouches for this evidence. This is the FR-6.3 requirement to distinguish
@@ -26,7 +26,7 @@ import { actorFieldsAreConsistent, type Actor } from "@vinci/contracts";
  *   disclose when an assessment comes from someone other than the worker, and
  *   the verifier's independence is part of the claim.
  *
- * Each case maps to the `Actor` type from @vinci/contracts in the way that
+ * Each case maps to the `Actor` type from @getsimpledirect/vinci-contracts in the way that
  * makes sense: `worker_provided` uses `Actor.kind: "worker"`, `human_provided`
  * uses `Actor.kind: "user"`, `system_observed` uses `Actor.kind: "system"`,
  * and `independent_verifier` uses `Actor.kind: "verifier"` with the
@@ -68,19 +68,36 @@ export function isProvenanceConsistent(
   // which made the helper an alternate, more permissive path to the same
   // question. A test asserting they agree existed, and varied only the
   // independence flag.
-  if (!actorFieldsAreConsistent(actor as unknown as Readonly<Record<string, unknown>>)) return false;
+  // Snapshot ONCE, then decide from the snapshot. The previous version checked
+  // consistency by reflection and then authorized from fresh `actor.kind` /
+  // `actor.independent` reads, so a Proxy served an honest worker to the check
+  // and an independent verifier to the decision — and was authorized as one.
+  const snapshot = plainActor(actor as unknown as Readonly<Record<string, unknown>>);
+  if (snapshot === null) return false;
+
   switch (provenance) {
     case "worker_provided":
-      return actor.kind === "worker";
+      return snapshot.kind === "worker";
     case "system_observed":
-      return actor.kind === "system";
+      return snapshot.kind === "system";
     case "human_provided":
-      return actor.kind === "user";
+      return snapshot.kind === "user";
     case "independent_verifier":
       // The independence flag is part of the invariant, not a detail beside
       // it. FR-7.3 permits a non-independent verifier and requires that it be
       // DISCLOSED; evidence claiming independent-verifier provenance is the
       // opposite of disclosing it.
-      return actor.kind === "verifier" && actor.independent === true;
+      return snapshot.kind === "verifier" && snapshot.independent === true;
+    default:
+      // An unrecognised provenance is not consistent with anything.
+      //
+      // Without this the switch fell through and the function returned
+      // `undefined` from a signature declaring `boolean`. It is falsy, so it
+      // failed closed by luck rather than by design, and any caller comparing
+      // `=== false` — a reasonable thing to do with a predicate — got the
+      // wrong answer. TypeScript accepted the omission because the switch is
+      // exhaustive over the DECLARED union, which says nothing about what
+      // arrives at runtime.
+      return false;
   }
 }

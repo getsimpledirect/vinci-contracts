@@ -4,8 +4,8 @@ import {
   type SchemaMeta,
   type Timestamp,
   type ValidationIssue,
-  type ValidationResult, toPlainRecord } from "@vinci/contracts";
-import type { UserId } from "@vinci/contracts";
+  type ValidationResult, toPlainRecord } from "@getsimpledirect/vinci-contracts";
+import type { UserId } from "@getsimpledirect/vinci-contracts";
 import type { ClientType } from "./client-type.ts";
 import { isClientType } from "./client-type.ts";
 import type { PairingState } from "./pairing-state.ts";
