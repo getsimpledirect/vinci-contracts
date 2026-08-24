@@ -1,4 +1,4 @@
-import type { Actor, PolicyId } from "@vinci/contracts";
+import type { Actor, CanonicalGrant, PolicyId } from "@vinci/contracts";
 
 export type PolicyReference = {
   readonly policyId: PolicyId;
@@ -77,6 +77,18 @@ type NonProceedingDecision<O extends "denied" | "undetermined", C extends Policy
   readonly availableOptions: readonly [PolicyDecisionOption, ...PolicyDecisionOption[]];
 };
 
+type DeniedPolicyDecision =
+  | (NonProceedingDecision<"denied", "approval_required"> & {
+      /** The exact bounded authority requested by the controlling approval rule. */
+      readonly grant: CanonicalGrant;
+    })
+  | (NonProceedingDecision<
+      "denied",
+      Exclude<PolicyDeniedReasonCode, "approval_required">
+    > & {
+      readonly grant?: never;
+    });
+
 export type PolicyDecision =
   | {
       readonly outcome: "allowed";
@@ -84,5 +96,5 @@ export type PolicyDecision =
       readonly reason: PolicyDecisionReason<PolicyAllowedReasonCode>;
       readonly controllingPolicy: PolicyReference;
     }
-  | NonProceedingDecision<"denied", PolicyDeniedReasonCode>
+  | DeniedPolicyDecision
   | NonProceedingDecision<"undetermined", PolicyUndeterminedReasonCode>;

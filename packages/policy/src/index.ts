@@ -17,6 +17,7 @@
  */
 
 export * from "./decision.ts";
+export * from "./evaluation.ts";
 export * from "./manifest.ts";
 export * from "./schema.ts";
 

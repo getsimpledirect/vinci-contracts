@@ -841,7 +841,7 @@ export function validatePolicyDecision(input: unknown): ValidationResult<PolicyD
   const object = objectValue(
     input,
     "",
-    ["outcome", "request", "reason", "controllingPolicy", "availableOptions"],
+    ["outcome", "request", "reason", "controllingPolicy", "grant", "availableOptions"],
     issues,
     unknownFields,
   );
@@ -862,9 +862,30 @@ export function validatePolicyDecision(input: unknown): ValidationResult<PolicyD
         "availableOptions applies only to non-proceeding decisions",
       );
     }
+    if (Object.hasOwn(object, "grant")) {
+      addIssue(
+        issues,
+        "/grant",
+        "unexpected_field",
+        "grant applies only to approval-required decisions",
+      );
+    }
   } else if (object.outcome === "denied") {
     validateDecisionReason(object.reason, POLICY_DENIED_REASON_CODES, "/reason", issues, unknownFields);
     validateDecisionOptions(object.availableOptions, "/availableOptions", issues, unknownFields);
+    const reasonCode = typeof object.reason === "object" && object.reason !== null
+      ? (object.reason as JsonObject).code
+      : undefined;
+    if (reasonCode === "approval_required") {
+      validateApprovalGrant(object.grant, "/grant", issues, unknownFields);
+    } else if (Object.hasOwn(object, "grant")) {
+      addIssue(
+        issues,
+        "/grant",
+        "unexpected_field",
+        "grant applies only to approval-required decisions",
+      );
+    }
   } else {
     validateDecisionReason(
       object.reason,
@@ -874,6 +895,14 @@ export function validatePolicyDecision(input: unknown): ValidationResult<PolicyD
       unknownFields,
     );
     validateDecisionOptions(object.availableOptions, "/availableOptions", issues, unknownFields);
+    if (Object.hasOwn(object, "grant")) {
+      addIssue(
+        issues,
+        "/grant",
+        "unexpected_field",
+        "grant applies only to approval-required decisions",
+      );
+    }
   }
 
   if (issues.length > 0) return fail(issues);

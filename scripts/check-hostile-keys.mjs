@@ -394,6 +394,7 @@ const NOT_AUTHORITY_GUARDS = {
   "policy.ok": "result constructor",
   "policy.fail": "result constructor",
   "policy.assertSchemaMetaComplete": "build-time assertion, not runtime input",
+  "policy.evaluatePolicyDecision": "structured policy evaluator; fail-closed hostile inputs are pinned by its unit suite",
   "run-events.payloadSpecIsComplete": "build-time assertion over OUR spec",
   "evidence.blamesSubmittedWork": "enum membership over FAILURE_OWNERS",
   "evidence.verdictAssessmentFor": "constructor; its output is validated",
@@ -658,4 +659,3 @@ if (failed) {
 console.log(
   `  ${validators} validators x ${checked / (validators || 1)} shapes = ${checked} probes, plus ${guardProbes} authority-guard probes with positive controls — none granted a yes`,
 );
-
