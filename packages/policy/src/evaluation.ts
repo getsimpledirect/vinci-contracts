@@ -232,7 +232,7 @@ function decide(
 
 /** Evaluate one action request against a validated version-1 policy manifest. */
 /**
- * FIVE DECISIONS THAT NOBODY RATIFIED. READ THIS BEFORE TRUSTING THIS FILE.
+ * FIVE DECISIONS, NOW RATIFIED. Decision 1 confirmed by George, 2026-08-24.
  *
  * The matching algorithm was not specified anywhere. Not in the types, not in
  * the manifest comments, not in E0-decisions. It had to be invented to write
@@ -269,10 +269,16 @@ function decide(
  * 5. UNDETERMINED REASON CODES map to concrete conditions, listed at each
  *    return site rather than assigned loosely.
  *
- * The one that most deserves a second opinion is (1). Exact matching is safe but
- * demanding: every capability must be written out. If real policies turn out to
- * need namespacing ("deploy:*"), that is a deliberate feature to design, not a
- * default to slip into.
+ * (1) IS NOW SETTLED: exact matching is ratified, with the demand it implies —
+ * every capability must be written out. Namespacing ("deploy:*") remains a
+ * feature to design deliberately if real policies need it, never a default to
+ * slip into. Do not relax this to a prefix match without an explicit decision:
+ * a rule for "deploy" silently governing "deployment-notes" is an escalation
+ * with no visible cause, and it would look like a small convenience change.
+ *
+ * Decisions 2 through 5 remain as chosen and unratified. They are fail-closed
+ * readings, and none has been confirmed by anyone with authority over the
+ * policy model.
  */
 export function evaluatePolicyDecision(
   manifest: unknown,

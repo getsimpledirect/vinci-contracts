@@ -67,6 +67,20 @@ export function isEnumToken(value: unknown): value is string {
  * when a field was required by a schema and had nothing to put in it. Trimming
  * covers Unicode whitespace, not just ASCII spaces.
  */
+
+/**
+ * IDENTIFIER SHAPE, confirmed against the real identity provider 2026-08-24.
+ *
+ * `isIdentifier` below rejects anything outside [A-Za-z0-9._:-], which means it
+ * rejects `auth0|abc123` and every email-shaped id. That was an assumption when
+ * written; it is now checked. vinci-chat authenticates with better-auth, whose
+ * default id generation is opaque alphanumeric and passes cleanly — there is no
+ * custom generateId override in lib/auth/auth.ts.
+ *
+ * If the identity provider ever changes, re-check this BEFORE adopting: five
+ * repositories validate identifiers against this rule, and loosening it after
+ * they do is a migration rather than an edit.
+ */
 export function isNonBlankText(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
