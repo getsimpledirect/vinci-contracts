@@ -314,28 +314,6 @@ const REQUIRED_GUARDS = [
   "statusIsSupportedBy(status, [supported])",
 ];
 
-/**
- * Exported predicates that still THROW on hostile input.
- *
- * The distinction this list encodes matters and is easy to lose: none of these
- * ever returns `true` for hostile input. They fail LOUDLY, not OPEN. Nobody
- * gets a false yes, so this is a robustness gap and not an authority bypass —
- * materially less severe than statusIsSupportedBy returning true for a sparse
- * array, which granted an unearned pass.
- *
- * They are probed on the property that actually guards authority (never true)
- * and exempted only from the no-throw property. The exemption is listed here,
- * counted, and printed on every run, so the debt is visible and shrinking it is
- * a matter of deleting lines rather than remembering.
- */
-const MAY_STILL_THROW = new Set([
-  "approvals.isGrantStrictlyNarrower",
-  "approvals.isDecisionEffective",
-  "approvals.canAdvanceDelivery",
-  "approvals.isEffectiveDeliveryState",
-  "contracts.isOrganizationWorkspace",
-  "contracts.terminalStateOfVerification",
-]);
 
 /**
  * Exported functions deliberately NOT probed as authority guards, each with a
@@ -581,8 +559,8 @@ for (const guard of AUTHORITY_GUARDS) {
       console.error(`  ${guard.label} on ${shape}: granted a yes (${JSON.stringify(value)}) — hostile input must be refused`);
       failed = true;
     }
-    // The robustness property, waivable only via MAY_STILL_THROW.
-    if (threw !== undefined && !MAY_STILL_THROW.has(`${guard.pkg}.${guard.export}`)) {
+    // The robustness property: a guard must refuse hostile input, not throw.
+    if (threw !== undefined) {
       console.error(`  ${guard.label} on ${shape}: THREW: ${threw} — a guard must refuse, not throw`);
       failed = true;
     }
@@ -665,10 +643,4 @@ if (failed) {
 console.log(
   `  ${validators} validators x ${checked / (validators || 1)} shapes = ${checked} probes, plus ${guardProbes} authority-guard probes with positive controls — none granted a yes`,
 );
-if (MAY_STILL_THROW.size > 0) {
-  // Printed on every green run. A waiver nobody sees is a waiver nobody removes.
-  console.log(
-    `  ${MAY_STILL_THROW.size} predicates still throw rather than refuse (never return true): `
-      + [...MAY_STILL_THROW].join(", "),
-  );
-}
+

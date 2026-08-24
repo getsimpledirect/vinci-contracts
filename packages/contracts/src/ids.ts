@@ -7,6 +7,8 @@
  * the wrong workspace crosses an organizational boundary (FR-9.4).
  */
 
+import { ownData } from "./scalars.ts";
+
 declare const brand: unique symbol;
 type Branded<T extends string> = string & { readonly [brand]: T };
 
@@ -41,5 +43,5 @@ export type WorkspaceRef =
 export function isOrganizationWorkspace(
   ref: WorkspaceRef,
 ): ref is Extract<WorkspaceRef, { kind: "organization" }> {
-  return ref.kind === "organization";
+  return ownData(ref, "kind") === "organization";
 }
