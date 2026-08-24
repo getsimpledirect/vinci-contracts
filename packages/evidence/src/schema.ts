@@ -12,6 +12,8 @@ import {
 } from "@getsimpledirect/vinci-contracts";
 import {
   EVIDENCE_KINDS,
+  EVIDENCE_MODES,
+  EVIDENCE_RELIABILITIES,
   EVIDENCE_SOURCE_KINDS,
 } from "./evidence-kinds.ts";
 import type { EvidenceRecord } from "./evidence-record.ts";
@@ -26,20 +28,10 @@ import {
 type JsonObject = Record<string, unknown>;
 type UnknownFields = Record<string, unknown>;
 
-const EVIDENCE_MODES = [
-  "deterministic",
-  "execution",
-  "visual",
-  "model_judgment",
-  "human_approval",
-] as const;
-
-const EVIDENCE_RELIABILITIES = [
-  "authoritative",
-  "strong",
-  "supporting",
-  "weak",
-] as const;
+// Imported, not redeclared. These were private copies here while
+// evidence-kinds.ts held type unions with the same members: the validator
+// enforced one definition and the exported types described another, with
+// nothing keeping them in step.
 
 function pointer(path: string, field: string): string {
   const escaped = field.replaceAll("~", "~0").replaceAll("/", "~1");

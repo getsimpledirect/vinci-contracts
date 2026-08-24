@@ -1,3 +1,4 @@
+import { EVIDENCE_MODES, EVIDENCE_RELIABILITIES, EVIDENCE_SOURCE_KINDS } from "./evidence-kinds.ts";
 import { describe, expect, it } from "vitest";
 import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import {
@@ -847,5 +848,64 @@ describe("branded identifiers use the constructor rule in evidence records", () 
     } else {
       expect(control.ok).toBe(true);
     }
+  });
+});
+
+describe("the enforced vocabulary and the exported vocabulary are one thing", () => {
+  // These lists existed TWICE inside this package: as type unions in
+  // evidence-kinds.ts, and as private const arrays in schema.ts that the
+  // validator actually enforced. They agreed, and nothing made them keep
+  // agreeing — adding a member to the union would have left the validator
+  // silently refusing it, and the failure would have surfaced as a rejected
+  // record with no obvious cause.
+  //
+  // Each type is now derived from its array, so the compiler enforces the
+  // relationship. These tests pin the RUNTIME half: that the validator accepts
+  // exactly the members the array declares, no more and no fewer.
+  const base = () => ({
+    schemaVersion: 1,
+    id: "evidence-1",
+    attestation: { provenance: "worker_provided", actor: { kind: "worker", workerId: "worker-1" } },
+    kind: "unit_test",
+    mode: "execution",
+    reliability: "strong",
+    sourceKind: "runner",
+    assessment: { outcome: "supports" },
+    notTested: [],
+    summary: "All unit tests passed",
+    recordedAt: "2026-08-23T12:34:56.789Z",
+  });
+
+  it("accepts every declared mode and rejects one that is not declared", () => {
+    for (const mode of EVIDENCE_MODES) {
+      const result = validateEvidenceRecord({ ...base(), mode });
+      expect(result.ok, `mode ${mode}`).toBe(true);
+    }
+    expect(validateEvidenceRecord({ ...base(), mode: "vibes" }).ok).toBe(false);
+  });
+
+  it("accepts every declared reliability and rejects one that is not declared", () => {
+    for (const reliability of EVIDENCE_RELIABILITIES) {
+      const result = validateEvidenceRecord({ ...base(), reliability });
+      expect(result.ok, `reliability ${reliability}`).toBe(true);
+    }
+    expect(validateEvidenceRecord({ ...base(), reliability: "probably" }).ok).toBe(false);
+  });
+
+  it("accepts every declared source kind and rejects one that is not declared", () => {
+    for (const sourceKind of EVIDENCE_SOURCE_KINDS) {
+      expect(validateEvidenceRecord({ ...base(), sourceKind }).ok, sourceKind).toBe(true);
+    }
+    expect(validateEvidenceRecord({ ...base(), sourceKind: "guesswork" }).ok).toBe(false);
+  });
+
+  it("exports the arrays a consumer needs, not just the types", () => {
+    // A type union cannot be iterated or validated against at runtime, so a
+    // consumer handed only the union has to re-declare the members — which is
+    // exactly how vinci-acceptance ended up with its own copy.
+    expect(Array.isArray(EVIDENCE_MODES)).toBe(true);
+    expect(Array.isArray(EVIDENCE_RELIABILITIES)).toBe(true);
+    expect(EVIDENCE_MODES).toContain("model_judgment");
+    expect(EVIDENCE_RELIABILITIES).toContain("authoritative");
   });
 });
