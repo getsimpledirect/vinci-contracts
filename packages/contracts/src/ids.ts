@@ -1,3 +1,4 @@
+import { isIdentifier } from "./scalars.ts";
 /**
  * Identifier types for the glossary nouns of §7.
  *
@@ -22,6 +23,45 @@ export type ArtifactId = Branded<"ArtifactId">;
 export type EvidenceId = Branded<"EvidenceId">;
 export type ReceiptId = Branded<"ReceiptId">;
 export type PolicyId = Branded<"PolicyId">;
+
+/**
+ * Checked constructors for the branded ids above.
+ *
+ * Without these a consumer has exactly one way to produce an `EvidenceId`:
+ *
+ *   const id = "evidence-1" as EvidenceId;
+ *
+ * which is an UNCHECKED cast — the one construct this repository argues against
+ * everywhere else. It asserts a property the compiler then stops questioning,
+ * and it does not look at the value at all, so `"" as EvidenceId` and
+ * `"   " as EvidenceId` both typecheck and both name nothing.
+ *
+ * This was found the way most things here are found: a README example failed to
+ * compile, and the only workaround visible to its author was to copy the cast
+ * out of a test file. Five repositories are about to depend on this package;
+ * each of them would have hit the same wall on their first line and reached for
+ * the same cast.
+ *
+ * Each constructor validates before branding and returns null on failure, so a
+ * bad id is refused at the boundary rather than carried as a lie. They do not
+ * throw: an identifier arriving from outside is data, not a programming error.
+ */
+function checkedId<T extends string>(): (value: unknown) => Branded<T> | null {
+  return (value: unknown) => (isIdentifier(value) ? (value as Branded<T>) : null);
+}
+
+export const toOrganizationId = checkedId<"OrganizationId">();
+export const toWorkspaceId = checkedId<"WorkspaceId">();
+export const toRunId = checkedId<"RunId">();
+export const toWorkerId = checkedId<"WorkerId">();
+export const toAgentId = checkedId<"AgentId">();
+export const toDeviceId = checkedId<"DeviceId">();
+export const toUserId = checkedId<"UserId">();
+export const toApprovalId = checkedId<"ApprovalId">();
+export const toArtifactId = checkedId<"ArtifactId">();
+export const toEvidenceId = checkedId<"EvidenceId">();
+export const toReceiptId = checkedId<"ReceiptId">();
+export const toPolicyId = checkedId<"PolicyId">();
 
 /**
  * A workspace is either personal or organizational, and the two must stay

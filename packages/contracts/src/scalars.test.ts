@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { safeLabel } from "./scalars.ts";
+import {
+  toAgentId, toApprovalId, toArtifactId, toDeviceId, toEvidenceId, toOrganizationId,
+  toPolicyId, toReceiptId, toRunId, toUserId, toWorkerId, toWorkspaceId,
+} from "./ids.ts";
 
 describe("safeLabel never throws on anything a validator can hold", () => {
   it("survives the null-prototype object that made String() throw", () => {
@@ -41,5 +45,45 @@ describe("safeLabel never throws on anything a validator can hold", () => {
     // Positive control: short strings pass through intact, or the labels in
     // every error message become useless.
     expect(safeLabel("worker")).toBe("worker");
+  });
+});
+
+describe("branded id constructors validate before branding", () => {
+  it("accepts a well-formed identifier and brands it", () => {
+    // Positive control first: a constructor that returned null for everything
+    // would satisfy every rejection case below and be useless.
+    const id = toEvidenceId("evidence-1");
+    expect(id).toBe("evidence-1");
+    expect(toRunId("run.2026-08-23")).toBe("run.2026-08-23");
+    expect(toWorkspaceId("ws:alpha")).toBe("ws:alpha");
+  });
+
+  it("refuses what an unchecked cast would have accepted", () => {
+    // These are the whole reason these exist. `"" as EvidenceId` typechecks and
+    // names nothing; the cast never looks at the value.
+    for (const bad of ["", "   ", "\t", " leading", "trailing ", "has space"]) {
+      expect(toEvidenceId(bad), JSON.stringify(bad)).toBe(null);
+    }
+  });
+
+  it("refuses non-strings without throwing", () => {
+    for (const bad of [null, undefined, 7, {}, [], Symbol("x"), new Proxy({}, { get() { throw new Error("t"); } })]) {
+      expect(() => toEvidenceId(bad)).not.toThrow();
+      expect(toEvidenceId(bad)).toBe(null);
+    }
+  });
+
+  it("brands every declared id type", () => {
+    // If a type is added to ids.ts without a constructor, a consumer is pushed
+    // back to an unchecked cast for that one type.
+    const constructors = [
+      toOrganizationId, toWorkspaceId, toRunId, toWorkerId, toAgentId, toDeviceId,
+      toUserId, toApprovalId, toArtifactId, toEvidenceId, toReceiptId, toPolicyId,
+    ];
+    expect(constructors).toHaveLength(12);
+    for (const make of constructors) {
+      expect(make("ok-1")).toBe("ok-1");
+      expect(make("")).toBe(null);
+    }
   });
 });

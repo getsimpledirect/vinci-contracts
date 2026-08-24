@@ -360,6 +360,21 @@ const NOT_AUTHORITY_GUARDS = {
   // null-prototype case that made String() throw in the first place.
   "contracts.safeLabel": "total value-to-label function, never a decision",
   "contracts.ownData": "single own-data property read; never a decision",
+  // Checked id constructors. Each validates with isIdentifier and returns a
+  // branded string or null. They answer "is this a well-formed identifier",
+  // never "may this happen", and their refusal path is pinned by unit tests.
+  "contracts.toOrganizationId": "checked id constructor; returns a branded string or null",
+  "contracts.toWorkspaceId": "checked id constructor; returns a branded string or null",
+  "contracts.toRunId": "checked id constructor; returns a branded string or null",
+  "contracts.toWorkerId": "checked id constructor; returns a branded string or null",
+  "contracts.toAgentId": "checked id constructor; returns a branded string or null",
+  "contracts.toDeviceId": "checked id constructor; returns a branded string or null",
+  "contracts.toUserId": "checked id constructor; returns a branded string or null",
+  "contracts.toApprovalId": "checked id constructor; returns a branded string or null",
+  "contracts.toArtifactId": "checked id constructor; returns a branded string or null",
+  "contracts.toEvidenceId": "checked id constructor; returns a branded string or null",
+  "contracts.toReceiptId": "checked id constructor; returns a branded string or null",
+  "contracts.toPolicyId": "checked id constructor; returns a branded string or null",
   // Arithmetic over an already-validated budget and spend. It answers "how
   // much is left", not "may this happen" — the guards above answer that, and
   // they validate before calling it.
