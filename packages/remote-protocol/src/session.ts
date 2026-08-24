@@ -26,6 +26,23 @@ import type { DeviceId, OrganizationId, RunId, WorkspaceId } from "@getsimpledir
 export type SessionId = string & { readonly __brand: "SessionId" };
 
 /**
+ * The wire protocol this package speaks.
+ *
+ * A session binding crosses a network between two independently-deployed
+ * programs: a host that may be an old Vinci Code install, and a relay that was
+ * deployed this morning. Nothing in the record said which protocol either side
+ * was speaking, so a version skew presented as a validation failure on whichever
+ * field happened to change — or worse, as a successful parse of a record that
+ * meant something else.
+ *
+ * The field is required and checked against this constant, so a peer speaking a
+ * protocol this build does not implement is refused at the boundary with a
+ * message naming the skew. That is FR-4.8 applied to the wire: if we cannot
+ * determine what the other side meant, the session must not proceed.
+ */
+export const REMOTE_PROTOCOL_VERSION = 1;
+
+/**
  * What a session is a session OF.
  *
  * `organizationId` is nullable because personal workspaces are first-class
@@ -35,6 +52,22 @@ export type SessionId = string & { readonly __brand: "SessionId" };
  * names.
  */
 export type SessionBinding = {
+  /**
+   * The wire protocol both peers must agree on. Distinct from `schemaVersion`,
+   * and they answer different questions: this one asks whether we can talk at
+   * all, `schemaVersion` asks whether this particular record means what the
+   * reader thinks it means. A protocol can add a message type without changing
+   * this record's shape, and this record's shape can change within a protocol.
+   */
+  readonly protocolVersion: number;
+  /**
+   * The version of THIS record's schema, on the wire rather than only in
+   * `SESSION_BINDING_SCHEMA_META`. The meta is a compile-time fact about the
+   * build that read the record; a receiver needs a runtime fact about the build
+   * that wrote it. The validator checks the two against each other so they
+   * cannot drift.
+   */
+  readonly schemaVersion: number;
   readonly sessionId: SessionId;
   readonly runId: RunId;
   readonly workspaceId: WorkspaceId;

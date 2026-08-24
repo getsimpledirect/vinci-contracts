@@ -346,4 +346,19 @@ Several checks additionally report how much they examined and fail if that count
 is implausibly low. A scanner that finds nothing looks exactly like a codebase
 with nothing to find, and that confusion has hidden real defects here.
 
+A tenth check runs in CI but not in `npm run gate`, because it installs from the
+network and takes minutes:
+
+```bash
+npm run check:pack
+```
+
+It packs all ten packages, installs the tarballs into an empty directory outside
+this repository, and both type-checks and runs a program that imports every one
+of them. Everything else here resolves package names to source through tsconfig
+path aliases and project references; a consumer gets `files`, `main` and `types`
+instead, and a package can pass the entire gate while being unusable the moment
+it is installed. Removing `dist` from one package's `files` list, or pointing
+`types` at a file that was never emitted, both pass the gate and both fail this.
+
 If any check fails, the gate exits with code 1 and names the failure.

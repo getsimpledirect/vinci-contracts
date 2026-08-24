@@ -13,6 +13,7 @@ import {
   type SessionRole,
   SESSION_BINDING_SCHEMA_META,
   validateSessionBinding,
+  REMOTE_PROTOCOL_VERSION,
 } from "./index.ts";
 
 describe("a remote device may tighten authority, never broaden it", () => {
@@ -107,6 +108,8 @@ describe("a remote device may tighten authority, never broaden it", () => {
 
 describe("a session is transport identity; a run is work identity", () => {
   const binding = (o: Record<string, unknown> = {}) => ({
+    protocolVersion: REMOTE_PROTOCOL_VERSION,
+    schemaVersion: SESSION_BINDING_SCHEMA_META.version,
     sessionId: "sess-1",
     runId: "run-1",
     workspaceId: "ws-1",
@@ -152,6 +155,44 @@ describe("a session is transport identity; a run is work identity", () => {
 
   it("refuses an unknown field", () => {
     expect(validateSessionBinding(binding({ extra: 1 })).ok).toBe(false);
+  });
+
+  it("refuses a peer speaking a different protocol version", () => {
+    // Two independently-deployed programs meet here: a host that may be an old
+    // install, and a relay deployed this morning. Without this, skew presents as
+    // a validation failure on whichever field happened to change — or as a
+    // clean parse of a record that meant something else.
+    for (const bad of [REMOTE_PROTOCOL_VERSION + 1, REMOTE_PROTOCOL_VERSION - 1, "1", null, 1.5]) {
+      const result = validateSessionBinding(binding({ protocolVersion: bad }));
+      expect(result.ok, String(bad)).toBe(false);
+      if (!result.ok) {
+        expect(result.issues.some((i) => i.code === "protocol_version_mismatch")).toBe(true);
+      }
+    }
+    // Absent is refused too: a binding with no protocol version is one from
+    // before the field existed, which is the skew case, not a default.
+    const { protocolVersion: _dropped, ...withoutVersion } = binding();
+    expect(validateSessionBinding(withoutVersion).ok).toBe(false);
+  });
+
+  it("refuses a record written against a different schema version", () => {
+    const result = validateSessionBinding(
+      binding({ schemaVersion: SESSION_BINDING_SCHEMA_META.version + 1 }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.some((i) => i.code === "schema_version_mismatch")).toBe(true);
+    }
+  });
+
+  it("keeps the on-wire schemaVersion tied to the declared meta version", () => {
+    // The two must not drift. If someone bumps SESSION_BINDING_SCHEMA_META.version
+    // without a migration, this test does not fail — but every record written by
+    // the previous build starts being refused, loudly, at the boundary. That is
+    // the intended behaviour and this test records it as intended.
+    const result = validateSessionBinding(binding());
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(result.value.schemaVersion).toBe(SESSION_BINDING_SCHEMA_META.version);
   });
 
   it("declares a compatibility policy its validator honours", () => {

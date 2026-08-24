@@ -40,3 +40,26 @@ jobs:
             git status --porcelain
             exit 1
           fi
+
+  # A separate job on purpose. It installs from the network and takes minutes,
+  # so keeping it out of `npm run gate` keeps the local loop fast — but running
+  # it in parallel here means it is not optional either.
+  consumer-install:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      # Everything in the gate resolves package names to SOURCE, through
+      # tsconfig path aliases and project references. A consumer gets a tarball
+      # and `files`/`main`/`types` instead, and a package can pass the whole gate
+      # while being unusable the moment it is installed.
+      - name: Packages work when installed
+        run: npm run check:pack

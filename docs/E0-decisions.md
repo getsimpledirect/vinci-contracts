@@ -161,3 +161,32 @@ originally excluded secrets with a denylist of twelve field names, which passed
 provider invents. A denylist cannot express a security boundary — it is only as
 good as the imagination of whoever wrote it. The rule is an allowlist:
 under `/credentials`, a field not explicitly known is refused.
+
+## D5 — Version lives on the wire, twice, for two different questions
+
+`SessionBinding` carries `protocolVersion` and `schemaVersion` as required
+fields, each checked against a single in-build source of truth
+(`REMOTE_PROTOCOL_VERSION` and `SESSION_BINDING_SCHEMA_META.version`).
+
+Two independently-deployed programs meet at this record: a host that may be a
+months-old Vinci Code install, and a relay deployed this morning. Nothing in the
+record said which protocol either side spoke. Version skew therefore presented
+as a validation failure on whichever field happened to change between the two
+builds — an accurate error about the wrong thing — or, in the worse case, as a
+clean parse of a record that meant something else.
+
+They are two fields rather than one because they answer different questions. A
+protocol can add a message type without changing this record's shape, and this
+record's shape can change within one protocol. `protocolVersion` asks whether
+the two peers can talk at all; `schemaVersion` asks whether this particular
+record means what its reader thinks it means.
+
+Both are refused on mismatch rather than tolerated, which is FR-4.8 at the
+network boundary: if we cannot determine what the other side meant, the session
+does not proceed. Absent is refused too — a binding with no version is one
+written before the field existed, which is the skew case, not a default.
+
+The cost is real and accepted: bumping either number makes every record from
+every older build refuse, loudly, at the boundary. That is the intended
+behaviour. The alternative is a silent misread, and a receipt asserting
+something untrue is more expensive than a session that will not start.
