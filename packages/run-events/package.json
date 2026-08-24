@@ -24,7 +24,8 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@getsimpledirect/vinci-contracts": "*"
+    "@getsimpledirect/vinci-contracts": "*",
+    "@getsimpledirect/vinci-evidence": "*"
   },
   "devDependencies": {
     "typescript": "5.9.3"

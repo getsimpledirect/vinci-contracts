@@ -1,4 +1,5 @@
 import { CONSEQUENTIAL_ACTION_CLASSES, RISK_LEVELS } from "@getsimpledirect/vinci-contracts";
+import { EVIDENCE_PROVENANCE_CASES } from "@getsimpledirect/vinci-evidence";
 import { RUN_EVENT_TYPES, type RunEventType } from "./event-types.ts";
 
 /**
@@ -102,6 +103,19 @@ export const PAYLOAD_FIELDS = {
     policyVersion: { kind: "count", required: true },
   },
   "run.started": { workerId: { kind: "id", required: true } },
+  // UNRESOLVED: this phase list has three members and worker.heartbeat's has
+  // four, adding "waiting". Same field name, same concept, different
+  // vocabularies — and nothing anywhere says whether that is deliberate.
+  //
+  // The defensible reading is that a progress event reports progress, so
+  // "waiting" would be self-contradictory, while a heartbeat exists precisely to
+  // say "still alive, doing nothing". If that is the intent it should be written
+  // down; if it is an oversight, a worker that goes idle emits waiting on one
+  // event type and not the other, and whoever reads the stream sees a phase
+  // vanish rather than change.
+  //
+  // Deliberately NOT unified. Making two disagreeing lists agree is a product
+  // decision about what a run.progress event may say, not a deduplication.
   "run.progress": {
     phase: { kind: "enum", required: true, members: ["planning", "working", "verifying"] },
     completedSteps: { kind: "count", required: false },
@@ -133,7 +147,7 @@ export const PAYLOAD_FIELDS = {
     provenance: {
       kind: "enum",
       required: true,
-      members: ["worker_provided", "system_observed", "human_provided", "independent_verifier"],
+      members: EVIDENCE_PROVENANCE_CASES,
     },
   },
   "worker.heartbeat": {
