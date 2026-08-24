@@ -1,4 +1,4 @@
-import { CONSEQUENTIAL_ACTION_CLASSES, RISK_LEVELS } from "@getsimpledirect/vinci-contracts";
+import { CONSEQUENTIAL_ACTION_CLASSES, RISK_LEVELS, VERDICT_STATUSES } from "@getsimpledirect/vinci-contracts";
 import { EVIDENCE_PROVENANCE_CASES } from "@getsimpledirect/vinci-evidence";
 import { RUN_EVENT_TYPES, type RunEventType } from "./event-types.ts";
 
@@ -170,7 +170,7 @@ export const PAYLOAD_FIELDS = {
   "verification.started": { verificationJobId: { kind: "id", required: true } },
   "verdict.recorded": {
     verificationJobId: { kind: "id", required: true },
-    status: { kind: "enum", required: true, members: ["VERIFIED_PASS", "CONDITIONAL", "BLOCKED"] },
+    status: { kind: "enum", required: true, members: VERDICT_STATUSES },
     snapshotDigest: { kind: "digest", required: true },
     staled: { kind: "flag", required: true },
   },

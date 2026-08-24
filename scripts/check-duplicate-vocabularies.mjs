@@ -5,9 +5,10 @@
  * Coverage: every non-test .ts file under each package's src, recursively. Generated
  * dist output is excluded explicitly: it is a copy of source, not another source
  * definition. Const string-array declarations (`const X = ["a"] as const`) and
- * bare string-literal type unions (`type X = "a" | "b"`) are compared. Types
- * derived from an array (`type X = (typeof XS)[number]`) are intentionally not
- * declarations of a second vocabulary and are not counted.
+ * bare string-literal type unions (`type X = "a" | "b"`), and string-array
+ * object-property values are compared. Types derived from an array
+ * (`type X = (typeof XS)[number]`) are intentionally not declarations of a
+ * second vocabulary and are not counted.
  *
  * This is deliberately not a general semantic-equivalence checker. It does not
  * compare object/number arrays, arrays assembled with spreads, enums, schemas,
@@ -26,6 +27,8 @@ const packagesDir = join(root, "packages");
 // genuinely shrinks below these conservative bounds.
 const MIN_SOURCE_FILES = 50;
 const MIN_VOCABULARY_DECLARATIONS = 20;
+const MIN_INLINE_ARRAYS = 1;
+const MIN_INLINE_ARRAY_MEMBERS = 3;
 
 /**
  * Intentional duplicates must name their complete comparison key and exact set
@@ -113,6 +116,113 @@ function declarationsIn(file, packageName) {
   return declarations;
 }
 
+function unwrappedExpression(node) {
+  let expression = node;
+  while (
+    ts.isAsExpression(expression)
+    || ts.isSatisfiesExpression(expression)
+    || ts.isParenthesizedExpression(expression)
+    || ts.isTypeAssertionExpression(expression)
+  ) {
+    expression = expression.expression;
+  }
+  return expression;
+}
+
+function propertyNameText(name, sourceFile) {
+  if (ts.isIdentifier(name)) return name.text;
+  if (ts.isStringLiteralLike(name) || ts.isNumericLiteral(name)) {
+    return JSON.stringify(name.text);
+  }
+  if (ts.isComputedPropertyName(name)) return `[${name.expression.getText(sourceFile)}]`;
+  return name.getText(sourceFile);
+}
+
+function enclosingVariableName(node) {
+  for (let current = node.parent; current; current = current.parent) {
+    if (ts.isVariableDeclaration(current) && ts.isIdentifier(current.name)) {
+      return current.name.text;
+    }
+  }
+  return null;
+}
+
+function inlineArrayContext(property, sourceFile) {
+  let contextProperty = property;
+
+  // Schema-shaped objects conventionally put the vocabulary in `members`; the
+  // useful identity is the field whose schema owns those members. Thus
+  // `riskLevel: { members: [...] }` is reported as `riskLevel`, matching the
+  // location a maintainer would edit, while a top-level `members: [...]` still
+  // retains its own property name.
+  if (
+    propertyNameText(property.name, sourceFile) === "members"
+    && ts.isObjectLiteralExpression(property.parent)
+    && ts.isPropertyAssignment(property.parent.parent)
+    && unwrappedExpression(property.parent.parent.initializer) === property.parent
+  ) {
+    contextProperty = property.parent.parent;
+  }
+
+  const properties = [];
+  let current = contextProperty;
+  while (ts.isPropertyAssignment(current)) {
+    properties.push(propertyNameText(current.name, sourceFile));
+    const object = current.parent;
+    if (
+      !ts.isObjectLiteralExpression(object)
+      || !ts.isPropertyAssignment(object.parent)
+      || unwrappedExpression(object.parent.initializer) !== object
+    ) {
+      break;
+    }
+    current = object.parent;
+  }
+
+  const declarationName = enclosingVariableName(contextProperty);
+  return {
+    name: [declarationName, ...properties.reverse()].filter(Boolean).join("."),
+    node: contextProperty,
+    propertyName: propertyNameText(property.name, sourceFile),
+  };
+}
+
+function inlineArraysIn(file, packageName) {
+  const source = readFileSync(file, "utf8");
+  const sourceFile = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true);
+  const declarations = [];
+  const fileName = relative(join(packagesDir, packageName), file).replaceAll("\\", "/");
+
+  function visit(node) {
+    if (ts.isPropertyAssignment(node)) {
+      const initializer = unwrappedExpression(node.initializer);
+      if (
+        ts.isArrayLiteralExpression(initializer)
+        && initializer.elements.length >= MIN_INLINE_ARRAY_MEMBERS
+        && initializer.elements.every(ts.isStringLiteralLike)
+      ) {
+        const { name, node: contextNode, propertyName } = inlineArrayContext(node, sourceFile);
+        const line = sourceFile.getLineAndCharacterOfPosition(
+          contextNode.getStart(sourceFile),
+        ).line + 1;
+        declarations.push({
+          packageName,
+          file: fileName,
+          name,
+          members: initializer.elements.map((element) => element.text),
+          kind: "inline array",
+          line,
+          propertyName,
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  }
+
+  visit(sourceFile);
+  return declarations;
+}
+
 function orderedKey(members) {
   return JSON.stringify(members);
 }
@@ -169,11 +279,13 @@ for (const packageEntry of readdirSync(packagesDir, { withFileTypes: true })) {
 files.sort(([left], [right]) => left.localeCompare(right));
 
 const declarations = files.flatMap(([file, packageName]) => declarationsIn(file, packageName));
+const inlineArrays = files.flatMap(([file, packageName]) => inlineArraysIn(file, packageName));
+const comparedDeclarations = [...declarations, ...inlineArrays];
 const constArrayCount = declarations.filter(({ kind }) => kind === "const array").length;
 const typeUnionCount = declarations.length - constArrayCount;
 const findings = [];
 
-for (const group of groupBy(declarations, (members) => members.length).values()) {
+for (const group of groupBy(comparedDeclarations, (members) => members.length).values()) {
   // A vocabulary can only be equal to one with the same cardinality. Splitting
   // first keeps the comparison maps small and makes this explicit.
   for (const exact of groupBy(group, orderedKey).values()) {
@@ -197,6 +309,7 @@ for (const group of groupBy(declarations, (members) => members.length).values())
 console.log(
   `scanned ${files.length} source files, found ${declarations.length} vocabulary declarations `
     + `(${constArrayCount} const arrays, ${typeUnionCount} bare type unions), `
+    + `${inlineArrays.length} inline string arrays (minimum ${MIN_INLINE_ARRAY_MEMBERS} members), `
     + `${findings.length} duplicated`,
 );
 
@@ -210,6 +323,12 @@ if (declarations.length < MIN_VOCABULARY_DECLARATIONS) {
   errors.push(
     `vocabulary declaration count ${declarations.length} is implausibly low `
       + `(minimum ${MIN_VOCABULARY_DECLARATIONS}); declaration detection may be broken`,
+  );
+}
+if (inlineArrays.length < MIN_INLINE_ARRAYS) {
+  errors.push(
+    `inline string-array count ${inlineArrays.length} is implausibly low `
+      + `(minimum ${MIN_INLINE_ARRAYS}); inline-array detection may be broken`,
   );
 }
 
@@ -245,7 +364,7 @@ for (const finding of findings) {
     ? "exact ordered duplicate"
     : "unordered-only duplicate (same members in different order)";
   errors.push(`${label} ${JSON.stringify(finding.members)}:\n${finding.declarations
-    .map((declaration) => `      ${location(declaration)}:${declaration.line}`)
+    .map((declaration) => `      ${location(declaration)}:line ${declaration.line}`)
     .join("\n")}`);
 }
 
