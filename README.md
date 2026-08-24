@@ -359,12 +359,19 @@ The nine checks, in order:
 5. **SchemaMeta conformance** — Every record type exports schema metadata, with closed vocabularies and positive integer versions actually enforced rather than merely present
 6. **hostile-key conformance** — Every exported validator and authority guard is probed with inherited property names, accessors, proxies, sparse arrays and prototype tricks. Each guard carries a real allow **and** deny control, because a positive control that cannot fail is not a control
 7. **duplicate vocabularies** — No closed string vocabulary is declared twice, comparing const arrays, bare string unions, and inline object-property arrays of three or more members. Thirteen duplications have been found in this codebase; every one agreed when written and would have drifted later
-8. **lockstep versions** — All packages share one version and internal dependencies pin to it exactly, so a consumer cannot resolve a combination that was never tested together
+8. **lockstep versions** — All packages share one version and internal dependencies pin to it exactly, so a consumer cannot resolve a combination that was never tested together. Checks every dependency section including `optionalDependencies`, and refuses a manifest carrying a section it does not recognise — a typo like `dependancies` would otherwise be skipped by every check here while looking like a clean scan
 9. **no stray scripts** — Repository root holds exactly its allowed files
 
-Several checks additionally report how much they examined and fail if that count
-is implausibly low. A scanner that finds nothing looks exactly like a codebase
-with nothing to find, and that confusion has hidden real defects here.
+Several checks report how much they examined and fail if that count is
+implausibly low. A scanner that finds nothing looks exactly like a codebase with
+nothing to find, and that confusion has hidden real defects here.
+
+A floor turned out not to be enough on its own. Deleting a package made the
+lockstep check report "9 packages all at 0.1.0" and exit 0, which reads exactly
+like success — a scan that reports on whatever it happens to find cannot tell
+you it found less than it should have. The inventory in
+`scripts/expected-packages.json` is compared exactly, so adding or removing a
+package has to be done deliberately, in the same commit.
 
 A tenth check runs in CI but not in `npm run gate`, because it installs from the
 network and takes minutes:

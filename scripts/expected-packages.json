@@ -1,0 +1,15 @@
+{
+  "comment": "The package inventory, committed so a change to it is a deliberate act. See scripts/lib/inventory.mjs for why this hand-maintained list is not the kind that was removed elsewhere.",
+  "packages": [
+    "approvals",
+    "contracts",
+    "device-auth",
+    "evidence",
+    "model-classes",
+    "policy",
+    "receipts",
+    "remote-protocol",
+    "run-events",
+    "work-orders"
+  ]
+}
