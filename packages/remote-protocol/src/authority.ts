@@ -240,10 +240,10 @@ export function validateRemoteDecisionState(
   }
 
   if (kind === "provisional" && !isCanonicalTimestamp(record.submittedAt)) {
-    add("/submittedAt", "invalid_timestamp", "submittedAt is ISO-8601 UTC with millisecond precision");
+    add("/submittedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
   }
   if (kind === "confirmed" && !isCanonicalTimestamp(record.confirmedAt)) {
-    add("/confirmedAt", "invalid_timestamp", "confirmedAt is ISO-8601 UTC with millisecond precision");
+    add("/confirmedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
   }
   if (kind === "rejected_by_host"
       && !(REMOTE_DECISION_REJECTIONS as readonly unknown[]).includes(record.reason)) {

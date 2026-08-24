@@ -51,6 +51,65 @@ function sourceFilesUnder(root, prefix = "") {
   return out;
 }
 
+
+/**
+ * Read a tsconfig with its `extends` chain resolved.
+ *
+ * The check previously JSON.parse'd one file and stopped. TypeScript does not:
+ * it merges compilerOptions from every config in the extends chain, so a base
+ * config carrying `paths` that reach a higher layer produced a violation this
+ * saw nothing of. A review constructed exactly that and got "Dependency graph
+ * OK". No package uses `extends` today, which is why it went unnoticed — the
+ * same shape as the src-subdirectory gap: correct for the tree that exists,
+ * wrong for the first one that grows the feature.
+ *
+ * Only compilerOptions are inherited here, because only compilerOptions are
+ * inherited by TypeScript. `references`, `files`, `include` and `exclude` are
+ * explicitly NOT inherited through extends, so reading them from a base would
+ * report a violation the compiler ignores — fail-closed is the right instinct,
+ * but not at the cost of flagging something that cannot actually happen.
+ *
+ * Cycles and runaway chains terminate rather than hang.
+ */
+function readTsconfigResolved(tsconfigPath, errors, label) {
+  const seen = new Set();
+  let current = tsconfigPath;
+  const chain = [];
+  while (current && !seen.has(current) && chain.length < 16) {
+    seen.add(current);
+    if (!existsSync(current)) {
+      errors.push(`${label}: tsconfig extends ${current}, which does not exist`);
+      break;
+    }
+    let parsed;
+    try {
+      parsed = JSON.parse(readFileSync(current, "utf8"));
+    } catch {
+      errors.push(`${label}: ${current} is not parseable JSON`);
+      break;
+    }
+    chain.push(parsed);
+    const ext = parsed.extends;
+    if (typeof ext !== "string" || ext === "") break;
+    // Only relative extends can point inside this repository; a bare specifier
+    // resolves into node_modules and is out of scope for the layer rule.
+    if (!ext.startsWith(".")) break;
+    current = resolve(dirname(current), ext.endsWith(".json") ? ext : `${ext}.json`);
+  }
+  if (chain.length === 0) return null;
+
+  // Nearest config wins, so merge from the far end of the chain inward.
+  const merged = { ...chain[chain.length - 1] };
+  const paths = {};
+  for (let i = chain.length - 1; i >= 0; i -= 1) {
+    Object.assign(paths, chain[i].compilerOptions?.paths ?? {});
+  }
+  merged.compilerOptions = { ...(merged.compilerOptions ?? {}), paths };
+  // References come from the package's OWN config only. See above.
+  merged.references = chain[0].references ?? [];
+  return merged;
+}
+
 const errors = [];
 
 /**
@@ -143,13 +202,7 @@ for (const dir of readdirSync(packagesDir)) {
   // that the first alias anyone adds is unexamined.
   const tsconfigPath = join(packagesDir, dir, "tsconfig.json");
   if (existsSync(tsconfigPath)) {
-    let tsconfig;
-    try {
-      tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8"));
-    } catch {
-      errors.push(`${name}: tsconfig.json is not parseable JSON`);
-      tsconfig = null;
-    }
+    const tsconfig = readTsconfigResolved(tsconfigPath, errors, name);
     if (tsconfig) {
       // A reference path is relative, e.g. "../contracts". Map the directory
       // back to a package name via its manifest, so a renamed directory cannot

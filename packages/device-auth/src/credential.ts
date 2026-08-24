@@ -117,7 +117,7 @@ export function revoke<T extends CredentialIdentity>(
       {
         path: "/revokedAt",
         code: "invalid_timestamp",
-        message: "expected an ISO-8601 UTC timestamp with millisecond precision",
+        message: "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z",
       },
     ]);
   }

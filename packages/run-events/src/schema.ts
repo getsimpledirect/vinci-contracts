@@ -95,7 +95,7 @@ function validatePayloadValue(
       break;
     case "at":
       if (!isCanonicalTimestamp(inner)) {
-        issues.push(issue(path, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
+        issues.push(issue(path, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z"));
       }
       break;
     case "flag":
@@ -238,7 +238,7 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
     issues.push(issue("/type", "unknown_event_type", "unrecognised run event type"));
   }
   if (!isCanonicalTimestamp(record.occurredAt)) {
-    issues.push(issue("/occurredAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
+    issues.push(issue("/occurredAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z"));
   }
   validateActor(record.actor, issues);
 

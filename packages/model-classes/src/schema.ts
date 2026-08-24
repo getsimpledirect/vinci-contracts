@@ -178,7 +178,7 @@ function timestamp(value: unknown, path: string, issues: ValidationIssue[]): val
       issues,
       path,
       "invalid_timestamp",
-      "expected an ISO-8601 UTC timestamp with millisecond precision",
+      "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z",
     );
     return false;
   }

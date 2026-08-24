@@ -158,21 +158,55 @@ describe("statusIsSupportedBy is a gate, not a helper", () => {
     ] as never)).toBe(false);
   });
 
-  it("refuses an entry whose status is an accessor or inherited", () => {
-    // The plain `result.status` read this replaces had two defects. The throw
-    // was reported by a reviewer; the inherited case is the one that
-    // manufactures a pass, and it returned TRUE.
-    const hostile: Array<[string, unknown]> = [
-      ["a throwing getter", { get status() { throw new Error("hostile"); } }],
-      ["a proxy get trap", new Proxy({}, { get() { throw new Error("trap"); } })],
-      ["a proxy gOPD trap", new Proxy({}, { getOwnPropertyDescriptor() { throw new Error("g"); } })],
-      ["an INHERITED status", Object.create({ status: "supported" })],
-      ["a status getter returning supported", { get status() { return "supported"; } }],
-    ];
-    for (const [label, entry] of hostile) {
-      expect(() => statusIsSupportedBy("VERIFIED_PASS", [entry] as never), label).not.toThrow();
-      expect(statusIsSupportedBy("VERIFIED_PASS", [entry] as never), label).toBe(false);
-    }
+  it("captures an accessor once, and still refuses an inherited status", () => {
+    // These two used to be treated the same and are not the same.
+    //
+    // Routing through toPlainRecord means serialization invokes a getter EXACTLY
+    // ONCE and stores the result as data, so there is no later read for it to
+    // answer differently — and the validator has always accepted the same value.
+    // A helper stricter than the validator about the same input is the defect
+    // this file exists to prevent, in whichever direction it points.
+    expect(statusIsSupportedBy("VERIFIED_PASS", [{ get status() { return "supported"; } }] as never)).toBe(true);
+    expect(statusIsSupportedBy("VERIFIED_PASS", [{ get status() { return "unknown"; } }] as never)).toBe(false);
+
+    // An INHERITED status is still refused, and for a reason that survives the
+    // change: an object with no own keys serializes to {}, so there is no status
+    // at all once the snapshot is taken. A prototype cannot supply a criterion.
+    expect(JSON.stringify(Object.create({ status: "supported" }))).toBe("{}");
+    expect(statusIsSupportedBy("VERIFIED_PASS", [Object.create({ status: "supported" })] as never)).toBe(false);
+  });
+
+  it("refuses a Proxy that fabricates criteria its target does not hold", () => {
+    // Found by review. A Proxy over an EMPTY array reporting length 1 and a
+    // fabricated descriptor at index 0 was granted VERIFIED_PASS — a pass over
+    // zero actual criteria, while the same value serialized to []. The stored
+    // record and the predicate described different things.
+    const target: unknown[] = [];
+    const fabricating = new Proxy(target, {
+      get(t, prop, receiver) {
+        return prop === "length" ? 1 : Reflect.get(t, prop, receiver);
+      },
+      getOwnPropertyDescriptor(t, prop) {
+        if (prop === "0") {
+          return { value: { status: "supported" }, writable: true, enumerable: true, configurable: true };
+        }
+        if (prop === "length") {
+          return { value: 1, writable: true, enumerable: false, configurable: false };
+        }
+        return Reflect.getOwnPropertyDescriptor(t, prop);
+      },
+    });
+    expect(statusIsSupportedBy("VERIFIED_PASS", fabricating as never)).toBe(false);
+    expect(target).toEqual([]);
+  });
+
+  it("refuses a revoked Proxy instead of throwing", () => {
+    // Array.isArray itself throws on a revoked proxy, out of a function
+    // documented never to throw.
+    const revocable = Proxy.revocable([], {});
+    revocable.revoke();
+    expect(() => statusIsSupportedBy("VERIFIED_PASS", revocable.proxy as never)).not.toThrow();
+    expect(statusIsSupportedBy("VERIFIED_PASS", revocable.proxy as never)).toBe(false);
   });
 
   it("refuses hostile input instead of throwing", () => {

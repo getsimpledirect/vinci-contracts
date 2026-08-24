@@ -43,7 +43,7 @@ export function validateRunAction(input: unknown): ValidationResult<RunAction> {
   if (!isNonEmptyString(input.runId)) return fail([issue("/runId", "required_field", "runId must be a non-empty string")]);
   if (!isActor(input.requestedBy)) return fail([issue("/requestedBy", "invalid_actor", "requestedBy must be a valid Actor")]);
   if (!isTimestamp(input.requestedAt)) {
-    return fail([issue("/requestedAt", "invalid_timestamp", "requestedAt must be an ISO-8601 UTC timestamp")]);
+    return fail([issue("/requestedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
   }
   const unknownFields: Record<string, unknown> = {};
   collectUnknownFields(input, ["kind", "runId", "requestedBy", "requestedAt"], "", unknownFields);

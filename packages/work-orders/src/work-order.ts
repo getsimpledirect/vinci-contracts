@@ -193,12 +193,13 @@ export function validateWorkOrder(input: unknown): ValidationResult<WorkOrder> {
   // authority this order carries, and a second implementation of that question
   // is a second answer to it.
   if (plainActor(record.requestedBy as Readonly<Record<string, unknown>>) === null) {
-    issues.push(issue("/requestedBy", "invalid_actor", "requestedBy is not a consistent actor"));
+    issues.push(issue("/requestedBy", "invalid_actor", "requestedBy must be an actor of kind user, worker, policy, system or verifier, "
+        + "carrying exactly that kind's fields (see ACTOR_FIELDS)"));
   }
 
   for (const field of ["issuedAt", "expiresAt"] as const) {
     if (!isCanonicalTimestamp(record[field])) {
-      issues.push(issue(`/${field}`, "invalid_timestamp", `${field} is ISO-8601 UTC with milliseconds`));
+      issues.push(issue(`/${field}`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z"));
     }
   }
   if (

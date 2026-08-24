@@ -142,11 +142,11 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
   }
 
   if (!isCanonicalTimestamp(record.startedAt)) {
-    issues.push(issue("/startedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
+    issues.push(issue("/startedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z"));
   }
 
   if (!isCanonicalTimestamp(record.completedAt)) {
-    issues.push(issue("/completedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
+    issues.push(issue("/completedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z"));
   }
 
   if (typeof record.activeDuration !== "number" || !Number.isSafeInteger(record.activeDuration) || record.activeDuration < 0) {
@@ -229,7 +229,7 @@ export function validateVerificationRecord(input: unknown): ValidationResult<Ver
       issues.push(issue("/verifierId", "invalid_id", "verifierId must be a string"));
     }
     if (!isCanonicalTimestamp(record.verifiedAt)) {
-      issues.push(issue("/verifiedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
+      issues.push(issue("/verifiedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z"));
     }
     if (typeof record.independent !== "boolean") {
       issues.push(

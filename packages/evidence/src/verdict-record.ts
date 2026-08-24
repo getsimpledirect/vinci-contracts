@@ -123,9 +123,29 @@ export function statusIsSupportedBy(
   // that `validateVerdictRecord` happens to call. It must not assume its caller
   // already validated anything: an external caller reaches it directly with
   // whatever it has, including a hostile array.
-  // Array.isArray is safe on a Proxy — it inspects the internal slot and runs
-  // no trap — so it is the one thing that may be asked before the traversal.
-  if (!Array.isArray(criterionResults)) return false;
+  // Snapshot through the SAME boundary the validator uses, before anything is
+  // read. Array.isArray was chosen here because it inspects an internal slot and
+  // runs no trap; that is true and was not enough.
+  //
+  // A Proxy whose TARGET is empty can report length 1 and hand back a fabricated
+  // descriptor for index 0, and this returned true — a VERIFIED_PASS over zero
+  // actual criteria, while the same value serialized to []. The stored record
+  // and the predicate described different things. That is the identical
+  // two-view defect already fixed for actors, in the one predicate the product's
+  // commercial claim rests on. A revoked Proxy also threw, from Array.isArray
+  // itself, out of a function documented never to throw.
+  //
+  // Deferring to toPlainRecord removes the second view rather than guarding it:
+  // whatever serialization captures is the only thing anyone sees, so a
+  // fabricating trap can only fabricate into an inert copy that then fails on
+  // its own merits. It also ends a disagreement with validateVerdictRecord at
+  // exactly 10,000 criteria, where this helper said yes and the validator said
+  // no, because both now share one limit instead of maintaining two.
+  const snapshot = toPlainRecord({ criterionResults });
+  if (!snapshot.ok) return false;
+  const inert = (snapshot.value as { criterionResults?: unknown }).criterionResults;
+  if (!Array.isArray(inert)) return false;
+  const results: readonly unknown[] = inert;
 
   // Establish the status is a status BEFORE applying status semantics.
   //
@@ -139,7 +159,7 @@ export function statusIsSupportedBy(
 
   if (status !== "VERIFIED_PASS") return true;
 
-  return everyEntryIsSupported(criterionResults);
+  return everyEntryIsSupported(results);
 }
 
 /**
@@ -285,7 +305,8 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
     add("/status", "invalid_enum", "a verdict status is VERIFIED_PASS, CONDITIONAL or BLOCKED");
   }
   if (!isDigest(record.snapshotDigest)) {
-    add("/snapshotDigest", "invalid_digest", "a verdict binds to the exact artifact it evaluated");
+    add("/snapshotDigest", "invalid_digest", "snapshotDigest must be 64 lowercase hex characters (sha-256, no prefix); "
+          + "a verdict binds to the exact artifact it evaluated");
   }
   for (const field of ["summary", "scope", "policyVersion", "evaluatorVersion"] as const) {
     if (!isNonBlankText(record[field])) {
@@ -391,7 +412,7 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
 
   // --- time --------------------------------------------------------------
   if (!isCanonicalTimestamp(record.issuedAt)) {
-    add("/issuedAt", "invalid_timestamp", "issuedAt is ISO-8601 UTC with millisecond precision");
+    add("/issuedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
   }
   if (record.expiresAt !== null) {
     if (!isCanonicalTimestamp(record.expiresAt)) {

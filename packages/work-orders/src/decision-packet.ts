@@ -179,7 +179,7 @@ export function validateDecisionPacket(input: unknown): ValidationResult<Decisio
 
   for (const field of ["raisedAt", "expiresAt"] as const) {
     if (!isCanonicalTimestamp(record[field])) {
-      issues.push(issue(`/${field}`, "invalid_timestamp", `${field} is ISO-8601 UTC with milliseconds`));
+      issues.push(issue(`/${field}`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z"));
     }
   }
   if (

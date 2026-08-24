@@ -138,7 +138,7 @@ export function validateApprovalRequest(input: unknown): ValidationResult<Approv
     }
   }
   if (!isTimestamp(input.requestedAt)) {
-    return fail([issue("/requestedAt", "invalid_timestamp", "requestedAt must be an ISO-8601 UTC timestamp")]);
+    return fail([issue("/requestedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
   }
   if (!isActor(input.worker)) {
     return fail([issue("/worker", "invalid_actor", "worker must be a valid Actor")]);

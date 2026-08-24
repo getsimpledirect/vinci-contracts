@@ -99,7 +99,7 @@ export function validateGrantShape(input: unknown): ValidationResult<GrantShape>
     case "expire-at":
       known = [...known, "expiresAt"];
       if (!isTimestamp(input.expiresAt)) {
-        return fail([issue("/expiresAt", "invalid_timestamp", "expiresAt must be an ISO-8601 UTC timestamp")]);
+        return fail([issue("/expiresAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
       }
       break;
     case "allow-remainder-of-run":
@@ -136,7 +136,7 @@ export function validateApprovalGrant(input: unknown): ValidationResult<Approval
     return fail([issue("/approver", "invalid_actor", "approver must be a valid Actor")]);
   }
   if (input.approvedAt !== undefined && !isTimestamp(input.approvedAt)) {
-    return fail([issue("/approvedAt", "invalid_timestamp", "approvedAt must be an ISO-8601 UTC timestamp")]);
+    return fail([issue("/approvedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z")]);
   }
   const unknownFields: Record<string, unknown> = {};
   collectUnknownFields(input, ["shape", "approver", "approvedAt"], "", unknownFields);
