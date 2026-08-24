@@ -1,5 +1,6 @@
 import {
   fail,
+  isIdentifier,
   ok,
   type SchemaMeta,
   type ValidationIssue,
@@ -158,6 +159,18 @@ function requiredString(value: unknown, path: string, issues: ValidationIssue[])
   }
   if (typeof value !== "string" || value.length === 0) {
     addIssue(issues, path, "invalid_string", "expected a non-empty string");
+    return false;
+  }
+  return true;
+}
+
+function identifier(value: unknown, path: string, issues: ValidationIssue[]): value is string {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return false;
+  }
+  if (!isIdentifier(value)) {
+    addIssue(issues, path, "invalid_identifier", "expected an identifier of at most 128 safe characters");
     return false;
   }
   return true;
@@ -407,7 +420,7 @@ function validateCredentialBinding(value: unknown, path: string, issues: Validat
   const object = strictObjectValue(value, path, ["kind", "runId", "capability"], issues);
   if (!object) return;
   if (!enumValue(object.kind, ["run", "capability"] as const, `${path}/kind`, issues)) return;
-  if (object.kind === "run") requiredString(object.runId, `${path}/runId`, issues);
+  if (object.kind === "run") identifier(object.runId, `${path}/runId`, issues);
   if (object.kind === "capability") requiredString(object.capability, `${path}/capability`, issues);
 }
 
@@ -549,7 +562,7 @@ function validateApprovalRequirement(
   if (
     !enumValue(object.kind, ["named_person", "role", "two_people"] as const, `${path}/kind`, issues)
   ) return;
-  if (object.kind === "named_person") requiredString(object.userId, `${path}/userId`, issues);
+  if (object.kind === "named_person") identifier(object.userId, `${path}/userId`, issues);
   if (object.kind === "role") requiredString(object.role, `${path}/role`, issues);
   if (object.kind === "two_people") {
     const eligiblePath = `${path}/eligible`;
@@ -670,7 +683,7 @@ export function validatePolicyManifest(input: unknown): ValidationResult<PolicyM
   const object = objectValue(input, "", fields, issues, unknownFields);
   if (!object) return fail(issues);
 
-  requiredString(object.policyId, "/policyId", issues);
+  identifier(object.policyId, "/policyId", issues);
   positiveInteger(object.version, "/version", issues);
   requiredString(object.displayName, "/displayName", issues);
   validateResources(object.resources, issues, unknownFields);
@@ -726,14 +739,14 @@ function validateActor(
   ) return;
   switch (object.kind) {
     case "user":
-      requiredString(object.userId, `${path}/userId`, issues);
-      if (object.deviceId !== undefined) requiredString(object.deviceId, `${path}/deviceId`, issues);
+      identifier(object.userId, `${path}/userId`, issues);
+      if (object.deviceId !== undefined) identifier(object.deviceId, `${path}/deviceId`, issues);
       break;
     case "worker":
-      requiredString(object.workerId, `${path}/workerId`, issues);
+      identifier(object.workerId, `${path}/workerId`, issues);
       break;
     case "policy":
-      requiredString(object.policyId, `${path}/policyId`, issues);
+      identifier(object.policyId, `${path}/policyId`, issues);
       positiveInteger(object.policyVersion, `${path}/policyVersion`, issues);
       break;
     case "system":
@@ -781,7 +794,7 @@ function validatePolicyReference(
 ): void {
   const object = objectValue(value, path, ["policyId", "version"], issues, unknown);
   if (!object) return;
-  requiredString(object.policyId, `${path}/policyId`, issues);
+  identifier(object.policyId, `${path}/policyId`, issues);
   positiveInteger(object.version, `${path}/version`, issues);
 }
 

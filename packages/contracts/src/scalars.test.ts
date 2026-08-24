@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { safeLabel } from "./scalars.ts";
+import { isIdentifier, safeLabel } from "./scalars.ts";
 import {
   toAgentId, toApprovalId, toArtifactId, toDeviceId, toEvidenceId, toOrganizationId,
   toPolicyId, toReceiptId, toRunId, toUserId, toWorkerId, toWorkspaceId,
@@ -86,4 +86,46 @@ describe("branded id constructors validate before branding", () => {
       expect(make("")).toBe(null);
     }
   });
+});
+
+const ID_CONSISTENCY_CORPUS = [
+  "",
+  "a",
+  "has space",
+  "a/b",
+  "café",
+  "-leading",
+  "_under",
+  "a".repeat(128),
+  "a".repeat(129),
+  "x".repeat(200),
+  "550e8400-e29b-41d4-a716-446655440000",
+  "abc-123",
+  "abc.def:ghi_jkl",
+  "trailing-",
+] as const;
+
+describe("branded id constructor and validator consistency", () => {
+  const cases = [
+    { type: "OrganizationId", make: toOrganizationId },
+    { type: "WorkspaceId", make: toWorkspaceId },
+    { type: "RunId", make: toRunId },
+    { type: "WorkerId", make: toWorkerId },
+    { type: "AgentId", make: toAgentId },
+    { type: "DeviceId", make: toDeviceId },
+    { type: "UserId", make: toUserId },
+    { type: "ApprovalId", make: toApprovalId },
+    { type: "ArtifactId", make: toArtifactId },
+    { type: "EvidenceId", make: toEvidenceId },
+    { type: "ReceiptId", make: toReceiptId },
+    { type: "PolicyId", make: toPolicyId },
+  ] as const;
+
+  for (const { type, make } of cases) {
+    it(`test consistency of ${type}Constructor with ${type}Validator`, () => {
+      for (const candidate of ID_CONSISTENCY_CORPUS) {
+        expect(make(candidate) !== null, JSON.stringify(candidate)).toBe(isIdentifier(candidate));
+      }
+    });
+  }
 });

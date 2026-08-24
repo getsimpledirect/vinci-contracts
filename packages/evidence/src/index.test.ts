@@ -793,3 +793,59 @@ describe("provenance is decided from the snapshot, never from a re-read", () => 
     expect(isProvenanceConsistent("independent_verifier" as never, { kind: "verifier", verifierId: "v", independent: false } as never)).toBe(false);
   });
 });
+
+describe("branded identifiers use the constructor rule in evidence records", () => {
+  const actorRecord = (provenance: string, actor: Record<string, unknown>) => ({
+    ...validEvidenceRecord(),
+    attestation: { provenance, actor },
+  });
+
+  it("test consistency of EvidenceId.id constructor with its record validator", () => {
+    expectIssue(
+      validateEvidenceRecord({ ...validEvidenceRecord(), id: "has space" }),
+      "/id",
+      "invalid_identifier",
+    );
+    expect(validateEvidenceRecord({ ...validEvidenceRecord(), id: "evidence-1" }).ok).toBe(true);
+  });
+
+  it.each([
+    {
+      field: "Actor.userId",
+      path: "/attestation/actor/userId",
+      bad: actorRecord("human_provided", { kind: "user", userId: "has space" }),
+      good: actorRecord("human_provided", { kind: "user", userId: "user-1" }),
+    },
+    {
+      field: "Actor.deviceId",
+      path: "/attestation/actor/deviceId",
+      bad: actorRecord("human_provided", { kind: "user", userId: "user-1", deviceId: "a/b" }),
+      good: actorRecord("human_provided", { kind: "user", userId: "user-1", deviceId: "device-1" }),
+    },
+    {
+      field: "Actor.workerId",
+      path: "/attestation/actor/workerId",
+      bad: actorRecord("worker_provided", { kind: "worker", workerId: "café" }),
+      good: actorRecord("worker_provided", { kind: "worker", workerId: "worker-1" }),
+    },
+    {
+      field: "Actor.policyId",
+      path: "/attestation/actor/policyId",
+      bad: actorRecord("worker_provided", { kind: "policy", policyId: "-leading", policyVersion: 1 }),
+      good: actorRecord("worker_provided", { kind: "policy", policyId: "policy-1", policyVersion: 1 }),
+    },
+  ])("enforces the branded constructor rule for $field", ({ path, bad, good }) => {
+    const rejected = validateEvidenceRecord(bad);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.issues).toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
+    }
+
+    const control = validateEvidenceRecord(good);
+    if (!control.ok) {
+      expect(control.issues).not.toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
+    } else {
+      expect(control.ok).toBe(true);
+    }
+  });
+});

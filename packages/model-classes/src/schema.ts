@@ -1,6 +1,7 @@
 import {
   fail,
   isCanonicalTimestamp,
+  isIdentifier,
   ok,
   type ValidationIssue,
   type ValidationResult,
@@ -111,6 +112,18 @@ function requiredString(value: unknown, path: string, issues: ValidationIssue[])
   return true;
 }
 
+function identifier(value: unknown, path: string, issues: ValidationIssue[]): value is string {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return false;
+  }
+  if (!isIdentifier(value)) {
+    addIssue(issues, path, "invalid_identifier", "expected an identifier of at most 128 safe characters");
+    return false;
+  }
+  return true;
+}
+
 function requiredBoolean(value: unknown, path: string, issues: ValidationIssue[]): value is boolean {
   if (value === undefined) {
     addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
@@ -215,14 +228,14 @@ function validateActor(
   ) return;
   switch (object.kind) {
     case "user":
-      requiredString(object.userId, `${path}/userId`, issues);
-      if (object.deviceId !== undefined) requiredString(object.deviceId, `${path}/deviceId`, issues);
+      identifier(object.userId, `${path}/userId`, issues);
+      if (object.deviceId !== undefined) identifier(object.deviceId, `${path}/deviceId`, issues);
       break;
     case "worker":
-      requiredString(object.workerId, `${path}/workerId`, issues);
+      identifier(object.workerId, `${path}/workerId`, issues);
       break;
     case "policy":
-      requiredString(object.policyId, `${path}/policyId`, issues);
+      identifier(object.policyId, `${path}/policyId`, issues);
       positiveInteger(object.policyVersion, `${path}/policyVersion`, issues);
       break;
     case "system":
@@ -356,7 +369,7 @@ function validateFallbackRecordAt(
   );
   if (!object) return;
   literalOne(object.schemaVersion, `${path}/schemaVersion`, issues);
-  requiredString(object.runId, `${path}/runId`, issues);
+  identifier(object.runId, `${path}/runId`, issues);
   timestamp(object.recordedAt, `${path}/recordedAt`, issues);
   validateActor(object.recordedBy, `${path}/recordedBy`, issues, unknownFields);
   const outcomeValid = enumValue(
@@ -564,7 +577,7 @@ export function validateModelProvenanceRecord(
     "/event",
     issues,
   );
-  requiredString(object.runId, "/runId", issues);
+  identifier(object.runId, "/runId", issues);
   timestamp(object.recordedAt, "/recordedAt", issues);
   validateActor(object.recordedBy, "/recordedBy", issues, unknownFields);
   validateModelRequest(object.request, "/request", issues, unknownFields);
@@ -619,9 +632,9 @@ function validateWorkspace(
   if (!enumValue(object.kind, ["personal", "organization"] as const, `${path}/kind`, issues)) {
     return;
   }
-  requiredString(object.workspaceId, `${path}/workspaceId`, issues);
+  identifier(object.workspaceId, `${path}/workspaceId`, issues);
   if (object.kind === "personal") {
-    requiredString(object.ownerId, `${path}/ownerId`, issues);
+    identifier(object.ownerId, `${path}/ownerId`, issues);
     rejectPresentField(
       object,
       "organizationId",
@@ -630,7 +643,7 @@ function validateWorkspace(
       "personal workspaces do not carry an organizationId",
     );
   } else {
-    requiredString(object.organizationId, `${path}/organizationId`, issues);
+    identifier(object.organizationId, `${path}/organizationId`, issues);
     rejectPresentField(
       object,
       "ownerId",
@@ -768,7 +781,7 @@ export function validateResidencyRecord(input: unknown): ValidationResult<Reside
   );
   if (!object) return fail(issues);
   literalOne(object.schemaVersion, "/schemaVersion", issues);
-  requiredString(object.runId, "/runId", issues);
+  identifier(object.runId, "/runId", issues);
   timestamp(object.recordedAt, "/recordedAt", issues);
   validateActor(object.recordedBy, "/recordedBy", issues, unknownFields);
   validateExplicitLocation(

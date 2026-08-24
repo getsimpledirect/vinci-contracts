@@ -6,6 +6,7 @@ import {
   type ValidationResult,
   toPlainRecord,
   isCanonicalTimestamp,
+  isIdentifier,
   isNonBlankText,
   safeLabel,
 } from "@vinci/contracts";
@@ -90,6 +91,18 @@ function requiredString(value: unknown, path: string, issues: ValidationIssue[])
   // was attributable to nobody while still passing validation.
   if (!isNonBlankText(value)) {
     addIssue(issues, path, "invalid_string", "expected a non-empty, non-blank string");
+    return false;
+  }
+  return true;
+}
+
+function identifier(value: unknown, path: string, issues: ValidationIssue[]): value is string {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return false;
+  }
+  if (!isIdentifier(value)) {
+    addIssue(issues, path, "invalid_identifier", "expected an identifier of at most 128 safe characters");
     return false;
   }
   return true;
@@ -211,14 +224,14 @@ function validateActor(
   }
   switch (object.kind) {
     case "user":
-      requiredString(object.userId, `${path}/userId`, issues);
-      if (object.deviceId !== undefined) requiredString(object.deviceId, `${path}/deviceId`, issues);
+      identifier(object.userId, `${path}/userId`, issues);
+      if (object.deviceId !== undefined) identifier(object.deviceId, `${path}/deviceId`, issues);
       break;
     case "worker":
-      requiredString(object.workerId, `${path}/workerId`, issues);
+      identifier(object.workerId, `${path}/workerId`, issues);
       break;
     case "policy":
-      requiredString(object.policyId, `${path}/policyId`, issues);
+      identifier(object.policyId, `${path}/policyId`, issues);
       positiveInteger(object.policyVersion, `${path}/policyVersion`, issues);
       break;
     case "system":
@@ -412,7 +425,7 @@ export function validateEvidenceRecord(input: unknown): ValidationResult<Evidenc
   if (!object) return fail(issues);
 
   literalOne(object.schemaVersion, "/schemaVersion", issues);
-  requiredString(object.id, "/id", issues);
+  identifier(object.id, "/id", issues);
   validateAttestation(object.attestation, issues, unknownFields);
   enumValue(object.kind, EVIDENCE_KINDS, "/kind", issues);
   enumValue(object.mode, EVIDENCE_MODES, "/mode", issues);

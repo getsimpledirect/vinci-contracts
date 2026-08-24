@@ -298,3 +298,104 @@ describe("credential material cannot reach a policy", () => {
     expect(validatePolicyManifest(structuredClone(validManifest)).ok).toBe(true);
   });
 });
+
+describe("branded identifiers use the constructor rule in policy records", () => {
+  const manifestWithRunBinding = (runId: string) => ({
+    ...validManifest,
+    credentials: {
+      references: [{
+        ...validManifest.credentials.references[0],
+        boundTo: { kind: "run", runId },
+      }],
+    },
+  });
+
+  const manifestWithNamedApprover = (userId: string) => {
+    const rule = validManifest.approvals.rules[0];
+    return {
+      ...validManifest,
+      approvals: {
+        rules: [{
+          ...rule,
+          decision: {
+            ...rule.decision,
+            approver: { kind: "named_person", userId },
+          },
+        }],
+      },
+    };
+  };
+
+  const allowedDecision = (requestedBy: Record<string, unknown>, policyId = "policy-test") => ({
+    outcome: "allowed",
+    request: { action: "read", description: "Read a repository", requestedBy },
+    reason: { code: "automatic_allow", explanation: "Read access is allowed" },
+    controllingPolicy: { policyId, version: 1 },
+  });
+
+  it.each([
+    {
+      field: "CredentialBinding.runId",
+      path: "/credentials/references/0/boundTo/runId",
+      validate: validatePolicyManifest,
+      bad: manifestWithRunBinding("has space"),
+      good: manifestWithRunBinding("run-1"),
+    },
+    {
+      field: "ApprovalRequirement.userId",
+      path: "/approvals/rules/0/decision/approver/userId",
+      validate: validatePolicyManifest,
+      bad: manifestWithNamedApprover("a/b"),
+      good: manifestWithNamedApprover("user-1"),
+    },
+    {
+      field: "PolicyManifest.policyId",
+      path: "/policyId",
+      validate: validatePolicyManifest,
+      bad: { ...validManifest, policyId: "café" },
+      good: { ...validManifest, policyId: "policy-1" },
+    },
+    {
+      field: "Actor.userId",
+      path: "/request/requestedBy/userId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "user", userId: "-leading" }),
+      good: allowedDecision({ kind: "user", userId: "user-1" }),
+    },
+    {
+      field: "Actor.deviceId",
+      path: "/request/requestedBy/deviceId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "user", userId: "user-1", deviceId: "_under" }),
+      good: allowedDecision({ kind: "user", userId: "user-1", deviceId: "device-1" }),
+    },
+    {
+      field: "Actor.workerId",
+      path: "/request/requestedBy/workerId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "worker", workerId: "x".repeat(200) }),
+      good: allowedDecision({ kind: "worker", workerId: "worker-1" }),
+    },
+    {
+      field: "Actor.policyId",
+      path: "/request/requestedBy/policyId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "policy", policyId: "has space", policyVersion: 1 }),
+      good: allowedDecision({ kind: "policy", policyId: "policy-1", policyVersion: 1 }),
+    },
+    {
+      field: "PolicyReference.policyId",
+      path: "/controllingPolicy/policyId",
+      validate: validatePolicyDecision,
+      bad: allowedDecision({ kind: "system", component: "test" }, "a/b"),
+      good: allowedDecision({ kind: "system", component: "test" }, "policy-1"),
+    },
+  ])("enforces the branded constructor rule for $field", ({ path, validate, bad, good }) => {
+    const rejected = validate(bad);
+    expect(rejected.ok).toBe(false);
+    if (!rejected.ok) {
+      expect(rejected.issues).toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
+    }
+    expect(validate(good).ok).toBe(true);
+  });
+});
