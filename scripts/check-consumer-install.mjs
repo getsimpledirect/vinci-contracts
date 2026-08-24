@@ -103,6 +103,35 @@ writeFileSync(
     2,
   ),
 );
+// THE README'S EXAMPLES ARE COMPILED, against the installed packages.
+//
+// A reviewer found the SessionBinding example still constructing a binding
+// without the two version fields this same branch made required — with a
+// `// Valid: true` comment beside it that had become false. Nothing could have
+// caught that: prose is not compiled, and the one thing that reads these blocks
+// is a person copying one into their editor.
+//
+// This is also the second time in this repository: README examples with
+// fabricated API shapes once "ran fine" under a type-stripping runner, which
+// checks nothing. Compiling them against the INSTALLED packages is the only
+// version of this check worth having — compiling against source would pass on
+// APIs a consumer cannot reach.
+const readme = readFileSync(join(root, "README.md"), "utf8");
+const examples = [...readme.matchAll(/```typescript\n([\s\S]*?)```/g)].map((match) => match[1]);
+
+// Non-vacuity: a regex that silently stops matching would report every example
+// as passing. The count only ever goes up as documentation grows.
+if (examples.length < 6) {
+  console.error(`  found only ${examples.length} typescript examples in README.md`);
+  console.error("  the extractor is broken, not the documentation");
+  process.exit(1);
+}
+const exampleFiles = examples.map((source, index) => {
+  const file = `readme-example-${index}.ts`;
+  writeFileSync(join(fixture, file), source);
+  return file;
+});
+
 writeFileSync(
   join(fixture, "tsconfig.json"),
   JSON.stringify(
@@ -117,7 +146,7 @@ writeFileSync(
         noEmit: true,
         skipLibCheck: false,
       },
-      include: ["consumer.ts"],
+      include: ["consumer.ts", ...exampleFiles],
     },
     null,
     2,
@@ -139,10 +168,17 @@ const everyPackage = Object.keys(tarballs).sort();
 const namespaceImports = everyPackage
   .map((name, index) => `import * as ns${index} from "${name}";`)
   .join("\n");
+// INVARIANT, not luck: every package here exports at least one RUNTIME value
+// (a const vocabulary, a validator, a constructor). A types-only package would
+// have an empty namespace at runtime and this assertion would fail it wrongly.
+// If one is ever added, the fix is to check that its declarations resolve
+// rather than that its namespace is non-empty — do not weaken this into a check
+// that passes for a package shipping no build at all, which is precisely what
+// it caught.
 const namespaceChecks = everyPackage
   .map(
     (name, index) =>
-      `if (Object.keys(ns${index}).length === 0) throw new Error("${name} installed but exports nothing");`,
+      `if (Object.keys(ns${index}).length === 0) throw new Error("${name} installed but exports nothing at runtime");`,
   )
   .join("\n");
 
@@ -200,7 +236,10 @@ try {
   console.log("  installing tarballs into a clean fixture");
   run("npm", ["install", "--no-audit", "--no-fund", "--silent"], fixture);
 
-  console.log("  type-checking the consumer against the PUBLISHED declarations");
+  console.log(
+    `  type-checking the consumer and ${exampleFiles.length} README examples `
+      + "against the PUBLISHED declarations",
+  );
   run(join(fixture, "node_modules", ".bin", "tsc"), ["--project", "tsconfig.json"], fixture);
 
   console.log("  running the consumer against the PUBLISHED javascript");

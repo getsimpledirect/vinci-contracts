@@ -219,10 +219,17 @@ Routes metadata for a remote session. `organizationId` is nullable (personal wor
 ```typescript
 import {
   validateSessionBinding,
+  REMOTE_PROTOCOL_VERSION,
+  SESSION_BINDING_SCHEMA_META,
   type SessionBinding,
 } from "@getsimpledirect/vinci-remote-protocol";
 
 const binding: SessionBinding = {
+  // Both versions are required and both are refused on mismatch. A binding with
+  // no version is one written before the field existed, which is the skew case
+  // rather than a default — see D5.
+  protocolVersion: REMOTE_PROTOCOL_VERSION,
+  schemaVersion: SESSION_BINDING_SCHEMA_META.version,
   sessionId: "session-abc123" as any,
   runId: "run-xyz789" as any,
   workspaceId: "workspace-001" as any,
@@ -323,8 +330,21 @@ Remote control of an agent is teleoperation, not autonomy. If a work order could
 ## Running the Gate
 
 The gate is a nine-part check suite. It runs in GitHub Actions on every pull
-request and every push to `main`, and it is a required status check — a commit
-that has not passed it cannot enter `main`. Run it locally with:
+request and every push to `main`.
+
+Running is not enforcing, and the difference is the whole point of this file
+existing: a workflow that runs on a push reports on a commit that has already
+landed. The enforcement lives in branch protection on `main`, where `gate` and
+`consumer-install` are configured as required status checks with "up to date
+with base" on. That configuration is repository settings, not code in this
+repository, so it can be changed without a commit — which is worth knowing
+before trusting the word "required" here.
+
+One gap is deliberate and open: `enforce_admins` is off, so a repository admin
+can still push directly to `main`. Turning it on makes the requirement true for
+everyone at the cost of needing a settings toggle for an emergency fix.
+
+Run the gate locally with:
 
 ```bash
 npm run gate

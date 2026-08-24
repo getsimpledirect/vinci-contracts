@@ -185,14 +185,25 @@ describe("a session is transport identity; a run is work identity", () => {
     }
   });
 
-  it("keeps the on-wire schemaVersion tied to the declared meta version", () => {
-    // The two must not drift. If someone bumps SESSION_BINDING_SCHEMA_META.version
-    // without a migration, this test does not fail — but every record written by
-    // the previous build starts being refused, loudly, at the boundary. That is
-    // the intended behaviour and this test records it as intended.
-    const result = validateSessionBinding(binding());
-    expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.schemaVersion).toBe(SESSION_BINDING_SCHEMA_META.version);
+  it("accepts exactly one schemaVersion and no other", () => {
+    // A review caught the first version of this test: it fed a CORRECT version
+    // and asserted the result was accepted, so it passed whether or not the
+    // guard existed. A positive control that cannot fail is not a control — it
+    // is the exact defect this repository keeps finding one level down.
+    //
+    // It now pins both sides. The declared version is accepted, and every
+    // neighbouring value is refused, so deleting the guard fails this test too.
+    const accepted = validateSessionBinding(binding());
+    expect(accepted.ok).toBe(true);
+    if (accepted.ok) expect(accepted.value.schemaVersion).toBe(SESSION_BINDING_SCHEMA_META.version);
+
+    const declared = SESSION_BINDING_SCHEMA_META.version;
+    for (const other of [declared + 1, declared - 1, 0, "1", null, undefined]) {
+      expect(
+        validateSessionBinding(binding({ schemaVersion: other })).ok,
+        `schemaVersion ${String(other)}`,
+      ).toBe(false);
+    }
   });
 
   it("declares a compatibility policy its validator honours", () => {
