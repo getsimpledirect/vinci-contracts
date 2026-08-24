@@ -14,12 +14,14 @@ import {
 // one side, and then a retention class accepted by the policy manifest is
 // refused by the session validator, or the reverse.
 import { RETENTION_CLASSES } from "@getsimpledirect/vinci-policy";
-import { isSessionRole } from "./session.ts";
+import { isSessionRole, REMOTE_PROTOCOL_VERSION } from "./session.ts";
 import type { SessionBinding } from "./session.ts";
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 const FIELDS = [
+  "protocolVersion",
+  "schemaVersion",
   "sessionId",
   "runId",
   "workspaceId",
@@ -68,6 +70,35 @@ export function validateSessionBinding(input: unknown): ValidationResult<Session
     if (typeof value !== "string" || !ID_PATTERN.test(value)) {
       issues.push(issue("/organizationId", "invalid_id", "an identifier is at most 128 safe characters"));
     }
+  }
+
+  // Version skew is refused, not tolerated. A binding from a peer speaking a
+  // protocol this build does not implement may parse cleanly and mean something
+  // else; FR-4.8 says an action we cannot determine the permission of must not
+  // proceed, and this is that rule at the network boundary.
+  //
+  // The message names both numbers because "invalid" sends an operator reading
+  // logs to look at the record, and the record is fine — the mismatch is the
+  // fact worth reporting.
+  if (record.protocolVersion !== REMOTE_PROTOCOL_VERSION) {
+    issues.push(
+      issue(
+        "/protocolVersion",
+        "protocol_version_mismatch",
+        `this build speaks remote protocol ${REMOTE_PROTOCOL_VERSION}; the binding declares `
+          + `${JSON.stringify(record.protocolVersion)}`,
+      ),
+    );
+  }
+  if (record.schemaVersion !== SESSION_BINDING_SCHEMA_META.version) {
+    issues.push(
+      issue(
+        "/schemaVersion",
+        "schema_version_mismatch",
+        `this build reads session-binding schema ${SESSION_BINDING_SCHEMA_META.version}; the `
+          + `binding declares ${JSON.stringify(record.schemaVersion)}`,
+      ),
+    );
   }
 
   if (!Number.isSafeInteger(record.policyVersion) || (record.policyVersion as number) < 1) {

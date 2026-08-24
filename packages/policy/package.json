@@ -30,6 +30,6 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@getsimpledirect/vinci-contracts": "*"
+    "@getsimpledirect/vinci-contracts": "0.1.0"
   }
 }

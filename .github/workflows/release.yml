@@ -1,0 +1,89 @@
+name: release
+
+# INERT UNTIL SOMEONE PUSHES A TAG. This file adds the capability to publish; it
+# does not publish. Nothing here runs on a push to main or on a pull request.
+#
+# Publishing is deliberately a separate, deliberate act: a tag someone typed, or
+# a manual dispatch someone clicked. A release that happens as a side effect of
+# merging is a release nobody decided to make.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and verify without publishing"
+        type: boolean
+        default: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Narrow on purpose. This job may write packages and read the repository,
+      # and can do nothing else with the token.
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          registry-url: https://npm.pkg.github.com
+          scope: "@getsimpledirect"
+
+      - name: Install from the lockfile
+        run: npm ci
+
+      # A published version that has not passed the gate is the thing this repo
+      # exists to prevent. Both suites run again here rather than trusting that
+      # the tagged commit was green when it merged — a tag can point anywhere.
+      - name: Gate
+        run: npm run gate
+
+      - name: Packages work when installed
+        run: npm run check:pack
+
+      # The tag and the manifests must agree. A tag reading v0.2.0 on a tree
+      # where every package says 0.1.0 would publish 0.1.0 under a name that
+      # claims otherwise, and the mismatch would only surface later, in a
+      # consumer's lockfile.
+      - name: Tag matches the lockstep version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          VERSION="$(node -p "require('./packages/contracts/package.json').version")"
+          if [ "$TAG" != "$VERSION" ]; then
+            echo "tag $GITHUB_REF_NAME does not match the package version $VERSION"
+            exit 1
+          fi
+          echo "publishing $VERSION"
+
+      - name: Publish
+        if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Dependency order, DERIVED from the manifests rather than listed here.
+          # Lockstep pinning makes the order matter — an exact "0.1.0" dependency
+          # cannot resolve until that version exists — and a hand-written list
+          # would omit whatever was added after someone last looked at it, which
+          # means a package that silently never ships.
+          node scripts/publish-order.mjs > "$RUNNER_TEMP/order.txt"
+          if [ "$(wc -l < "$RUNNER_TEMP/order.txt")" -ne "$(ls -d packages/*/ | wc -l)" ]; then
+            echo "publish order does not cover every package"; exit 1
+          fi
+          while read -r pkg; do
+            echo "── $pkg ──"
+            npm publish --workspace "packages/$pkg" --access restricted
+          done < "$RUNNER_TEMP/order.txt"
+
+      - name: Dry run
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run != false }}
+        run: |
+          echo "Dry run: packing only, nothing published."
+          npm pack --workspaces --pack-destination "$RUNNER_TEMP"
+          ls -la "$RUNNER_TEMP"/*.tgz

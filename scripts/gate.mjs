@@ -26,6 +26,7 @@ const STEPS = [
   ["SchemaMeta conformance", "node scripts/check-schema-meta.mjs"],
   ["hostile-key conformance", "node scripts/check-hostile-keys.mjs"],
   ["duplicate vocabularies", "node scripts/check-duplicate-vocabularies.mjs"],
+  ["lockstep versions", "node scripts/check-lockstep-versions.mjs"],
   ["no stray scripts", "node scripts/check-no-stray-scripts.mjs"],
 ];
 
