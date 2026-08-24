@@ -6,7 +6,7 @@ import type {
   Timestamp,
   ValidationResult,
 } from "@vinci/contracts";
-import { fail, ok, toPlainRecord } from "@vinci/contracts";
+import { fail, ok, toPlainRecord, ownData } from "@vinci/contracts";
 import type { DeliveryState, EffectiveDeliveryState } from "./delivery.ts";
 import { isEffectiveDeliveryState } from "./delivery.ts";
 import type { GrantShape } from "./grant.ts";
@@ -106,7 +106,8 @@ export function createApprovalDecision(
 }
 
 export function isDecisionEffective(decision: ApprovalDecision): decision is EffectiveApprovalDecision {
-  return isEffectiveDeliveryState(decision.deliveryState);
+  const deliveryState = ownData(decision, "deliveryState");
+  return isEffectiveDeliveryState(deliveryState as DeliveryState);
 }
 
 export type ApprovalRecord = {
