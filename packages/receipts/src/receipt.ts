@@ -1,5 +1,6 @@
 import type {
   Actor,
+  ReceiptId,
   RunId,
   TerminalState,
   Timestamp,
@@ -7,8 +8,7 @@ import type {
   WorkspaceRef,
 } from "@vinci/contracts";
 
-/** Branded type for receipt identifiers */
-export type ReceiptId = string & { readonly __ReceiptId: never };
+export type { ReceiptId } from "@vinci/contracts";
 
 /**
  * A receipt records what a run accomplished, with evidence and digest for verification.

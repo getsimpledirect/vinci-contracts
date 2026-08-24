@@ -108,12 +108,6 @@ export type VerificationOutcome =
       readonly reason: "FAILED" | "CANCELLED";
     };
 
-/**
- * Backwards-compatible alias. `Verdict` in the glossary (§7) means the
- * assessment, which is `VerdictStatus`.
- */
-export type Verdict = VerdictStatus;
-
 const TERMINAL_BY_RUN_STATE: Readonly<Record<RunState, TerminalState | null>> = {
   CREATED: null,
   PLANNING: null,
