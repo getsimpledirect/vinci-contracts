@@ -18,10 +18,10 @@
   },
   "scripts": {
     "build": "tsc",
-    "prepare": "npm run build",
     "test": "vitest run",
     "lint": "eslint src",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "typescript": "5.9.3"
