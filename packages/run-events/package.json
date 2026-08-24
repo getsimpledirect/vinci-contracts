@@ -1,18 +1,30 @@
 {
-  "name": "@vinci/run-events",
+  "name": "@getsimpledirect/vinci-run-events",
   "version": "0.1.0",
-  "private": true,
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "package.json"
+  ],
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/getsimpledirect/vinci-contracts"
+  },
   "scripts": {
     "build": "tsc",
+    "prepare": "npm run build",
     "test": "vitest run",
     "lint": "eslint src",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@vinci/contracts": "*"
+    "@getsimpledirect/vinci-contracts": "*"
   },
   "devDependencies": {
     "typescript": "5.9.3"
