@@ -1,4 +1,4 @@
-import { CONSEQUENTIAL_ACTION_CLASSES } from "@getsimpledirect/vinci-contracts";
+import { CONSEQUENTIAL_ACTION_CLASSES, RISK_LEVELS } from "@getsimpledirect/vinci-contracts";
 import { RUN_EVENT_TYPES, type RunEventType } from "./event-types.ts";
 
 /**
@@ -112,7 +112,7 @@ export const PAYLOAD_FIELDS = {
   "approval.requested": {
     approvalId: { kind: "id", required: true },
     actionClass: { kind: "enum", required: true, members: CONSEQUENTIAL_ACTION_CLASSES },
-    riskLevel: { kind: "enum", required: true, members: ["low", "medium", "high", "critical"] },
+    riskLevel: { kind: "enum", required: true, members: RISK_LEVELS },
   },
   "approval.granted": {
     approvalId: { kind: "id", required: true },
