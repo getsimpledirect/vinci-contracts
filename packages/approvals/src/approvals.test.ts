@@ -1,3 +1,4 @@
+import { isGrantStrictlyNarrower, isDecisionEffective, canAdvanceDelivery, isEffectiveDeliveryState } from "./index.ts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { CONSEQUENTIAL_ACTION_CLASSES } from "@vinci/contracts";
 import type { Actor, ApprovalId, EvidenceId, RunId } from "@vinci/contracts";
@@ -363,5 +364,56 @@ describe("worker-supplied risk confers no authority", () => {
     };
     const outcomes = new Set(["low", "medium", "high", "critical"].map((r) => decide(r as never)));
     expect(outcomes.size).toBe(1);
+  });
+});
+
+describe("approval predicates refuse hostile input instead of throwing", () => {
+  // These four used to throw, and were waived in the gate under a
+  // MAY_STILL_THROW list on the grounds that none ever returned TRUE — they
+  // failed loudly rather than open. That waiver is now gone, so the property
+  // needs tests rather than an exemption.
+  const hostile: Array<[string, unknown]> = [
+    ["the string toString", "toString"],
+    ["the string constructor", "constructor"],
+    ["the string valueOf", "valueOf"],
+    ["the string __proto__", "__proto__"],
+    ["null", null],
+    ["undefined", undefined],
+    ["a number", 7],
+    ["an array", []],
+    ["a sparse array", new Array(1)],
+    ["a symbol", Symbol("x")],
+    ["a throwing-get proxy", new Proxy({}, { get() { throw new Error("trap"); } })],
+    ["a throwing getter", { get kind(): never { throw new Error("g"); } }],
+    ["an inherited kind", Object.create({ kind: "deny" })],
+  ];
+
+  const guards: Array<[string, (value: unknown) => unknown]> = [
+    ["isGrantStrictlyNarrower", (v) => isGrantStrictlyNarrower(v as never, v as never)],
+    ["isDecisionEffective", (v) => isDecisionEffective(v as never)],
+    ["canAdvanceDelivery", (v) => canAdvanceDelivery(v as never, v as never)],
+    ["isEffectiveDeliveryState", (v) => isEffectiveDeliveryState(v as never)],
+  ];
+
+  for (const [name, guard] of guards) {
+    it(`${name} never throws and never says yes to hostile input`, () => {
+      for (const [label, value] of hostile) {
+        expect(() => guard(value), `${name} / ${label}`).not.toThrow();
+        expect(guard(value), `${name} / ${label}`).not.toBe(true);
+      }
+    });
+  }
+
+  it("still answers correctly for genuine input", () => {
+    // Positive controls. All four returning false unconditionally would satisfy
+    // every case above, and would silently deny every real approval.
+    expect(isGrantStrictlyNarrower({ kind: "deny" }, { kind: "allow-automatically" })).toBe(true);
+    expect(isGrantStrictlyNarrower({ kind: "allow-automatically" }, { kind: "deny" })).toBe(false);
+    expect(canAdvanceDelivery("queued-locally", "delivered")).toBe(true);
+    expect(canAdvanceDelivery("acted-upon-by-worker", "queued-locally")).toBe(false);
+    expect(isEffectiveDeliveryState({ kind: "accepted-by-governor" })).toBe(true);
+    expect(isEffectiveDeliveryState({ kind: "queued-locally" })).toBe(false);
+    expect(isDecisionEffective({ deliveryState: { kind: "accepted-by-governor" } } as never)).toBe(true);
+    expect(isDecisionEffective({ deliveryState: { kind: "queued-locally" } } as never)).toBe(false);
   });
 });

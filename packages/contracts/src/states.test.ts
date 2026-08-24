@@ -1,3 +1,5 @@
+import { isOrganizationWorkspace } from "./ids.ts";
+import { terminalStateOfVerification } from "./states.ts";
 import { describe, expect, it } from "vitest";
 import {
   RUN_STATES,
@@ -104,5 +106,49 @@ describe("vinci-code compatibility", () => {
       expect(TERMINAL_STATES).toContain(state);
     }
     expect(TERMINAL_STATES.length).toBeGreaterThan(shipping.length);
+  });
+});
+
+describe("contracts predicates refuse hostile input instead of throwing", () => {
+  const hostile: Array<[string, unknown]> = [
+    ["the string toString", "toString"],
+    ["the string constructor", "constructor"],
+    ["the string __proto__", "__proto__"],
+    ["null", null],
+    ["undefined", undefined],
+    ["a number", 7],
+    ["an array", []],
+    ["a sparse array", new Array(1)],
+    ["a symbol", Symbol("x")],
+    ["a throwing-get proxy", new Proxy({}, { get() { throw new Error("trap"); } })],
+    ["a throwing getter", { get kind(): never { throw new Error("g"); } }],
+    ["an inherited kind", Object.create({ kind: "organization", workspaceId: "w", organizationId: "o" })],
+  ];
+
+  it("isOrganizationWorkspace never throws and never says yes to hostile input", () => {
+    for (const [label, value] of hostile) {
+      expect(() => isOrganizationWorkspace(value as never), label).not.toThrow();
+      expect(isOrganizationWorkspace(value as never), label).not.toBe(true);
+    }
+  });
+
+  it("terminalStateOfVerification never throws and never invents a terminal state", () => {
+    for (const [label, value] of hostile) {
+      expect(() => terminalStateOfVerification(value as never), label).not.toThrow();
+      expect(terminalStateOfVerification(value as never), label).toBeUndefined();
+    }
+  });
+
+  it("still answers correctly for genuine input", () => {
+    // Positive controls. Returning false/undefined for everything satisfies
+    // both cases above and makes each function useless.
+    expect(isOrganizationWorkspace({
+      kind: "organization", workspaceId: "w", organizationId: "o",
+    } as never)).toBe(true);
+    expect(isOrganizationWorkspace({ kind: "personal", workspaceId: "w", ownerId: "u" } as never)).toBe(false);
+    expect(terminalStateOfVerification({
+      kind: "issued", staled: false, status: "VERIFIED_PASS",
+    } as never)).toBeDefined();
+    expect(terminalStateOfVerification({ kind: "not-issued", reason: "FAILED" } as never)).toBeUndefined();
   });
 });
