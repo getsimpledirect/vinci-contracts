@@ -582,20 +582,23 @@ function validateApprovalGrant(
   const object = objectValue(
     value,
     path,
-    ["kind", "expiresAfterSeconds", "resource", "maximumDurationSeconds"],
+    ["kind", "runId", "resourceId", "durationMs"],
     issues,
     unknown,
   );
   if (!object) return;
   if (
-    !enumValue(object.kind, ["once", "remainder_of_run", "bounded"] as const, `${path}/kind`, issues)
+    !enumValue(object.kind, ["allow-once", "allow-remainder-of-run", "allow-bounded"] as const, `${path}/kind`, issues)
   ) return;
-  positiveInteger(object.expiresAfterSeconds, `${path}/expiresAfterSeconds`, issues);
-  if (object.kind === "bounded") {
-    requiredString(object.resource, `${path}/resource`, issues);
-    positiveInteger(object.maximumDurationSeconds, `${path}/maximumDurationSeconds`, issues);
+  if (object.kind === "allow-remainder-of-run") {
+    identifier(object.runId, `${path}/runId`, issues);
+  }
+  if (object.kind === "allow-bounded") {
+    requiredString(object.resourceId, `${path}/resourceId`, issues);
+    positiveInteger(object.durationMs, `${path}/durationMs`, issues);
   }
 }
+
 
 function validateApprovalDecision(
   value: unknown,

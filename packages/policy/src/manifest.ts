@@ -1,5 +1,6 @@
 import {
   CONSEQUENTIAL_ACTION_CLASSES,
+  type CanonicalGrant,
   type ConsequentialActionClass,
   type PolicyId,
   type RunId,
@@ -169,15 +170,12 @@ export type ApprovalRequirement =
       readonly eligible: { readonly kind: "any_user" } | { readonly kind: "role"; readonly role: string };
     };
 
-export type ApprovalGrant =
-  | { readonly kind: "once"; readonly expiresAfterSeconds: number }
-  | { readonly kind: "remainder_of_run"; readonly expiresAfterSeconds: number }
-  | {
-      readonly kind: "bounded";
-      readonly resource: string;
-      readonly maximumDurationSeconds: number;
-      readonly expiresAfterSeconds: number;
-    };
+/**
+ * Canonical grant type promoted to layer 0 (@vinci/contracts) to prevent drift
+ * between policy and approvals packages. See CanonicalGrant documentation in
+ * packages/contracts/src/grants.ts for rationale.
+ */
+export type ApprovalGrant = CanonicalGrant;
 
 export type ApprovalRuleDecision =
   | { readonly kind: "allow_automatically" }

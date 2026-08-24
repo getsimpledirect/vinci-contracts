@@ -90,7 +90,7 @@ const validManifest = {
         decision: {
           kind: "require_approval",
           approver: { kind: "role", role: "operator" },
-          grant: { kind: "once", expiresAfterSeconds: 900 },
+          grant: { kind: "allow-once" },
         },
       },
     ],
