@@ -15,29 +15,17 @@
  * first person to bump a single package and leave the others behind would see no
  * failure anywhere else.
  */
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { assertExpectedInventory, internalDeps, readManifests } from "./lib/inventory.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const packagesDir = join(root, "packages");
-const INTERNAL = /^@getsimpledirect\/vinci-/;
+const manifests = readManifests();
 
-const manifests = [];
-for (const dir of readdirSync(packagesDir)) {
-  const path = join(packagesDir, dir, "package.json");
-  if (!existsSync(path)) continue;
-  manifests.push({ dir, manifest: JSON.parse(readFileSync(path, "utf8")) });
-}
+// The inventory must match what is committed. A floor ("at least five packages")
+// was not enough: deleting a package made this report "9 packages all at 0.1.0"
+// and exit 0, which reads exactly like success. A scan that reports on whatever
+// it happens to find cannot tell you it found less than it should have.
+assertExpectedInventory(manifests);
 
 const errors = [];
-
-// Non-vacuity. A scan that finds no packages must fail rather than report
-// agreement: a checker that finds nothing looks exactly like a codebase with
-// nothing wrong, and that confusion has already fooled several people here.
-if (manifests.length < 5) {
-  errors.push(`only ${manifests.length} packages found — this scan is broken, not the tree`);
-}
 
 const versions = new Set(manifests.map((entry) => entry.manifest.version));
 if (versions.size > 1) {
@@ -48,23 +36,25 @@ if (versions.size > 1) {
 }
 const expected = [...versions][0];
 
-let internalDeps = 0;
+// Every dependency section, including optionalDependencies — omitting that one
+// was a real hole: an internal dep declared there with "*" passed this check
+// while it reported "14 internal dependencies pinned exactly". The count was
+// true and the sentence was not.
+let depCount = 0;
 for (const { dir, manifest } of manifests) {
-  for (const section of ["dependencies", "devDependencies", "peerDependencies"]) {
-    for (const [dep, range] of Object.entries(manifest[section] ?? {})) {
-      if (!INTERNAL.test(dep)) continue;
-      internalDeps += 1;
-      if (range !== expected) {
-        errors.push(
-          `${dir}: ${dep} is "${range}", expected the exact lockstep version "${expected}". `
-            + 'A range (including "*") lets a consumer resolve a combination never tested together.',
-        );
-      }
+  for (const { section, dep, range } of internalDeps(manifest)) {
+    depCount += 1;
+    if (range !== expected) {
+      errors.push(
+        `${dir}: ${dep} is "${range}" in ${section}, expected the exact lockstep version `
+          + `"${expected}". A range (including "*") lets a consumer resolve a combination `
+          + "never tested together.",
+      );
     }
   }
 }
 
-if (internalDeps === 0) {
+if (depCount === 0) {
   errors.push("no internal dependencies found at all — this scan is broken, not the tree");
 }
 
@@ -75,5 +65,5 @@ if (errors.length > 0) {
 }
 
 console.log(
-  `  ${manifests.length} packages all at ${expected}, ${internalDeps} internal dependencies pinned exactly`,
+  `  ${manifests.length} packages all at ${expected}, ${depCount} internal dependencies pinned exactly`,
 );

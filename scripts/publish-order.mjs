@@ -13,31 +13,29 @@
  * whatever was added after someone last looked at it, and omission here means a
  * package that silently never ships.
  */
-import { readFileSync, readdirSync, existsSync } from "node:fs";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import {
+  assertExpectedInventory,
+  internalDeps,
+  readManifests,
+  RUNTIME_SECTIONS,
+} from "./lib/inventory.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const packagesDir = join(root, "packages");
-const INTERNAL = /^@getsimpledirect\/vinci-/;
+const manifests = readManifests();
+assertExpectedInventory(manifests);
 
-const byName = new Map();
-for (const dir of readdirSync(packagesDir)) {
-  const path = join(packagesDir, dir, "package.json");
-  if (!existsSync(path)) continue;
-  const manifest = JSON.parse(readFileSync(path, "utf8"));
-  byName.set(manifest.name, {
-    dir,
-    deps: Object.keys({ ...manifest.dependencies, ...manifest.peerDependencies }).filter((d) =>
-      INTERNAL.test(d),
-    ),
-  });
-}
-
-if (byName.size < 5) {
-  console.error(`only ${byName.size} packages found — this scan is broken, not the tree`);
-  process.exit(1);
-}
+// Runtime sections only. devDependencies are excluded on purpose — a dev-only
+// edge does not have to exist in the registry for a consumer to install this
+// package, and including it could impose an order the real graph does not need.
+//
+// optionalDependencies ARE included, and were missing: an optional edge still
+// has to resolve when npm tries it, so publishing the dependent first leaves a
+// window where the optional install fails for everyone who hits it.
+const byName = new Map(
+  manifests.map(({ dir, name, manifest }) => [
+    name,
+    { dir, deps: internalDeps(manifest, RUNTIME_SECTIONS).map((edge) => edge.dep) },
+  ]),
+);
 
 const order = [];
 const state = new Map();

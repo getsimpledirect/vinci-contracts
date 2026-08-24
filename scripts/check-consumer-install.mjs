@@ -27,26 +27,19 @@
  * CI runs it on pull requests via `npm run check:pack`.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, readdirSync, existsSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, dirname } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
+import { assertExpectedInventory, readManifests, root } from "./lib/inventory.mjs";
 
-const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const scratch = mkdtempSync(join(tmpdir(), "vinci-consumer-"));
 const run = (cmd, args, cwd) =>
   execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 
-const packages = readdirSync(join(root, "packages")).filter((dir) =>
-  existsSync(join(root, "packages", dir, "package.json")),
-);
-
-// Non-vacuity: a pack run that found no packages must fail rather than report a
-// clean install of nothing.
-if (packages.length < 5) {
-  console.error(`  only ${packages.length} packages found — this scan is broken, not the tree`);
-  process.exit(1);
-}
+// The inventory must match what is committed, not merely clear a floor. A floor
+// of five let a deleted package through: nine packages install cleanly and
+// report success, and nothing says the tenth was never tested.
+const packages = assertExpectedInventory(readManifests());
 
 // Build the whole workspace FIRST, in dependency order.
 //
