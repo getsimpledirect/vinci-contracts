@@ -1,26 +1,28 @@
-# Layer 2 — `@vinci/receipts` and `@vinci/run-events`
+# Layer 2 — `@getsimpledirect/vinci-receipts` and `@getsimpledirect/vinci-run-events`
 
 E0 is frozen at `b35a188`. This work happens on `layer2/receipts-run-events`;
 `main` does not move, and no E0 package is modified. Layer 2 integrates only
 after its own gate and its own independent review.
 
+Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
+
 ## Governing contract, inventoried
 
 Both packages sit at layer 2 — a position the dependency checker already
-declares — so they may depend on `@vinci/contracts` and on any layer-1 package,
-and nothing may depend on them except `@vinci/worker-protocol`.
+declares — so they may depend on `@getsimpledirect/vinci-contracts` and on any layer-1 package,
+and nothing may depend on them except `@getsimpledirect/vinci-worker-protocol`.
 
 What E0 already provides, and must therefore not be redefined:
 
 | Needed by layer 2 | Comes from |
 | --- | --- |
-| `TerminalState`, `RunState`, `VerdictStatus` | `@vinci/contracts` |
-| `Actor`, `Timestamp`, branded ids, `WorkspaceRef` | `@vinci/contracts` |
-| `SchemaMeta`, `ValidationResult`, `ok`/`fail`, `toPlainRecord` | `@vinci/contracts` |
-| evidence provenance and staleness | `@vinci/evidence` |
-| approval requests, decisions, grants | `@vinci/approvals` |
-| model and provider provenance, residency | `@vinci/model-classes` |
-| policy manifest and version | `@vinci/policy` |
+| `TerminalState`, `RunState`, `VerdictStatus` | `@getsimpledirect/vinci-contracts` |
+| `Actor`, `Timestamp`, branded ids, `WorkspaceRef` | `@getsimpledirect/vinci-contracts` |
+| `SchemaMeta`, `ValidationResult`, `ok`/`fail`, `toPlainRecord` | `@getsimpledirect/vinci-contracts` |
+| evidence provenance and staleness | `@getsimpledirect/vinci-evidence` |
+| approval requests, decisions, grants | `@getsimpledirect/vinci-approvals` |
+| model and provider provenance, residency | `@getsimpledirect/vinci-model-classes` |
+| policy manifest and version | `@getsimpledirect/vinci-policy` |
 
 FR-6.1 names roughly twenty-five receipt fields. Most are references into the
 above; the genuinely new work is the receipt digest, the correction record, and
@@ -195,7 +197,7 @@ holds.
 
 Both sit at layer 2, and the dependency checker forbids same-layer dependencies
 outright — `depLayer >= own` is an error, not just upward edges. So
-`@vinci/receipts` cannot import from `@vinci/run-events`, and will not.
+`@getsimpledirect/vinci-receipts` cannot import from `@getsimpledirect/vinci-run-events`, and will not.
 
 A receipt therefore references events the way it references anything outside its
 own package: by identifier. It carries event ids and a run id as plain branded
@@ -207,14 +209,14 @@ should be readable by something that never loads the event package.
 
 Order is a review convenience, not a dependency:
 
-1. `@vinci/run-events`
-2. `@vinci/receipts`
+1. `@getsimpledirect/vinci-run-events`
+2. `@getsimpledirect/vinci-receipts`
 3. Full gate, then an independent execution review on an engine that did not
    write the code.
 
 ## Deliberate deviation from D4, recorded
 
-`@vinci/run-events` sets `unknownFields: "reject"` and `compatibility: "frozen"`.
+`@getsimpledirect/vinci-run-events` sets `unknownFields: "reject"` and `compatibility: "frozen"`.
 D4 names events *specifically* as preserving unknown fields, so this is a
 departure from an E0 decision and is recorded rather than left to be discovered.
 

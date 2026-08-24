@@ -16,10 +16,10 @@ const packagesDir = join(root, "packages");
 
 /** Lower layers may not import from higher ones. Index is the layer number. */
 const LAYERS = [
-  ["@vinci/contracts"],
-  ["@vinci/policy", "@vinci/model-classes", "@vinci/evidence", "@vinci/approvals", "@vinci/device-auth"],
-  ["@vinci/receipts", "@vinci/run-events", "@vinci/work-orders"],
-  ["@vinci/worker-protocol", "@vinci/remote-protocol"],
+  ["@getsimpledirect/vinci-contracts"],
+  ["@getsimpledirect/vinci-policy", "@getsimpledirect/vinci-model-classes", "@getsimpledirect/vinci-evidence", "@getsimpledirect/vinci-approvals", "@getsimpledirect/vinci-device-auth"],
+  ["@getsimpledirect/vinci-receipts", "@getsimpledirect/vinci-run-events", "@getsimpledirect/vinci-work-orders"],
+  ["@getsimpledirect/vinci-worker-protocol", "@getsimpledirect/vinci-remote-protocol"],
 ];
 
 const layerOf = new Map();
@@ -148,7 +148,7 @@ for (const dir of readdirSync(packagesDir)) {
   //
   // The layer rule was enforced against declared dependencies alone, so an
   // import that no manifest mentions was invisible: workspace hoisting resolves
-  // `@vinci/receipts` from any package whether or not that package declares it,
+  // `@getsimpledirect/vinci-receipts` from any package whether or not that package declares it,
   // and the build succeeds. A reviewer listed this as untested and it was.
   //
   // Two distinct failures are reported here. An upward import is a layering
@@ -156,22 +156,23 @@ for (const dir of readdirSync(packagesDir)) {
   // different bug -- it works only by accident of hoisting, and breaks the
   // moment the package is consumed on its own.
   // `dir`, not `name`: the directory is "contracts", the package name is
-  // "@vinci/contracts". Using the name pointed at packages/@vinci/contracts/src,
+  // "@getsimpledirect/vinci-contracts". Using the name pointed at a nonexistent
+  // packages/@getsimpledirect/vinci-contracts/src path instead of packages/contracts/src,
   // which does not exist, so existsSync was false and this entire scan silently
   // did nothing while the check reported OK. Caught only by mutation testing.
   const srcDir = join(packagesDir, dir, "src");
   if (existsSync(srcDir)) {
     for (const file of sourceFilesUnder(srcDir)) {
       const source = readFileSync(join(srcDir, file), "utf8");
-      // Import/export ... from "@vinci/x", and dynamic import("@vinci/x").
+      // Import/export ... from "@getsimpledirect/vinci-x", and dynamic import("@getsimpledirect/vinci-x").
       const seen = new Set();
       // `from`, `import(...)` and `require(...)`. A subpath specifier such as
-      // "@vinci/contracts/dist/x" is captured too — the package boundary is
+      // "@getsimpledirect/vinci-contracts/dist/x" is captured too — the package boundary is
       // what the layer rule is about, not the file inside it.
       for (const m of source.matchAll(
-        /(?:from|import|require)\s*\(?\s*["']@vinci\/([a-z0-9-]+)(?:\/[^"']*)?["']/g,
+        /(?:from|import|require)\s*\(?\s*["']@getsimpledirect\/vinci-([a-z0-9-]+)(?:\/[^"']*)?["']/g,
       )) {
-        seen.add(`@vinci/${m[1]}`);
+        seen.add(`@getsimpledirect/vinci-${m[1]}`);
       }
       for (const dep of seen) {
         if (!layerOf.has(dep)) {
@@ -243,7 +244,7 @@ for (const dir of readdirSync(packagesDir)) {
       for (const [alias, targets] of Object.entries(tsconfig.compilerOptions?.paths ?? {})) {
         for (const target of targets) {
           const match = /packages\/([a-z0-9-]+)\//.exec(String(target));
-          const aliasedName = match ? `@vinci/${match[1]}` : String(alias).replace(/\/\*$/, "");
+          const aliasedName = match ? `@getsimpledirect/vinci-${match[1]}` : String(alias).replace(/\/\*$/, "");
           if (!layerOf.has(aliasedName)) continue;
           if (layerOf.get(aliasedName) >= own) {
             errors.push(
@@ -263,7 +264,7 @@ for (const dir of readdirSync(packagesDir)) {
     ...manifest.optionalDependencies,
   };
   for (const dep of Object.keys(declaredDeps)) {
-    if (!dep.startsWith("@vinci/")) continue;
+    if (!dep.startsWith("@getsimpledirect/vinci-")) continue;
     if (!layerOf.has(dep)) {
       errors.push(`${name}: depends on unknown contract package ${dep}`);
       continue;

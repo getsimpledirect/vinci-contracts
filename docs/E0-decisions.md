@@ -3,6 +3,8 @@
 Status: proposed. Scope: Epic E0 only (§17). This repo contains schemas and types.
 It contains no application logic and no UI (§16).
 
+Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
+
 The exit gate this repo exists to satisfy (§17, E0):
 
 > all repositories can import the same contract definitions;
@@ -62,7 +64,7 @@ the local state authoritative.
 consumer can create a cycle:
 
 ```text
-                         @vinci/contracts          (no dependencies)
+                         @getsimpledirect/vinci-contracts          (no dependencies)
                                  |
      +----------+----------+-----+-----+-----------+------------+
      |          |          |           |           |            |
@@ -77,7 +79,7 @@ consumer can create a cycle:
                     worker-protocol
 ```
 
-`@vinci/contracts` holds only what every other package needs: identifier types,
+`@getsimpledirect/vinci-contracts` holds only what every other package needs: identifier types,
 actor and timestamp shapes, the schema-envelope machinery from D3, and the
 glossary nouns of §7.
 
@@ -87,7 +89,7 @@ is an assessment *of* evidence. The deciding factor is
 Acceptance from drifting apart on how a verdict collapses into a final state,
 and it must sit beside the `TerminalState` it returns. Putting `Verdict` in
 `evidence` would force `contracts` to depend on `evidence` and invert the graph.
-`@vinci/evidence` still owns the evidence records and the staleness rules that
+`@getsimpledirect/vinci-evidence` still owns the evidence records and the staleness rules that
 reference the verdict.
 
 `scripts/check-dependency-graph.mjs` enforces this in CI. A package that imports
