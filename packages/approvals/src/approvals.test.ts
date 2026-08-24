@@ -1,3 +1,5 @@
+import { GRANT_SHAPE_KINDS, validateGrantShape, type GrantShape } from "./grant.ts";
+import { GRANT_KINDS, type CanonicalGrant } from "@vinci/contracts";
 import { isGrantStrictlyNarrower, isDecisionEffective, canAdvanceDelivery, isEffectiveDeliveryState } from "./index.ts";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { CONSEQUENTIAL_ACTION_CLASSES } from "@vinci/contracts";
@@ -415,5 +417,54 @@ describe("approval predicates refuse hostile input instead of throwing", () => {
     expect(isEffectiveDeliveryState({ kind: "queued-locally" })).toBe(false);
     expect(isDecisionEffective({ deliveryState: { kind: "accepted-by-governor" } } as never)).toBe(true);
     expect(isDecisionEffective({ deliveryState: { kind: "queued-locally" } } as never)).toBe(false);
+  });
+});
+
+describe("the canonical grant vocabulary and GrantShape cannot drift apart", () => {
+  // THIS TEST LIVES HERE DELIBERATELY.
+  //
+  // Its first home was packages/contracts/src/grants.test.ts, where it asserted
+  // "has grant shapes compatible with @vinci/approvals vocabulary" — and could
+  // not. Layer 0 may not import layer 1, so that test compared GRANT_KINDS to
+  // hardcoded copies of its own members and would have passed unchanged after
+  // any rename on this side. A test named for a cross-package property, which
+  // structurally cannot observe the other package.
+  //
+  // @vinci/approvals is layer 1 and may import layer 0, so this is the only
+  // place the comparison is possible at all.
+  it("every canonical grant kind exists in GRANT_SHAPE_KINDS", () => {
+    for (const kind of GRANT_KINDS) {
+      expect(GRANT_SHAPE_KINDS as readonly string[], `canonical kind ${kind}`).toContain(kind);
+    }
+  });
+
+  it("names the same shape with the same fields on both sides", () => {
+    // Kind names agreeing is not enough: the drift that started this was
+    // `resource`/`maximumDurationSeconds` on one side and `resourceId`/
+    // `durationMs` on the other. Construct one value and require it to satisfy
+    // both types.
+    const bounded: CanonicalGrant = {
+      kind: "allow-bounded",
+      resourceId: "workspace:alpha",
+      durationMs: 3_600_000,
+    };
+    const asShape: GrantShape = bounded;
+    expect(asShape.kind).toBe("allow-bounded");
+    expect(validateGrantShape(bounded).ok).toBe(true);
+  });
+
+  it("keeps the extra approval-workflow kinds that are deliberately not canonical", () => {
+    // GRANT_SHAPE_KINDS is a superset. deny, allow-automatically, require-person,
+    // require-role, require-two-people and expire-at describe WHO may approve and
+    // WHEN, not what duration is granted, so they stay here rather than moving to
+    // layer 0. Pinning that keeps the superset relationship deliberate rather
+    // than accidental.
+    const extras = (GRANT_SHAPE_KINDS as readonly string[]).filter(
+      (k) => !(GRANT_KINDS as readonly string[]).includes(k),
+    );
+    expect(extras).toEqual([
+      "deny", "allow-automatically", "require-person",
+      "require-role", "require-two-people", "expire-at",
+    ]);
   });
 });
