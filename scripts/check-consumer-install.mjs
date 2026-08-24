@@ -48,6 +48,27 @@ if (packages.length < 5) {
   process.exit(1);
 }
 
+// Build the whole workspace FIRST, in dependency order.
+//
+// `npm pack` runs each package's own `prepack`, which is `tsc` for that package
+// alone — and that compile resolves its dependencies through node_modules to
+// their `types`, i.e. to a dist/ that a per-package build does not produce. So
+// packing approvals before contracts has been built fails with TS2307 on
+// @getsimpledirect/vinci-contracts.
+//
+// This was invisible locally and CI found it on the first run: a developed tree
+// already has dist/ everywhere from the last gate, so the per-package builds
+// resolved against leftovers. A clean checkout has none, which is the state a
+// release actually runs in.
+console.log("  building the workspace in dependency order (npm pack's prepack needs it)");
+try {
+  run("npx", ["tsc", "--build", ...packages.map((d) => `packages/${d}/tsconfig.json`)], root);
+} catch (error) {
+  console.error("  workspace build failed before packing:\n");
+  console.error(String(error.stdout ?? "") + String(error.stderr ?? "") || String(error));
+  process.exit(1);
+}
+
 console.log(`  packing ${packages.length} packages into ${scratch}`);
 const tarballs = {};
 for (const dir of packages) {
