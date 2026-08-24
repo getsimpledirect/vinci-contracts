@@ -24,10 +24,10 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@getsimpledirect/vinci-approvals": "*",
-    "@getsimpledirect/vinci-contracts": "*",
-    "@getsimpledirect/vinci-policy": "*",
-    "@getsimpledirect/vinci-run-events": "*"
+    "@getsimpledirect/vinci-approvals": "0.1.0",
+    "@getsimpledirect/vinci-contracts": "0.1.0",
+    "@getsimpledirect/vinci-policy": "0.1.0",
+    "@getsimpledirect/vinci-run-events": "0.1.0"
   },
   "devDependencies": {
     "typescript": "5.9.3"

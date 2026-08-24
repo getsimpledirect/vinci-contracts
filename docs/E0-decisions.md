@@ -1,7 +1,22 @@
 # E0 — Contract decisions
 
-Status: proposed. Scope: Epic E0 only (§17). This repo contains schemas and types.
-It contains no application logic and no UI (§16).
+Status: **accepted for internal adoption, v0.1** (2026-08-24). Scope: Epic E0 only
+(§17). This repo contains schemas and types. It contains no application logic and
+no UI (§16).
+
+"Proposed" was left on this document after PR #1 merged into `main`. That is a
+small ambiguity which becomes an expensive one: a consumer cannot tell whether
+the package is safe to depend on or still experimental, and those two readings
+imply opposite behaviour.
+
+Accepted for internal adoption means the vocabularies, authority rules, verdict
+and receipt semantics, and run-state definitions are stable enough for the five
+internal repositories to import. It does **not** mean frozen. It means a change
+to authority, verdict, receipt, or run-state semantics now requires an explicit
+compatibility decision recorded here, rather than an edit.
+
+External stability is not claimed. Nothing outside this organization depends on
+these packages, and v0.1 says so.
 
 Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
 

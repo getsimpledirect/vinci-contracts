@@ -103,7 +103,7 @@ export const PAYLOAD_FIELDS = {
     policyVersion: { kind: "count", required: true },
   },
   "run.started": { workerId: { kind: "id", required: true } },
-  // UNRESOLVED: this phase list has three members and worker.heartbeat's has
+  // RESOLVED 2026-08-24: this phase list has three members and worker.heartbeat's has
   // four, adding "waiting". Same field name, same concept, different
   // vocabularies — and nothing anywhere says whether that is deliberate.
   //
@@ -114,8 +114,20 @@ export const PAYLOAD_FIELDS = {
   // event type and not the other, and whoever reads the stream sees a phase
   // vanish rather than change.
   //
-  // Deliberately NOT unified. Making two disagreeing lists agree is a product
-  // decision about what a run.progress event may say, not a deduplication.
+  // The split is deliberate and is now the decision, not an open question:
+  //
+  //   run.progress      planning | working | verifying
+  //   worker.heartbeat  planning | working | verifying | waiting
+  //
+  // "waiting" stays OUT of run.progress, because a progress event claiming
+  // waiting-as-progress is exactly the kind of small untruth that makes a
+  // status display worthless. A run that is blocked says so through live run
+  // state — WAITING_FOR_APPROVAL or WAITING_FOR_USER — which is where a reader
+  // looks to find out why.
+  //
+  // Heartbeat keeps "waiting" because a heartbeat answers a different question:
+  // is this worker alive. "Alive but currently blocked" is a real answer to
+  // that and not an answer to "what progress was made".
   "run.progress": {
     phase: { kind: "enum", required: true, members: ["planning", "working", "verifying"] },
     completedSteps: { kind: "count", required: false },

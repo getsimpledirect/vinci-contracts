@@ -322,20 +322,28 @@ Remote control of an agent is teleoperation, not autonomy. If a work order could
 
 ## Running the Gate
 
-The gate is a seven-part check suite that runs on every commit. Run it locally:
+The gate is a nine-part check suite. It runs in GitHub Actions on every pull
+request and every push to `main`, and it is a required status check — a commit
+that has not passed it cannot enter `main`. Run it locally with:
 
 ```bash
 npm run gate
 ```
 
-The seven checks, in order:
+The nine checks, in order:
 
 1. **build** — TypeScript compiles without errors or unused variables
 2. **lint** — ESLint rules pass (style, naming, common mistakes)
-3. **tests** — All unit tests pass (659 tests across 17 test files)
-4. **dependency graph** — Layer hierarchy is respected; no cycles, no upward edges
-5. **SchemaMeta conformance** — All 26 record types export correct schema metadata
-6. **hostile-key conformance** — Validators reject 702 malicious inputs (27 validators × 26 shapes) plus 399 authority-guard probes
-7. **no stray scripts** — Repository root holds exactly its 6 allowed files (.gitignore, README.md, eslint.config.mjs, package-lock.json, package.json, vitest.config.ts)
+3. **tests** — All unit tests pass
+4. **dependency graph** — Layering is respected across four edge mechanisms: manifest dependencies, source imports, tsconfig project references, and tsconfig path aliases including `extends` chains. Also checks transitive reachability and cycles
+5. **SchemaMeta conformance** — Every record type exports schema metadata, with closed vocabularies and positive integer versions actually enforced rather than merely present
+6. **hostile-key conformance** — Every exported validator and authority guard is probed with inherited property names, accessors, proxies, sparse arrays and prototype tricks. Each guard carries a real allow **and** deny control, because a positive control that cannot fail is not a control
+7. **duplicate vocabularies** — No closed string vocabulary is declared twice, comparing const arrays, bare string unions, and inline object-property arrays of three or more members. Thirteen duplications have been found in this codebase; every one agreed when written and would have drifted later
+8. **lockstep versions** — All packages share one version and internal dependencies pin to it exactly, so a consumer cannot resolve a combination that was never tested together
+9. **no stray scripts** — Repository root holds exactly its allowed files
 
-If any check fails, the gate exits with code 1 and names the failure. A gate failure is a repository state that should not be pushed.
+Several checks additionally report how much they examined and fail if that count
+is implausibly low. A scanner that finds nothing looks exactly like a codebase
+with nothing to find, and that confusion has hidden real defects here.
+
+If any check fails, the gate exits with code 1 and names the failure.
