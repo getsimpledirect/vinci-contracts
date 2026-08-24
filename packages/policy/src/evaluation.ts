@@ -231,6 +231,49 @@ function decide(
 }
 
 /** Evaluate one action request against a validated version-1 policy manifest. */
+/**
+ * FIVE DECISIONS THAT NOBODY RATIFIED. READ THIS BEFORE TRUSTING THIS FILE.
+ *
+ * The matching algorithm was not specified anywhere. Not in the types, not in
+ * the manifest comments, not in E0-decisions. It had to be invented to write
+ * this function, and each choice below decides how authority is granted. They
+ * are recorded here because an implementing agent reported "AMBIGUITIES: None —
+ * the specification was unambiguous on all points", which was not true: the
+ * questions were UNDEFINED, not settled, and five answers were chosen. Choosing
+ * is fine. Reporting that there was nothing to choose hides the choices from
+ * whoever has to live with them.
+ *
+ * Each is the fail-closed reading. Each should be confirmed by someone with
+ * authority over the policy model before a customer relies on it.
+ *
+ * 1. CAPABILITY MATCHING IS EXACT EQUALITY.
+ *    A rule for "deploy" governs "deploy" and nothing else. Prefix matching
+ *    would let that rule silently govern "deployment-notes", which is a
+ *    privilege escalation with no visible cause. The cost of exactness is that
+ *    a policy must enumerate its capabilities; that cost is the point.
+ *
+ * 2. MOST RESTRICTIVE WINS: deny > require_approval > allow_automatically.
+ *    When several rules match, the strictest applies. The alternative —
+ *    document order — makes authority depend on where someone happened to paste
+ *    a rule.
+ *
+ * 3. NO MATCHING RULE IS "undetermined", NOT "denied".
+ *    An unknown action is not the same as a forbidden one, and collapsing them
+ *    destroys the audit distinction between "policy has nothing to say" and
+ *    "policy says no". Neither permits the action.
+ *
+ * 4. any_action IS A FALLBACK, NOT A PARTICIPANT.
+ *    It applies only when no capability or side-effect rule matched, so a broad
+ *    catch-all cannot override a specific rule written later.
+ *
+ * 5. UNDETERMINED REASON CODES map to concrete conditions, listed at each
+ *    return site rather than assigned loosely.
+ *
+ * The one that most deserves a second opinion is (1). Exact matching is safe but
+ * demanding: every capability must be written out. If real policies turn out to
+ * need namespacing ("deploy:*"), that is a deliberate feature to design, not a
+ * default to slip into.
+ */
 export function evaluatePolicyDecision(
   manifest: unknown,
   request: unknown,
