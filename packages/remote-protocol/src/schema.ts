@@ -7,11 +7,17 @@ import {
   type ValidationIssue,
   type ValidationResult,
 } from "@getsimpledirect/vinci-contracts";
+// Imported, not redeclared. This package is layer 3 and policy is layer 1, so a
+// downward import was always legal — the private copy that used to live here
+// existed for no reason except that nobody noticed. It was byte-identical to
+// policy's, which is the failure mode: a duplicate agrees until someone edits
+// one side, and then a retention class accepted by the policy manifest is
+// refused by the session validator, or the reverse.
+import { RETENTION_CLASSES } from "@getsimpledirect/vinci-policy";
 import { isSessionRole } from "./session.ts";
 import type { SessionBinding } from "./session.ts";
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
-const RETENTION_CLASSES = ["zdr_0d", "days_7", "days_14", "days_30"] as const;
 
 const FIELDS = [
   "sessionId",

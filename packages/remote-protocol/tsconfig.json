@@ -28,6 +28,9 @@
     },
     {
       "path": "../run-events"
+    },
+    {
+      "path": "../policy"
     }
   ]
 }

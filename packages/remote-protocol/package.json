@@ -24,8 +24,9 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@getsimpledirect/vinci-contracts": "*",
     "@getsimpledirect/vinci-approvals": "*",
+    "@getsimpledirect/vinci-contracts": "*",
+    "@getsimpledirect/vinci-policy": "*",
     "@getsimpledirect/vinci-run-events": "*"
   },
   "devDependencies": {
