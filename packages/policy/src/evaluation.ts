@@ -232,7 +232,7 @@ function decide(
 
 /** Evaluate one action request against a validated version-1 policy manifest. */
 /**
- * FIVE DECISIONS, NOW RATIFIED. Decision 1 confirmed by George, 2026-08-24.
+ * FIVE DECISIONS, ALL RATIFIED by George, 2026-08-24, as D6 in docs/E0-decisions.md.
  *
  * The matching algorithm was not specified anywhere. Not in the types, not in
  * the manifest comments, not in E0-decisions. It had to be invented to write
@@ -243,8 +243,9 @@ function decide(
  * is fine. Reporting that there was nothing to choose hides the choices from
  * whoever has to live with them.
  *
- * Each is the fail-closed reading. Each should be confirmed by someone with
- * authority over the policy model before a customer relies on it.
+ * Each is the fail-closed reading, and all five are now confirmed as written.
+ * Ratified does not mean obvious: it means someone with authority over the
+ * policy model looked at each choice and accepted the cost named beside it.
  *
  * 1. CAPABILITY MATCHING IS EXACT EQUALITY.
  *    A rule for "deploy" governs "deploy" and nothing else. Prefix matching
@@ -269,16 +270,24 @@ function decide(
  * 5. UNDETERMINED REASON CODES map to concrete conditions, listed at each
  *    return site rather than assigned loosely.
  *
- * (1) IS NOW SETTLED: exact matching is ratified, with the demand it implies —
- * every capability must be written out. Namespacing ("deploy:*") remains a
- * feature to design deliberately if real policies need it, never a default to
- * slip into. Do not relax this to a prefix match without an explicit decision:
- * a rule for "deploy" silently governing "deployment-notes" is an escalation
- * with no visible cause, and it would look like a small convenience change.
+ * WHAT RATIFICATION BUYS. Each decision has a named test beside this file that
+ * fails if the behaviour is reverted, so the five are enforced rather than
+ * merely described. Changing any of them is now a compatibility decision
+ * recorded in E0, not an edit — because every one of them is a change to how
+ * authority is granted, and each would look like a small convenience change to
+ * whoever made it:
  *
- * Decisions 2 through 5 remain as chosen and unratified. They are fail-closed
- * readings, and none has been confirmed by anyone with authority over the
- * policy model.
+ *   - relaxing (1) to a prefix match lets a rule for "deploy" silently govern
+ *     "deployment-notes", an escalation with no visible cause;
+ *   - replacing (2) with document order makes authority depend on where someone
+ *     pasted a rule;
+ *   - collapsing (3) into "denied" destroys the audit distinction between
+ *     "policy has nothing to say" and "policy says no";
+ *   - letting (4) participate rather than fall back lets a broad catch-all
+ *     override a specific rule written later.
+ *
+ * Namespacing ("deploy:*") remains a feature to design deliberately if real
+ * policies need it, never a default to slip into.
  */
 export function evaluatePolicyDecision(
   manifest: unknown,

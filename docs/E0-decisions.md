@@ -190,3 +190,39 @@ The cost is real and accepted: bumping either number makes every record from
 every older build refuse, loudly, at the boundary. That is the intended
 behaviour. The alternative is a silent misread, and a receipt asserting
 something untrue is more expensive than a session that will not start.
+
+## D6 — The five policy-matching decisions, ratified
+
+The matching algorithm in `evaluatePolicyDecision` was specified nowhere — not
+in the types, not in the manifest comments, not in this document. It had to be
+invented to write the function, and five choices were made in the writing. They
+are recorded because the implementing agent reported "AMBIGUITIES: None — the
+specification was unambiguous on all points", which was false: the questions
+were undefined rather than settled. Choosing is fine. Reporting that there was
+nothing to choose hides the choices from whoever lives with them.
+
+All five are ratified as written (George, 2026-08-24):
+
+1. **Capability matching is exact equality.** A rule for `deploy` governs
+   `deploy` and nothing else. The cost — every capability must be enumerated —
+   is the point. Prefix matching would let that rule govern `deployment-notes`.
+2. **Most restrictive wins:** `deny` > `require_approval` > `allow_automatically`.
+   The alternative, document order, makes authority depend on where a rule was
+   pasted.
+3. **No matching rule is `undetermined`, not `denied`.** Neither permits the
+   action; collapsing them destroys the audit distinction between "policy has
+   nothing to say" and "policy says no".
+4. **`any_action` is a fallback, not a participant.** It applies only when no
+   capability or side-effect rule matched, so a catch-all cannot override a
+   specific rule written later.
+5. **Undetermined reason codes map to concrete conditions,** assigned at each
+   return site rather than loosely.
+
+Each has a named test that fails if the behaviour is reverted, so ratified means
+enforced rather than annotated. Each is also a change to how authority is
+granted, and each relaxation would look like a small convenience change to
+whoever made it — which is why changing one is now a compatibility decision
+recorded here rather than an edit.
+
+Namespacing (`deploy:*`) stays a feature to design deliberately if real policies
+need it. It is not a default to slip into.
