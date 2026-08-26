@@ -10,6 +10,7 @@
     "receipts",
     "remote-protocol",
     "run-events",
+    "session-stream",
     "work-orders"
   ]
 }

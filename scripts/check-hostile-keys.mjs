@@ -408,6 +408,7 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-run-events.verifyAppend": "covered by the run-events suite",
   "@getsimpledirect/vinci-device-auth.parseKeyHash": "parser returning a ValidationResult",
   "@getsimpledirect/vinci-device-auth.revoke": "state transition over an already-validated record",
+  "@getsimpledirect/vinci-session-stream.nextSeqIsValid": "predicate over safe integers; answers whether next is the unused sequence after prev",
 };
 
 /**
