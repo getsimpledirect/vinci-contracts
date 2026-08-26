@@ -398,7 +398,68 @@ change how the mission reaches a human when it cannot proceed, not what result
 was accepted. The fail-closed boundary remains unchanged—only explicitly
 editorial paths preserve a verdict.
 
-## D-next — Relay authority uses one public wire contract (number assigned at merge)
+## D13 — Every session frame carries its full binding
+
+A session frame carries `protocolVersion`, required-but-nullable
+`organizationId`, `workspaceId`, `runId`, and `sessionId` as authenticated
+header material. A relay compares all five fields with the authenticated
+connection binding and refuses any mismatch. The body remains ciphertext, so
+the relay can refuse a misrouted frame without decrypting session content.
+
+This is a compatibility break for the frozen frame envelope. The session-frame
+schema moves from version 1 to version 2, and version-1 frames are rejected
+rather than assigned a binding: an unbound frame cannot be routed safely.
+## D14 — Expiry and key binding are credential identity
+
+A credential's expiry and certified public key are identity, not mutable state.
+The credential identity digest therefore covers `id`, device, client type,
+scopes, creation and expiry times, and the complete public-key binding. It
+deliberately excludes `revokedAt`: revocation changes the authority state of the
+same credential, while extending expiry or rotating a key issues a new
+credential. This makes an in-place key or lifetime edit detectable instead of
+letting it masquerade as the credential already reviewed and distributed.
+
+The relay access token is its own versioned, signed record rather than a
+temporary mutation of `DeviceCredential`. A device credential may be a
+non-expiring long-lived pairing identity; a relay grant is audience-bound to
+`vinci-relay`, bound to one organization/workspace/run/session and explicit
+session role, and expires after at most ten minutes. Keeping those claims in a
+separate record lets Platform issue and replace short-lived grants without
+rewriting credential identity, while credential revocation still invalidates
+every grant that names it. Structural validation of the token does not verify
+its Ed25519 signature; the relay and host must perform that cryptographic check
+against the trusted issuer key before granting authority.
+## D15 — Relay security facts are durable and bound
+
+Device revocation, relay availability, transient host reachability, and the
+host's authority acknowledgement or rejection are durable run facts. They are
+not warnings: a warning describes a worker condition, while these events are
+the audit record for security state, degraded supervision, and whether a
+consequential command took effect. Reusing `worker.warning` would erase who is
+responsible for recording the fact and make consumers infer security semantics
+from an unrelated code.
+
+The payloads remain content-minimal and closed. An authority acknowledgement
+names the command and the digest of its envelope; the command kind is resolved
+from that envelope instead of duplicating the layer-3 command vocabulary in a
+layer-2 package. A rejection carries its closed reason code directly. A digest
+alone can prove which rejection record was named, but it cannot tell an
+operator why the host refused the command, so digest-only reasons are rejected
+as an audit design.
+
+Every event carries required `workspaceId` and required-but-nullable
+`organizationId`. Connection context is not durable history and may be gone by
+the time an event is replayed, exported, or investigated. Repeating the binding
+on every event makes each record independently attributable and lets append
+validation reject `binding_changed_within_run` before one run's history crosses
+a workspace or organization boundary.
+
+These additions move the frozen run-event schema from version 2 to version 3.
+Version-2 events are rejected rather than defaulted: the binding cannot be
+reconstructed safely, and a version-2 reader could silently discard the new
+security event types as unknown, which is worse than refusing version skew.
+
+## D16 — Relay authority uses one public wire contract
 
 The remote protocol now owns the signed authority command and host-result
 envelopes, their literal session binding reference, replay-gap control result,

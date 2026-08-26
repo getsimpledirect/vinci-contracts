@@ -1,4 +1,10 @@
-import type { Actor, RunId, Timestamp } from "@getsimpledirect/vinci-contracts";
+import type {
+  Actor,
+  OrganizationId,
+  RunId,
+  Timestamp,
+  WorkspaceId,
+} from "@getsimpledirect/vinci-contracts";
 import type { RunEventType } from "./event-types.ts";
 import type { PayloadFor } from "./payload.ts";
 
@@ -10,9 +16,12 @@ import type { PayloadFor } from "./payload.ts";
  * sentinel; that ambiguity is not reproduced here. Zero is not an event.
  */
 export type RunEventFor<T extends RunEventType> = {
-  readonly schemaVersion: 2;
+  readonly schemaVersion: 3;
   readonly eventId: string;
   readonly runId: RunId;
+  /** Required on every event so durable history carries its own tenant binding. */
+  readonly organizationId: OrganizationId | null;
+  readonly workspaceId: WorkspaceId;
   /** Position in this run's log. Positive, contiguous, and never reused. */
   readonly sequence: number;
   readonly type: T;
