@@ -10,6 +10,13 @@ import type {
 
 export type { ReceiptId } from "@getsimpledirect/vinci-contracts";
 
+export type HumanAttention = {
+  readonly seconds: number;
+  readonly interruptions: number;
+  readonly decisions: number;
+  readonly escalations: number;
+};
+
 /**
  * A receipt records what a run accomplished, with evidence and digest for verification.
  *
@@ -17,7 +24,7 @@ export type { ReceiptId } from "@getsimpledirect/vinci-contracts";
  * The digest covers every field except digest and signature.
  */
 export type Receipt = {
-  readonly receiptVersion: 1;
+  readonly receiptVersion: 2;
   readonly receiptId: ReceiptId;
   readonly runId: RunId;
   readonly objective: string;
@@ -32,6 +39,13 @@ export type Receipt = {
   readonly startedAt: Timestamp;
   readonly completedAt: Timestamp;
   readonly activeDuration: number;
+  /**
+   * Institutional-cost measurement, never a measurement of a person.
+   *
+   * `seconds` records how long presented decisions took. It never records what
+   * a person did during that time, and this block carries no per-human identity.
+   */
+  readonly humanAttention: HumanAttention;
   readonly finalState: TerminalState;
   readonly actionSummary: string;
   readonly resourcesAccessed: readonly string[];
@@ -47,6 +61,40 @@ export type Receipt = {
   readonly digest: string;
   readonly signature: string | null;
 };
+
+/** Every field declared by the receipt schema, including the two not digested. */
+export const RECEIPT_DECLARED_FIELDS = [
+  "receiptVersion",
+  "receiptId",
+  "runId",
+  "objective",
+  "workspace",
+  "requester",
+  "worker",
+  "modelId",
+  "providerId",
+  "executionLocation",
+  "policyId",
+  "policyVersion",
+  "startedAt",
+  "completedAt",
+  "activeDuration",
+  "humanAttention",
+  "finalState",
+  "actionSummary",
+  "resourcesAccessed",
+  "changesMade",
+  "artifactsProduced",
+  "approvalIds",
+  "evidenceIds",
+  "verdict",
+  "spend",
+  "unresolvedConditions",
+  "resumeInstructions",
+  "rollbackInfo",
+  "digest",
+  "signature",
+] as const satisfies readonly (keyof Receipt)[];
 
 export const RECEIPT_COVERED_FIELDS = [
   "receiptVersion",
@@ -64,6 +112,7 @@ export const RECEIPT_COVERED_FIELDS = [
   "startedAt",
   "completedAt",
   "activeDuration",
+  "humanAttention",
   "finalState",
   "actionSummary",
   "resourcesAccessed",

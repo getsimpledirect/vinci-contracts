@@ -19,6 +19,7 @@ export const RUN_EVENT_TYPES = [
   "run.started",
   "run.progress",
   "run.question",
+  "run.question_answered",
   "approval.requested",
   "approval.granted",
   "approval.denied",

@@ -10,7 +10,7 @@ import type { PayloadFor } from "./payload.ts";
  * sentinel; that ambiguity is not reproduced here. Zero is not an event.
  */
 export type RunEventFor<T extends RunEventType> = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly eventId: string;
   readonly runId: RunId;
   /** Position in this run's log. Positive, contiguous, and never reused. */

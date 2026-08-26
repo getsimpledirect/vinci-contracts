@@ -321,3 +321,31 @@ Migration is explicit: a legacy schema-v1 work order becomes schema v2 with
 `contractVersion: 1` and no `supersedes`. Validation does not silently supply
 that value, because doing so would hide which records were actually migrated.
 `ContractAmendment` begins independently at schema version 1.
+## D10 — Human attention is a measured institutional cost
+
+The number is assigned at merge. Three open changes currently contest the
+post-D6 numbering, so the heading deliberately does not guess it.
+
+The attention budget on a work order is a bound. It says how much interruption
+and decision-making a run may demand, not how much it actually demanded. The
+run-event stream now records the measured seconds for each answered question
+and approval decision, and `run.completed` records aggregate seconds,
+interruptions, decisions, and escalations. The surface that presented the
+question or decision (Mobile, Web, or TUI) measures its wall-clock seconds.
+
+The receipt carries the same aggregate as required `humanAttention` data, and
+its digest covers that block. This is a measurement of institutional cost, not
+of a person: it records how many seconds a decision took, never what the person
+did during them. No per-human identity is added. The aggregate helper divides
+all recorded human-attention seconds by only `VERIFIED_PASS` receipts. A
+`CONDITIONAL` or `BLOCKED` receipt still consumed attention and therefore stays
+in the numerator, but is not a verified outcome. Zero verified outcomes yields
+`null`, never infinity and never zero presented as "free".
+
+Both wire schemas bump from 1 to 2. The run-event schema is frozen and explicitly
+requires a version bump for a new event type or payload field. The receipt adds
+a newly required field; under D3's per-schema compatibility contract that is a
+compatibility break, so `receiptVersion` and the receipt schema metadata also
+bump to 2. Package versions remain in repository lockstep at 0.1.0.
+Version-1 records are rejected rather than backfilled: the missing measurement
+cannot be inferred after the fact without inventing institutional-cost data.
