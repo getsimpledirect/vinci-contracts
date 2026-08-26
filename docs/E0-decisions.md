@@ -409,3 +409,23 @@ the relay can refuse a misrouted frame without decrypting session content.
 This is a compatibility break for the frozen frame envelope. The session-frame
 schema moves from version 1 to version 2, and version-1 frames are rejected
 rather than assigned a binding: an unbound frame cannot be routed safely.
+## D14 — Expiry and key binding are credential identity
+
+A credential's expiry and certified public key are identity, not mutable state.
+The credential identity digest therefore covers `id`, device, client type,
+scopes, creation and expiry times, and the complete public-key binding. It
+deliberately excludes `revokedAt`: revocation changes the authority state of the
+same credential, while extending expiry or rotating a key issues a new
+credential. This makes an in-place key or lifetime edit detectable instead of
+letting it masquerade as the credential already reviewed and distributed.
+
+The relay access token is its own versioned, signed record rather than a
+temporary mutation of `DeviceCredential`. A device credential may be a
+non-expiring long-lived pairing identity; a relay grant is audience-bound to
+`vinci-relay`, bound to one organization/workspace/run/session and explicit
+session role, and expires after at most ten minutes. Keeping those claims in a
+separate record lets Platform issue and replace short-lived grants without
+rewriting credential identity, while credential revocation still invalidates
+every grant that names it. Structural validation of the token does not verify
+its Ed25519 signature; the relay and host must perform that cryptographic check
+against the trusted issuer key before granting authority.

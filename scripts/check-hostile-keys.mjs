@@ -79,6 +79,16 @@ function hostileInputs() {
  */
 const AUTHORITY_GUARDS = [
   {
+    pkg: "@getsimpledirect/vinci-device-auth",
+    export: "isCredentialActiveAt",
+    label: "isCredentialActiveAt(credential, at)",
+    call: (fn, hostile) => fn(hostile, "2026-08-26T12:00:00.000Z"),
+    control: (fn) =>
+      fn({ kind: "device", id: "c", deviceId: "d", keyHash: "a".repeat(64), prefix: "p", clientType: "work", scopes: ["inference"], createdAt: "2026-08-26T11:00:00.000Z", revokedAt: null, expiresAt: "2026-08-26T12:10:00.000Z", publicKey: null }, "2026-08-26T12:00:00.000Z") === true
+      && fn({ kind: "device", id: "c", deviceId: "d", keyHash: "a".repeat(64), prefix: "p", clientType: "work", scopes: ["inference"], createdAt: "2026-08-26T11:00:00.000Z", revokedAt: "2026-08-26T12:00:00.000Z", expiresAt: null, publicKey: null }, "2026-08-26T12:00:00.000Z") === false
+      && fn({ kind: "device", id: "c", deviceId: "d", keyHash: "a".repeat(64), prefix: "p", clientType: "work", scopes: ["inference"], createdAt: "2026-08-26T11:00:00.000Z", revokedAt: null, expiresAt: "2026-08-26T12:00:00.000Z", publicKey: null }, "2026-08-26T12:00:00.000Z") === false,
+  },
+  {
     pkg: "@getsimpledirect/vinci-session-stream",
     export: "frameMatchesBinding",
     label: "frameMatchesBinding(frame, binding)",
@@ -362,6 +372,7 @@ const AUTHORITY_GUARDS = [
  * though the conclusion held.
  */
 const REQUIRED_GUARDS = [
+  "isCredentialActiveAt(credential, at)",
   "frameMatchesBinding(frame, binding)",
   "frameMatchesBinding(validFrame, binding)",
   "mayIssue(role, 'pause')",
@@ -393,6 +404,7 @@ const REQUIRED_GUARDS = [
  * the gate rather than silently going unexamined.
  */
 const NOT_AUTHORITY_GUARDS = {
+  "@getsimpledirect/vinci-device-auth.decodeCanonicalBase64Url": "pure encoding predicate: returns the decoded bytes of canonical unpadded base64url or undefined; grants nothing",
   "@getsimpledirect/vinci-approvals.applyApprovalDecision": "state transition over an already-validated decision",
   "@getsimpledirect/vinci-approvals.createApprovalDecision": "constructor; its output is validated",
   "@getsimpledirect/vinci-approvals.collectActorUnknownFields": "helper used inside a validator, after the snapshot",
@@ -404,6 +416,7 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-contracts.isEnumToken": "pure string/regex predicate",
   "@getsimpledirect/vinci-contracts.isIdentifier": "pure string/regex predicate",
   "@getsimpledirect/vinci-contracts.isNonBlankText": "pure string predicate",
+  "@getsimpledirect/vinci-contracts.isSessionRole": "enum membership",
   // Total function: returns a string for every input and never throws.
   // Its own no-throw property is pinned by unit tests, including the
   // null-prototype case that made String() throw in the first place.
@@ -480,6 +493,8 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-receipts.verificationAgainst": "requires current state; covered by receipts suite",
   "@getsimpledirect/vinci-run-events.verifyAppend": "covered by the run-events suite",
   "@getsimpledirect/vinci-device-auth.parseKeyHash": "parser returning a ValidationResult",
+  "@getsimpledirect/vinci-device-auth.credentialIdentityDigest": "digest encoder over an already-validated credential",
+  "@getsimpledirect/vinci-device-auth.relayAccessTokenSigningPayload": "canonical encoder over an already-validated token",
   "@getsimpledirect/vinci-device-auth.revoke": "state transition over an already-validated record",
   "@getsimpledirect/vinci-session-stream.nextSeqIsValid": "predicate over safe integers; answers whether next is the unused sequence after prev",
   "@getsimpledirect/vinci-worker-capabilities.isTrustLevel": "enum membership",
