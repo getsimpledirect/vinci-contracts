@@ -89,6 +89,10 @@ const PERMITTED: Readonly<Record<SessionRole, readonly RemoteCommandKind[]>> = {
 /**
  * May a device in this role issue this command?
  *
+ * This tests the static role-to-command map only. It does not prove that the
+ * device actually holds `role`; the relay must compare the asserted role with
+ * the current Platform grant before using this result.
+ *
  * Returns false for anything unrecognised — it does not throw.
  *
  * This is an authority check, and a thrown TypeError in an authority check is
@@ -138,6 +142,21 @@ export function mayIssue(role: SessionRole, command: RemoteCommandKind): boolean
 }
 
 /**
+ * Does the envelope's asserted role equal the role in the current Platform grant?
+ *
+ * Both inputs cross an authority boundary, so unknown or hostile values deny
+ * rather than throwing or being coerced.
+ */
+export function assertedRoleMatchesGrant(
+  assertedRole: unknown,
+  grantedRole: unknown,
+): boolean {
+  return isSessionRole(assertedRole)
+    && isSessionRole(grantedRole)
+    && assertedRole === grantedRole;
+}
+
+/**
  * Does this command only reduce authority, without destroying work?
  *
  * Exported so a host applies the rule rather than re-deriving it. Anything not
@@ -168,6 +187,13 @@ export type RemoteDecisionState =
   | { readonly kind: "provisional"; readonly submittedAt: string }
   | { readonly kind: "confirmed"; readonly confirmedAt: string }
   | { readonly kind: "rejected_by_host"; readonly reason: RemoteDecisionRejection };
+
+/** The discriminant vocabulary, shared by state records and signed results. */
+export const REMOTE_DECISION_STATES = [
+  "provisional",
+  "confirmed",
+  "rejected_by_host",
+] as const satisfies readonly RemoteDecisionState["kind"][];
 
 // The rejection vocabulary lives in layer-0 contracts so the run-event audit
 // log (authority.rejected.rejectionCode) and this validator can never disagree
@@ -247,7 +273,7 @@ export function validateRemoteDecisionState(
 
 export const REMOTE_DECISION_STATE_SCHEMA_META: SchemaMeta = {
   id: "vinci.remote-decision-state",
-  version: 1,
+  version: 2,
   /**
    * Frozen, like the session binding beside it: the validator rejects unknown
    * fields, and a schema that refuses additions has not left room for them.
@@ -261,5 +287,5 @@ export const REMOTE_DECISION_STATE_SCHEMA_META: SchemaMeta = {
    * nobody understands must not be carried forward as though it were
    * understood, because the thing it decides is authority.
    */
-  migration: "none",
+  migration: "Version 1 states remain valid unchanged; version 2 adds credential_revoked and binding_mismatch rejection reasons.",
 };

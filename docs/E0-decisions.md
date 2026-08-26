@@ -458,3 +458,20 @@ These additions move the frozen run-event schema from version 2 to version 3.
 Version-2 events are rejected rather than defaulted: the binding cannot be
 reconstructed safely, and a version-2 reader could silently discard the new
 security event types as unknown, which is worse than refusing version skew.
+
+## D16 — Relay authority uses one public wire contract
+
+The remote protocol now owns the signed authority command and host-result
+envelopes, their literal session binding reference, replay-gap control result,
+and the first mandatory end-to-end key-wrap suite. The relay must consume these
+records and must never invent a private envelope that can drift from endpoint
+validation.
+
+Passing an envelope validator does not verify its signature. The relay filters
+commands with `mayIssue`, while the host and device verify the canonical signing
+bytes with their endpoint keys; the host remains the authority root and repeats
+binding, revocation, role, policy, and live-request checks independently.
+
+Authority parameters are closed and content-minimal. They carry identifiers,
+digests, counts, and no free text. Steering message content stays in the
+end-to-end encrypted session channel rather than riding an authority command.

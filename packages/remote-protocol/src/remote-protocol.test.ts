@@ -14,6 +14,7 @@ import {
   SESSION_BINDING_SCHEMA_META,
   validateSessionBinding,
   REMOTE_PROTOCOL_VERSION,
+  assertedRoleMatchesGrant,
 } from "./index.ts";
 
 describe("a remote device may tighten authority, never broaden it", () => {
@@ -214,6 +215,24 @@ describe("a session is transport identity; a run is work identity", () => {
 });
 
 describe("an authority check refuses rather than throwing", () => {
+  it("matches asserted roles to Platform grants and refuses hostile input", () => {
+    expect(assertedRoleMatchesGrant("owner", "owner")).toBe(true);
+    expect(assertedRoleMatchesGrant("owner", "approver")).toBe(false);
+    for (const hostile of [
+      "toString",
+      null,
+      7,
+      Symbol("owner"),
+      Object.create(null),
+      new Proxy({}, { get() { throw new Error("trap"); } }),
+    ]) {
+      expect(() => assertedRoleMatchesGrant(hostile, "owner")).not.toThrow();
+      expect(() => assertedRoleMatchesGrant("owner", hostile)).not.toThrow();
+      expect(assertedRoleMatchesGrant(hostile, "owner")).toBe(false);
+      expect(assertedRoleMatchesGrant("owner", hostile)).toBe(false);
+    }
+  });
+
   // A thrown TypeError in an authority check is not fail-closed in practice: it
   // is handled by whatever try/catch is upstream, and a broad catch that logs
   // and continues means the check was skipped. A review marked the throwing
