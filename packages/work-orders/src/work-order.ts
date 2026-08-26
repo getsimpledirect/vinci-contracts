@@ -385,6 +385,19 @@ export function validateWorkOrder(input: unknown): ValidationResult<WorkOrder> {
     if (validKind && validIndependence && verifier.kind === "independent" && verifier.independence !== "separate-system") {
       issues.push(issue("/verifier/independence", "self_review_is_not_independent", "an independent verifier must run in a separate system; same-worker review is not independent"));
     }
+    // The rest of the matrix, closed: no verifier claims no independence; a
+    // human verifier's independence is "human"; deterministic checks run either
+    // in a separate system or inside the worker — nothing else is a coherent claim.
+    if (validKind && validIndependence) {
+      const coherent =
+        (verifier.kind === "none" && verifier.independence === "none")
+        || (verifier.kind === "human" && verifier.independence === "human")
+        || (verifier.kind === "deterministic" && (verifier.independence === "separate-system" || verifier.independence === "same-worker"))
+        || verifier.kind === "independent";
+      if (!coherent) {
+        issues.push(issue("/verifier/independence", "verifier_independence_incoherent", `independence "${String(verifier.independence)}" is not a coherent claim for a "${String(verifier.kind)}" verifier`));
+      }
+    }
   }
 
   if (!Array.isArray(record.rollbackConditions)) {

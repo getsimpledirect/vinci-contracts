@@ -474,3 +474,27 @@ describe("materiality boundary (review fixes)", () => {
     expect(classifyMateriality([{ path: "request", kind: "modified" }])).toBe("editorial");
   });
 });
+
+describe("mission contract fields (review fixes)", () => {
+  const codes = (order: unknown) => {
+    const r = validateWorkOrder(order);
+    return r.ok ? [] : r.issues.map((i) => i.code);
+  };
+
+  it("closes the verifier independence matrix", () => {
+    const base = validOrder();
+    expect(codes({ ...base, verifier: { ...base.verifier, kind: "none", independence: "separate-system" } })).toContain("verifier_independence_incoherent");
+    expect(codes({ ...base, verifier: { ...base.verifier, kind: "human", independence: "separate-system" } })).toContain("verifier_independence_incoherent");
+    expect(codes({ ...base, verifier: { ...base.verifier, kind: "deterministic", independence: "human" } })).toContain("verifier_independence_incoherent");
+    expect(codes({ ...base, verifier: { ...base.verifier, kind: "deterministic", independence: "same-worker" } })).not.toContain("verifier_independence_incoherent");
+  });
+
+  it("drives the escalation window and target guards", () => {
+    const base = validOrder();
+    const [first, ...rest] = base.escalationRules;
+    expect(codes({ ...base, escalationRules: [{ ...first, within: 0 }, ...rest] })).toContain("invalid_escalation_window");
+    expect(codes({ ...base, escalationRules: [{ ...first, within: -0 }, ...rest] })).toContain("invalid_escalation_window");
+    expect(codes({ ...base, escalationRules: [{ ...first, within: 1e21 }, ...rest] })).toContain("invalid_escalation_window");
+    expect(codes({ ...base, escalationRules: [{ ...first, to: { kind: "worker", workerId: "w-1" } }, ...rest] })).toContain("escalation_target_must_be_human");
+  });
+});
