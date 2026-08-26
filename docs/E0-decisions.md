@@ -397,3 +397,33 @@ material and stales current verification. Escalation rules are editorial: they
 change how the mission reaches a human when it cannot proceed, not what result
 was accepted. The fail-closed boundary remains unchanged—only explicitly
 editorial paths preserve a verdict.
+
+## D-next — Relay security facts are durable and bound (number assigned at merge)
+
+Device revocation, relay availability, transient host reachability, and the
+host's authority acknowledgement or rejection are durable run facts. They are
+not warnings: a warning describes a worker condition, while these events are
+the audit record for security state, degraded supervision, and whether a
+consequential command took effect. Reusing `worker.warning` would erase who is
+responsible for recording the fact and make consumers infer security semantics
+from an unrelated code.
+
+The payloads remain content-minimal and closed. An authority acknowledgement
+names the command and the digest of its envelope; the command kind is resolved
+from that envelope instead of duplicating the layer-3 command vocabulary in a
+layer-2 package. A rejection carries its closed reason code directly. A digest
+alone can prove which rejection record was named, but it cannot tell an
+operator why the host refused the command, so digest-only reasons are rejected
+as an audit design.
+
+Every event carries required `workspaceId` and required-but-nullable
+`organizationId`. Connection context is not durable history and may be gone by
+the time an event is replayed, exported, or investigated. Repeating the binding
+on every event makes each record independently attributable and lets append
+validation reject `binding_changed_within_run` before one run's history crosses
+a workspace or organization boundary.
+
+These additions move the frozen run-event schema from version 2 to version 3.
+Version-2 events are rejected rather than defaulted: the binding cannot be
+reconstructed safely, and a version-2 reader could silently discard the new
+security event types as unknown, which is worse than refusing version skew.

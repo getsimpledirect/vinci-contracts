@@ -6,6 +6,7 @@ export * from "./ids.ts";
 export * from "./meta.ts";
 export * from "./plain-record.ts";
 export * from "./result.ts";
+export * from "./remote-decisions.ts";
 export * from "./risk.ts";
 export * from "./scalars.ts";
 export * from "./schema-meta.ts";

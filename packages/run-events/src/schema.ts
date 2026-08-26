@@ -190,6 +190,8 @@ const TOP_LEVEL_FIELDS = [
   "schemaVersion",
   "eventId",
   "runId",
+  "organizationId",
+  "workspaceId",
   "sequence",
   "type",
   "actor",
@@ -219,14 +221,26 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
     }
   }
 
-  if (record.schemaVersion !== 2) {
-    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 2"));
+  if (record.schemaVersion !== 3) {
+    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 3"));
   }
-  for (const field of ["eventId", "runId", "idempotencyKey", "traceId"] as const) {
+  for (const field of ["eventId", "runId", "workspaceId", "idempotencyKey", "traceId"] as const) {
     const value = record[field];
     if (typeof value !== "string" || !ID_PATTERN.test(value)) {
       issues.push(issue(`/${field}`, "invalid_id", "an identifier is at most 128 safe characters"));
     }
+  }
+  if (
+    record.organizationId !== null
+    && (typeof record.organizationId !== "string" || !ID_PATTERN.test(record.organizationId))
+  ) {
+    issues.push(
+      issue(
+        "/organizationId",
+        "invalid_id",
+        "organizationId is required and is either null or an identifier of at most 128 safe characters",
+      ),
+    );
   }
   if (typeof record.sequence !== "number" || !Number.isSafeInteger(record.sequence) || record.sequence < 1) {
     // Zero is not an event. Acceptance's schema permits sequence 0 while its
@@ -276,7 +290,7 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
 
 export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
   id: "vinci.run-event",
-  version: 2,
+  version: 3,
   /**
    * FROZEN, not additive-only, and the pair below is why.
    *
@@ -319,5 +333,5 @@ export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
   unknownFields: "reject",
   malformedData: "fail-closed",
   migration:
-    "version 1 events are rejected; missing historical attention measurements cannot be inferred",
+    "version 2 events are rejected; a version 2 reader could silently drop unknown security events, which is worse than refusing version skew",
 };
