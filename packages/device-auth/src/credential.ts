@@ -1,7 +1,12 @@
+import { Buffer } from "node:buffer";
+import { createHash } from "node:crypto";
 import {
+  canonicalize,
   fail,
   hasField,
   isCanonicalTimestamp,
+  isIdentifier,
+  ownData,
   toPlainRecord,
   type PlainRecord,
   ok,
@@ -33,6 +38,17 @@ type Branded<T extends string> = string & { readonly [brand]: T };
  */
 export type KeyHash = Branded<"KeyHash">;
 
+export const DEVICE_PUBLIC_KEY_KINDS = ["Ed25519", "X25519"] as const;
+export type DevicePublicKeyKind = (typeof DEVICE_PUBLIC_KEY_KINDS)[number];
+
+/** Platform-certified public key material bound immutably to a credential. */
+export type DevicePublicKey = {
+  readonly kind: DevicePublicKeyKind;
+  readonly keyId: string;
+  /** Canonical unpadded base64url encoding of exactly 32 bytes. */
+  readonly key: string;
+};
+
 /**
  * The metadata identity of a stored credential. It carries **no secret
  * value** — only what the platform persists and needs for authorization
@@ -60,11 +76,17 @@ export type CredentialIdentity = {
  */
 export type DeviceCredential = CredentialIdentity & {
   readonly kind: "device";
+  /** Stable credential identity. Rotation always issues a new id. */
+  readonly id: string;
   readonly deviceId: DeviceId;
   /** A device credential always has a concrete surface; never the `null` dev-key case. */
   readonly clientType: ClientType;
   /** `acceptance` is impossible here by construction. */
   readonly scopes: readonly DeviceScope[];
+  /** `null` is reserved for a non-expiring, long-lived pairing credential. */
+  readonly expiresAt: Timestamp | null;
+  /** Public key certified for this credential; raw private key material is never present. */
+  readonly publicKey: DevicePublicKey | null;
 };
 
 /**
@@ -122,10 +144,16 @@ export function revoke<T extends CredentialIdentity>(
       },
     ]);
   }
+  const publicKey = ownData(identity, "publicKey");
   return ok(
     Object.freeze({
       ...identity,
       scopes: Object.freeze([...identity.scopes]),
+      ...(publicKey === null
+        ? { publicKey: null }
+        : typeof publicKey === "object"
+          ? { publicKey: Object.freeze({ ...(publicKey as DevicePublicKey) }) }
+          : {}),
       revokedAt: at,
     }) as Omit<T, "revokedAt"> & { readonly revokedAt: Timestamp },
   );
@@ -154,13 +182,18 @@ const KNOWN_CREDENTIAL_FIELDS = new Set([
   "kind",
   "deviceId",
   "workerId",
+  "id",
   "keyHash",
   "prefix",
   "clientType",
   "scopes",
   "createdAt",
+  "expiresAt",
+  "publicKey",
   "revokedAt",
 ]);
+
+const KNOWN_PUBLIC_KEY_FIELDS = new Set(["kind", "keyId", "key"]);
 
 const ACCEPTANCE_FORBIDDEN_ISSUE: ValidationIssue = {
   path: "/scopes",
@@ -181,6 +214,112 @@ const ACCEPTANCE_FORBIDDEN_ISSUE: ValidationIssue = {
  */
 function isTimestamp(value: unknown): value is Timestamp {
   return isCanonicalTimestamp(value);
+}
+
+function decodeCanonicalBase64Url(value: unknown): Buffer | undefined {
+  if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
+  const decoded = Buffer.from(value, "base64url");
+  return decoded.toString("base64url") === value ? decoded : undefined;
+}
+
+function validatePublicKey(
+  value: PlainRecord[string] | undefined,
+  path: string,
+  issues: ValidationIssue[],
+): DevicePublicKey | null | undefined {
+  if (value === null) return null;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    issues.push({
+      path,
+      code: "invalid_public_key",
+      message: "publicKey must be a declared public-key record or null",
+    });
+    return undefined;
+  }
+
+  const record = value as PlainRecord;
+
+  for (const key of Object.keys(record)) {
+    if (!KNOWN_PUBLIC_KEY_FIELDS.has(key)) {
+      issues.push({
+        path: `${path}/${key}`,
+        code: "unknown_public_key_field",
+        message: "a public key carries only kind, keyId, and key",
+      });
+    }
+  }
+  if (!(DEVICE_PUBLIC_KEY_KINDS as readonly unknown[]).includes(record.kind)) {
+    issues.push({
+      path: `${path}/kind`,
+      code: "invalid_public_key_kind",
+      message: "publicKey.kind must be Ed25519 or X25519",
+    });
+  }
+  if (!isIdentifier(record.keyId)) {
+    issues.push({
+      path: `${path}/keyId`,
+      code: "invalid_public_key_id",
+      message: "publicKey.keyId must be an identifier",
+    });
+  }
+  const decoded = decodeCanonicalBase64Url(record.key);
+  if (decoded === undefined) {
+    issues.push({
+      path: `${path}/key`,
+      code: "invalid_public_key_encoding",
+      message: "publicKey.key must be canonical unpadded base64url",
+    });
+  } else if (decoded.byteLength !== 32) {
+    issues.push({
+      path: `${path}/key`,
+      code: "invalid_public_key_length",
+      message: "Ed25519 and X25519 public keys are exactly 32 bytes",
+    });
+  }
+
+  if (issues.length > 0) return undefined;
+  return Object.freeze({
+    kind: record.kind as DevicePublicKeyKind,
+    keyId: record.keyId as string,
+    key: record.key as string,
+  });
+}
+
+/**
+ * Whether a validated credential has authority at one canonical instant.
+ * Revocation and expiry take effect at their timestamp, not one tick later.
+ */
+export function isCredentialActiveAt(
+  credential: DeviceCredential,
+  at: Timestamp,
+): boolean {
+  if (!isTimestamp(at)) return false;
+  const validated = validateDeviceCredential(credential);
+  if (!validated.ok) return false;
+  const { revokedAt, expiresAt } = validated.value;
+  const instant = Date.parse(at);
+  return (
+    (revokedAt === null || instant < Date.parse(revokedAt))
+    && (expiresAt === null || instant < Date.parse(expiresAt))
+  );
+}
+
+/**
+ * SHA-256 identity of the immutable authorization fields on a device
+ * credential. Revocation is state and is deliberately excluded; expiry and
+ * public-key rotation are identity and are deliberately covered.
+ */
+export function credentialIdentityDigest(credential: DeviceCredential): string {
+  const covered = {
+    id: credential.id,
+    deviceId: credential.deviceId,
+    clientType: credential.clientType,
+    scopes: credential.scopes,
+    createdAt: credential.createdAt,
+    expiresAt: credential.expiresAt,
+    publicKey: credential.publicKey,
+  };
+  return createHash("sha256").update(canonicalize(covered), "utf8").digest("hex");
 }
 
 /**
@@ -225,6 +364,9 @@ export function validateCredentialIdentity(value: unknown): ValidationResult<Cre
   for (const [field, variant] of [
     ["workerId", "worker"],
     ["deviceId", "device"],
+    ["id", "device"],
+    ["expiresAt", "device"],
+    ["publicKey", "device"],
   ] as const) {
     if (hasField(record, field)) {
       issues.push({
@@ -335,6 +477,32 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
   const known = base.value;
 
   const issues: ValidationIssue[] = [];
+  if (!isIdentifier(raw.id)) {
+    issues.push({ path: "/id", code: "invalid_id", message: "id must be an identifier" });
+  }
+  if (!hasField(raw, "expiresAt")) {
+    issues.push({
+      path: "/expiresAt",
+      code: "required_field",
+      message: "expiresAt is required; use null only for a non-expiring pairing credential",
+    });
+  } else if (raw.expiresAt !== null && !isTimestamp(raw.expiresAt)) {
+    issues.push({
+      path: "/expiresAt",
+      code: "invalid_timestamp",
+      message: "expiresAt must be an ISO-8601 timestamp or null",
+    });
+  }
+  let publicKey: DevicePublicKey | null | undefined;
+  if (!hasField(raw, "publicKey")) {
+    issues.push({
+      path: "/publicKey",
+      code: "required_field",
+      message: "publicKey is required; use null when no key is bound",
+    });
+  } else {
+    publicKey = validatePublicKey(raw.publicKey, "/publicKey", issues);
+  }
   // Without this, `{ kind: "device", workerId: "w1" }` validated as a device
   // and `{ kind: "worker", deviceId: "d1" }` as a worker — each validator
   // rewrote the discriminator to the variant it produces, so the tag a caller
@@ -374,11 +542,14 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
     Object.freeze({
       kind: "device",
       deviceId: deviceId as DeviceId,
+      id: raw.id as string,
       keyHash: known.keyHash,
       prefix: known.prefix,
       clientType: known.clientType as ClientType,
       scopes: Object.freeze([...known.scopes]) as readonly DeviceScope[],
       createdAt: known.createdAt,
+      expiresAt: raw.expiresAt as Timestamp | null,
+      publicKey: publicKey as DevicePublicKey | null,
       revokedAt: known.revokedAt,
     }),
     {},
@@ -390,8 +561,8 @@ export function validateDeviceCredential(value: unknown): ValidationResult<Devic
  */
 export const CREDENTIAL_IDENTITY_SCHEMA_META: SchemaMeta = {
   id: "vinci.device-auth.credential-identity",
-  version: 1,
-  compatibility: "additive-only",
+  version: 2,
+  compatibility: "frozen",
   /**
    * Rejected, not preserved — the D4 exception that also governs /credentials
    * in @getsimpledirect/vinci-policy. An unrecognised field on a credential may be the secret
@@ -400,7 +571,8 @@ export const CREDENTIAL_IDENTITY_SCHEMA_META: SchemaMeta = {
    */
   unknownFields: "reject",
   malformedData: "fail-closed",
-  migration: "none",
+  migration:
+    "Version 1 credentials lack required expiry and public-key identity fields and are rejected; an unknown expiry must never be inferred as trustworthy.",
 };
 
 /**
@@ -440,6 +612,15 @@ export function validateWorkerCredential(value: unknown): ValidationResult<Worke
       code: "field_not_valid_for_kind",
       message: "deviceId does not belong on a worker credential",
     });
+  }
+  for (const field of ["id", "expiresAt", "publicKey"] as const) {
+    if (hasField(raw, field)) {
+      issues.push({
+        path: `/${field}`,
+        code: "field_not_valid_for_kind",
+        message: `${field} belongs to a device credential, not a worker credential`,
+      });
+    }
   }
   if (known.scopes.some((s) => s === "acceptance")) {
     issues.push(ACCEPTANCE_FORBIDDEN_ISSUE);
