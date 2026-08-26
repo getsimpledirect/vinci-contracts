@@ -48,10 +48,13 @@ export type AuthorityCommandParams =
  * by command: free text never rides this envelope.
  *
  * Passing validation proves only the wire shape, lifetime, binding shape, and
- * relay-side `mayIssue` filter. It does NOT verify the signature. Relays and
- * hosts must verify `authorityCommandSigningPayload` with the identified key,
- * and the host independently re-checks binding, role, revocation, policy, and
- * live request state before treating the command as authoritative.
+ * static role-to-command `mayIssue` filter. It does NOT verify the signature or
+ * prove that the device holds `assertedRole`. The relay must compare
+ * `assertedRole` with the current Platform grant using
+ * `assertedRoleMatchesGrant` and refuse a mismatch. Relays and hosts must also
+ * verify `authorityCommandSigningPayload` with the identified key, and the host
+ * independently re-checks binding, role, revocation, policy, and live request
+ * state before treating the command as authoritative.
  */
 type AuthorityCommandContext = {
   readonly schemaVersion: 1;
@@ -165,7 +168,7 @@ function validateParams(
 
 export function validateAuthorityCommandEnvelope(
   input: unknown,
-  now: string = new Date().toISOString(),
+  now: string,
 ): ValidationResult<AuthorityCommandEnvelope> {
   const plain = toPlainRecord(input);
   if (!plain.ok) return plain;
@@ -224,6 +227,8 @@ export function validateAuthorityCommandEnvelope(
     } else if (expiresMs - issuedMs > MAX_AUTHORITY_COMMAND_LIFETIME_MS) {
       issues.push(issue("/expiresAt", "lifetime_exceeded", "an authority command may live for at most 10 minutes"));
     }
+    // "Already expired" is relative to the explicit caller-supplied clock.
+    // Reading Date.now() here would make identical validation calls disagree.
     if (isCanonicalTimestamp(now) && expiresMs <= Date.parse(now)) {
       issues.push(issue("/expiresAt", "expired", "the authority command has expired"));
     }

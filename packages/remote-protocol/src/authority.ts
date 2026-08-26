@@ -89,6 +89,10 @@ const PERMITTED: Readonly<Record<SessionRole, readonly RemoteCommandKind[]>> = {
 /**
  * May a device in this role issue this command?
  *
+ * This tests the static role-to-command map only. It does not prove that the
+ * device actually holds `role`; the relay must compare the asserted role with
+ * the current Platform grant before using this result.
+ *
  * Returns false for anything unrecognised — it does not throw.
  *
  * This is an authority check, and a thrown TypeError in an authority check is
@@ -135,6 +139,21 @@ export function mayIssue(role: SessionRole, command: RemoteCommandKind): boolean
   // programming error, and denying is the safe reading of it.
   if (!Array.isArray(permitted)) return false;
   return permitted.includes(command);
+}
+
+/**
+ * Does the envelope's asserted role equal the role in the current Platform grant?
+ *
+ * Both inputs cross an authority boundary, so unknown or hostile values deny
+ * rather than throwing or being coerced.
+ */
+export function assertedRoleMatchesGrant(
+  assertedRole: unknown,
+  grantedRole: unknown,
+): boolean {
+  return isSessionRole(assertedRole)
+    && isSessionRole(grantedRole)
+    && assertedRole === grantedRole;
 }
 
 /**

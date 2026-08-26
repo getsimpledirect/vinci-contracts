@@ -8,9 +8,9 @@ import {
   type ValidationIssue,
   type ValidationResult,
 } from "@getsimpledirect/vinci-contracts";
+import { decodeCanonicalBase64Url } from "@getsimpledirect/vinci-device-auth";
 import { validateSessionBindingRef, type SessionBindingRef } from "./binding-ref.ts";
 import {
-  isBase64Url,
   issue,
   prefixIssues,
   rejectUnknownFields,
@@ -73,10 +73,20 @@ export function validateSessionKeyWrap(input: unknown): ValidationResult<Session
   }
   validateId(record.recipientDeviceId, "/recipientDeviceId", issues);
   validateId(record.recipientKeyId, "/recipientKeyId", issues);
-  for (const field of ["ephemeralPublicKey", "wrappedKey"] as const) {
-    if (!isBase64Url(record[field])) {
-      issues.push(issue(`/${field}`, "invalid_base64url", `${field} must be unpadded base64url`));
-    }
+  const ephemeralPublicKey = decodeCanonicalBase64Url(record.ephemeralPublicKey);
+  if (ephemeralPublicKey === undefined) {
+    issues.push(issue("/ephemeralPublicKey", "invalid_base64url", "ephemeralPublicKey must be canonical unpadded base64url"));
+  } else if (ephemeralPublicKey.byteLength !== 32) {
+    issues.push(issue("/ephemeralPublicKey", "invalid_public_key_length", "an X25519 public key is exactly 32 bytes"));
+  }
+
+  const wrappedKey = decodeCanonicalBase64Url(record.wrappedKey);
+  if (wrappedKey === undefined) {
+    issues.push(issue("/wrappedKey", "invalid_base64url", "wrappedKey must be canonical unpadded base64url"));
+  // V1 wraps one 32-byte content key. A 64-byte ceiling leaves room for the
+  // AEAD tag and small suite framing while bounding attacker-controlled input.
+  } else if (wrappedKey.byteLength > 64) {
+    issues.push(issue("/wrappedKey", "wrapped_key_too_large", "wrappedKey may decode to at most 64 bytes"));
   }
   if (!isCanonicalTimestamp(record.createdAt)) {
     issues.push(issue("/createdAt", "invalid_timestamp", "createdAt must be a canonical UTC timestamp"));

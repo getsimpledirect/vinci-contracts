@@ -24,6 +24,7 @@ import {
 
 const NOW = "2026-08-26T12:05:00.000Z";
 const SHA256 = "a".repeat(64);
+const base64UrlBytes = (length: number): string => Buffer.alloc(length, 0xa5).toString("base64url");
 
 const bindingRef = (overrides: Record<string, unknown> = {}) => ({
   protocolVersion: REMOTE_PROTOCOL_VERSION,
@@ -200,6 +201,34 @@ describe("AuthorityCommandEnvelope is a closed relay filter", () => {
     expect(text).toContain('"command":"pause"');
   });
 
+  it("changes signing bytes for every covered authority field but not signature.value", () => {
+    const validated = (overrides: Record<string, unknown> = {}) => {
+      const result = validateAuthorityCommandEnvelope(commandEnvelope(overrides), NOW);
+      expect(result.ok).toBe(true);
+      if (!result.ok) throw new Error("test fixture must validate");
+      return authorityCommandSigningPayload(result.value);
+    };
+    const baseline = validated();
+    for (const [field, overrides] of [
+      ["command", { command: "restrict_to_read_only" }],
+      ["binding.runId", { binding: bindingRef({ runId: "run-2" }) }],
+      ["sequence", { sequence: 1 }],
+      ["expiresAt", { expiresAt: "2026-08-26T12:09:00.000Z" }],
+    ] as const) {
+      expect(validated(overrides), field).not.toEqual(baseline);
+    }
+    expect(validated({ signature: { alg: "Ed25519", value: "BAUG" } })).toEqual(baseline);
+  });
+
+  it("judges expiry deterministically against the required caller-supplied now", () => {
+    const envelope = commandEnvelope();
+    const beforeExpiry = validateAuthorityCommandEnvelope(envelope, "2026-08-26T12:09:59.999Z");
+    const atExpiry = validateAuthorityCommandEnvelope(envelope, "2026-08-26T12:10:00.000Z");
+    expect(beforeExpiry.ok).toBe(true);
+    expect(issueCodes(atExpiry)).toContain("expired");
+    expect(validateAuthorityCommandEnvelope(envelope, "2026-08-26T12:10:00.000Z")).toEqual(atExpiry);
+  });
+
   it("does not confuse shape validation with signature verification", () => {
     expect(validateAuthorityCommandEnvelope(commandEnvelope({ signature: { alg: "Ed25519", value: "AAAA" } }), NOW).ok).toBe(true);
   });
@@ -268,7 +297,7 @@ describe("the E2E suite and key wrap are data, not cryptography", () => {
     suiteId: E2E_SUITE_V1.id,
     recipientDeviceId: "device-1",
     recipientKeyId: "key-1",
-    ephemeralPublicKey: "AQID",
+    ephemeralPublicKey: base64UrlBytes(32),
     wrappedKey: "BAUG",
     createdAt: "2026-08-26T12:00:00.000Z",
     ...overrides,
@@ -291,6 +320,15 @@ describe("the E2E suite and key wrap are data, not cryptography", () => {
     expect(issueCodes(validateSessionKeyWrap(wrap({ ephemeralPublicKey: "not+url" })))).toContain("invalid_base64url");
     expect(issueCodes(validateSessionKeyWrap(wrap({ createdAt: "today" })))).toContain("invalid_timestamp");
     expect(issueCodes(validateSessionKeyWrap(wrap({ plaintextKey: "secret" })))).toContain("unknown_field");
+  });
+
+  it("requires a canonical 32-byte X25519 key and bounds wrappedKey to 64 bytes", () => {
+    for (const length of [31, 33]) {
+      expect(issueCodes(validateSessionKeyWrap(wrap({ ephemeralPublicKey: base64UrlBytes(length) })))).toContain("invalid_public_key_length");
+    }
+    expect(issueCodes(validateSessionKeyWrap(wrap({ ephemeralPublicKey: `${base64UrlBytes(32)}=` })))).toContain("invalid_base64url");
+    expect(validateSessionKeyWrap(wrap({ wrappedKey: base64UrlBytes(64) })).ok).toBe(true);
+    expect(issueCodes(validateSessionKeyWrap(wrap({ wrappedKey: base64UrlBytes(65) })))).toContain("wrapped_key_too_large");
   });
 });
 
