@@ -397,3 +397,15 @@ material and stales current verification. Escalation rules are editorial: they
 change how the mission reaches a human when it cannot proceed, not what result
 was accepted. The fail-closed boundary remains unchanged—only explicitly
 editorial paths preserve a verdict.
+
+## D-next — Every session frame carries its full binding (number assigned at merge)
+
+A session frame carries `protocolVersion`, required-but-nullable
+`organizationId`, `workspaceId`, `runId`, and `sessionId` as authenticated
+header material. A relay compares all five fields with the authenticated
+connection binding and refuses any mismatch. The body remains ciphertext, so
+the relay can refuse a misrouted frame without decrypting session content.
+
+This is a compatibility break for the frozen frame envelope. The session-frame
+schema moves from version 1 to version 2, and version-1 frames are rejected
+rather than assigned a binding: an unbound frame cannot be routed safely.

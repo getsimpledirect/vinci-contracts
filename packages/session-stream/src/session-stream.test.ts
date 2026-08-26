@@ -8,6 +8,7 @@ import {
   MAX_TOOL_SUMMARY_BYTES,
   SESSION_FRAME_KINDS,
   SESSION_FRAME_SCHEMA_META,
+  frameMatchesBinding,
   nextSeqIsValid,
   validateSessionFrame,
 } from "./index.ts";
@@ -20,6 +21,8 @@ function frame(kind: string, body: Record<string, unknown>, overrides: Record<st
     protocolVersion: REMOTE_PROTOCOL_VERSION,
     sessionId: "session-1",
     runId: "run-1",
+    organizationId: null,
+    workspaceId: "workspace-1",
     seq: 0,
     at: AT,
     kind,
@@ -72,10 +75,108 @@ describe("session frame kinds", () => {
     ).toBe(false);
   });
 
+  it("requires an explicit organization binding and accepts explicit null", () => {
+    const { organizationId: _dropped, ...withoutOrganization } = frame(
+      "warning",
+      VALID_BODIES.warning,
+    );
+    const absent = validateSessionFrame(withoutOrganization);
+    expect(absent.ok).toBe(false);
+    if (!absent.ok) {
+      expect(absent.issues).toContainEqual(
+        expect.objectContaining({ path: "/organizationId", code: "required_field" }),
+      );
+    }
+
+    expect(
+      validateSessionFrame(
+        frame("warning", VALID_BODIES.warning, { organizationId: null }),
+      ).ok,
+    ).toBe(true);
+  });
+
+  it.each([
+    ["organizationId", "not an identifier", "/organizationId"],
+    ["workspaceId", "not an identifier", "/workspaceId"],
+  ])("rejects an invalid binding field %s", (field, value, path) => {
+    const result = validateSessionFrame(
+      frame("warning", VALID_BODIES.warning, { [field]: value }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ path, code: "invalid_id" }),
+      );
+    }
+  });
+
+  it("rejects an absent workspace binding", () => {
+    const { workspaceId: _dropped, ...withoutWorkspace } = frame(
+      "warning",
+      VALID_BODIES.warning,
+    );
+    const result = validateSessionFrame(withoutWorkspace);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues).toContainEqual(
+        expect.objectContaining({ path: "/workspaceId", code: "invalid_id" }),
+      );
+    }
+  });
+
   it("declares the frame schema ephemeral", () => {
     expect(() => assertSchemaMetaComplete(SESSION_FRAME_SCHEMA_META)).not.toThrow();
+    expect(SESSION_FRAME_SCHEMA_META.version).toBe(2);
+    expect(SESSION_FRAME_SCHEMA_META.migration).not.toBe("none");
     expect(SESSION_FRAME_SCHEMA_META.retention).toBe("ephemeral");
     expect(SESSION_FRAME_SCHEMA_META.unknownFields).toBe("reject");
+  });
+});
+
+describe("frame binding", () => {
+  it("matches all five authenticated binding fields exactly", () => {
+    const result = validateSessionFrame(frame("warning", VALID_BODIES.warning));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const binding = {
+      protocolVersion: result.value.protocolVersion,
+      organizationId: result.value.organizationId,
+      workspaceId: result.value.workspaceId,
+      runId: result.value.runId,
+      sessionId: result.value.sessionId,
+    };
+    expect(frameMatchesBinding(result.value, binding)).toBe(true);
+
+    const mismatches: Array<[keyof typeof binding, unknown]> = [
+      ["protocolVersion", binding.protocolVersion + 1],
+      ["organizationId", "organization-elsewhere"],
+      ["workspaceId", "workspace-elsewhere"],
+      ["runId", "run-elsewhere"],
+      ["sessionId", "session-elsewhere"],
+    ];
+    for (const [field, mismatch] of mismatches) {
+      expect(
+        frameMatchesBinding(result.value, { ...binding, [field]: mismatch } as typeof binding),
+        field,
+      ).toBe(false);
+    }
+  });
+
+  it("distinguishes explicit null from an organization identifier", () => {
+    const result = validateSessionFrame(frame("warning", VALID_BODIES.warning));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    expect(
+      frameMatchesBinding(result.value, {
+        protocolVersion: result.value.protocolVersion,
+        organizationId: "organization-1" as typeof result.value.organizationId,
+        workspaceId: result.value.workspaceId,
+        runId: result.value.runId,
+        sessionId: result.value.sessionId,
+      }),
+    ).toBe(false);
   });
 });
 
