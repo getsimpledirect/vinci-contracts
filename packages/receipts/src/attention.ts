@@ -13,6 +13,10 @@ export type AttentionPerVerifiedOutcome = {
  * them, and carries no per-human identity. Every receipt contributes attention
  * to the numerator; only `VERIFIED_PASS` contributes an outcome. With no
  * verified outcomes the ratio is `null`, never infinity or a misleading zero.
+ *
+ * A receipt carries no staleness: pass the CURRENT receipt per run. Feeding a
+ * superseded receipt and its correction together counts the outcome twice —
+ * deduplicating by run is the caller's job, and this function does not guess.
  */
 export function attentionPerVerifiedOutcome(
   receipts: readonly Receipt[],

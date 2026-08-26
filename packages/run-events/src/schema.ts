@@ -89,7 +89,7 @@ function validatePayloadValue(
       }
       break;
     case "count":
-      if (typeof inner !== "number" || !Number.isSafeInteger(inner) || inner < 0) {
+      if (typeof inner !== "number" || !Number.isSafeInteger(inner) || inner < 0 || Object.is(inner, -0)) {
         issues.push(issue(path, "invalid_count", "a count is a non-negative safe integer"));
       }
       break;

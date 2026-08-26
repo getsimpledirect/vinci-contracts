@@ -218,6 +218,14 @@ describe("receipt validation", () => {
     ["bad digest shape", () => unsignedReceipt({ digest: "A".repeat(64) })],
     ["wrong final state", () => unsignedReceipt({ finalState: "RUNNING" })],
     ["wrong verdict", () => unsignedReceipt({ verdict: "FAILED" })],
+    // The receipt used to hand-roll its own verdict list (VERIFIED_FAIL, UNVERIFIED) that
+    // disagreed with the canonical VerdictStatus its own field is typed with. Pinned.
+    ["legacy verdict vocabulary", () => unsignedReceipt({ verdict: "VERIFIED_FAIL" })],
+    ["wrong receipt version", () => unsignedReceipt({ receiptVersion: 1 })],
+    [
+      "signed zero attention count",
+      () => unsignedReceipt({ humanAttention: { seconds: -0, interruptions: 0, decisions: 0, escalations: 0 } }),
+    ],
     ["negative duration", () => unsignedReceipt({ activeDuration: -1 })],
     ["missing human attention", () => unsignedReceipt({ humanAttention: undefined })],
     ["non-object human attention", () => unsignedReceipt({ humanAttention: 1 })],

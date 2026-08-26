@@ -194,6 +194,10 @@ export const PAYLOAD_FIELDS = {
     snapshotDigest: { kind: "digest", required: true },
     staled: { kind: "flag", required: true },
   },
+  // The four attention aggregates are the HOST's claim about the run, in the
+  // same sense the terminal state is: the contract cannot reconcile them against
+  // the per-event humanSeconds (a consumer holding the full event stream can),
+  // so a reader must treat a disagreement as the host's error, not the events'.
   "run.completed": {
     terminalState: { kind: "enum", required: true, members: ["DONE", "DONE_UNVERIFIED"] },
     receiptDigest: { kind: "digest", required: false },

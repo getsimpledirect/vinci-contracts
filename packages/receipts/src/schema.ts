@@ -90,7 +90,7 @@ function validateHumanAttention(raw: unknown, path: string, issues: ValidationIs
       continue;
     }
     const value = attention[field];
-    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
       issues.push(
         issue(
           `${path}/${field}`,
