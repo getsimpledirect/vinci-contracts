@@ -1,0 +1,6 @@
+# Fingerprints of deliberate fake secrets used as hostile-input fixtures.
+# Each is a documented sample value (AWS EXAMPLE key, gitleaks' own sample PAT)
+# in a test asserting that secret-shaped input is REJECTED. Verified 2026-08-26.
+# Format: commit:file:rule:line
+6c2756f12c1226dd21bff2f54ff48230c0f5f49d:packages/run-events/src/run-events.test.ts:github-pat:415
+0e33c8c59af7b3bf4b9be2d0cf76c08a9b6b53e6:packages/approvals/src/approvals.test.ts:github-pat:202
