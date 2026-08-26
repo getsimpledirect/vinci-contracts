@@ -349,3 +349,29 @@ compatibility break, so `receiptVersion` and the receipt schema metadata also
 bump to 2. Package versions remain in repository lockstep at 0.1.0.
 Version-1 records are rejected rather than backfilled: the missing measurement
 cannot be inferred after the fact without inventing institutional-cost data.
+## D11 — Per-action autonomy and adapter trust are independent axes
+
+**
+
+An autonomy rung belongs to one requested action. It says how far that action
+may proceed on its own: observe, recommend, sandbox, reversible,
+bounded-production, or human-reserved. Adapter trust is a separate axis. It
+describes what an adapter can enforce, using its own inventoried → observed →
+supervised → governed → assured ladder. A highly trusted adapter does not make
+an irreversible action autonomous, and a low-risk action does not prove that an
+adapter can enforce its boundary. Policy and UI surfaces must not substitute
+one axis for the other.
+
+The worker may report a claimed reversibility class, but that claim is advisory
+because the worker is the party asking for authority. Treating its assertion as
+the authority check would let a request widen its own permission by relabelling
+an irreversible side effect. Evaluation therefore reads only the host- or
+policy-classified reversibility record; the worker claim remains available for
+audit and disagreement detection.
+
+Defaults fail closed at both boundaries. A consequential action class missing
+from `autonomyCeilings` is treated as `human_reserved`, so it cannot be
+automatically allowed. The irreversible-without-approval allowlist defaults to
+empty, and a conditionally reversible action without an available checkpoint is
+treated as irreversible. These defaults require an explicit policy edit before
+authority expands; schema or producer omission never grants it.

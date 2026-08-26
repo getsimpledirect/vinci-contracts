@@ -410,6 +410,8 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-contracts.isTerminalState": "enum membership",
   "@getsimpledirect/vinci-contracts.isVerdictStatus": "enum membership",
   "@getsimpledirect/vinci-contracts.isConsequentialActionClass": "enum membership",
+  "@getsimpledirect/vinci-policy.isAutonomyRung": "enum membership",
+  "@getsimpledirect/vinci-policy.compareAutonomyRungs": "ordinal comparison over typed enum members; not a permission",
   "@getsimpledirect/vinci-contracts.terminalStateOf": "total map lookup, returns undefined for unknown",
   "@getsimpledirect/vinci-contracts.toPlainRecord": "IS the snapshot boundary; has its own suite",
   "@getsimpledirect/vinci-contracts.canonicalize": "encoder, not a guard; golden vectors pin its bytes",
