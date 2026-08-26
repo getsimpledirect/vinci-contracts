@@ -327,3 +327,39 @@ describe("work-contract amendments are append-only", () => {
     expect(CONTRACT_AMENDMENT_SCHEMA_META).toMatchObject({ version: 1, compatibility: "frozen" });
   });
 });
+
+describe("materiality boundary (review fixes)", () => {
+  const twoCriteria = () => ({
+    ...validOrder(),
+    acceptanceCriteria: [
+      ...validOrder().acceptanceCriteria,
+      { id: "c.docs", statement: "The limit is documented.", verifiedBy: "Docs review." },
+    ],
+  });
+  const meta = { amendmentId: "amend-reorder", changedBy: "george", changedAt: "2026-08-26T00:00:00.000Z", reason: "tidy" };
+
+  it("a reorder-only patch is not an amendment at all", () => {
+    const previous = twoCriteria();
+    expect(() =>
+      amendWorkOrder(previous, { acceptanceCriteria: [...previous.acceptanceCriteria].reverse() }, meta),
+    ).toThrow(/no_contract_changes/);
+  });
+
+  it("reordering identical criteria alongside an editorial change stays editorial", () => {
+    const previous = twoCriteria();
+    const { amendment } = amendWorkOrder(
+      previous,
+      { acceptanceCriteria: [...previous.acceptanceCriteria].reverse(), request: "Add rate limiting to the public API (v2 wording)." },
+      meta,
+    );
+    expect(amendment.changes.map((c) => c.path)).toEqual(["request"]);
+    expect(amendment.materiality).toBe("editorial");
+    expect(verificationIsStaleAfter(amendment)).toBe(false);
+  });
+
+  it("fails closed: a path outside EDITORIAL_PATHS is material", () => {
+    expect(classifyMateriality([{ path: "scope", kind: "modified" }])).toBe("material");
+    expect(classifyMateriality([{ path: "not-a-known-path" as never, kind: "modified" }])).toBe("material");
+    expect(classifyMateriality([{ path: "request", kind: "modified" }])).toBe("editorial");
+  });
+});

@@ -39,6 +39,9 @@ export const MATERIAL_PATHS = [
   "grantedAuthority",
 ] as const satisfies readonly ContractChangePath[];
 
+/** The only paths whose change leaves a current verdict current. Everything else is material. */
+export const EDITORIAL_PATHS = ["request", "attentionBudget", "expiresAt"] as const;
+
 export type ContractAmendment = {
   readonly schemaVersion: 1;
   readonly amendmentId: string;
@@ -185,7 +188,11 @@ export function validateContractAmendment(input: unknown): ValidationResult<Cont
 
 /** Classify from the exported rule so every consumer applies the same staleness boundary. */
 export function classifyMateriality(changes: readonly ContractChange[]): "material" | "editorial" {
-  return changes.some((change) => (MATERIAL_PATHS as readonly ContractChangePath[]).includes(change.path))
+  // Fail closed on a staleness boundary: a path that is not explicitly
+  // editorial is material. Only EDITORIAL_PATHS may leave a verdict current.
+  return changes.some(
+    (change) => !(EDITORIAL_PATHS as readonly ContractChangePath[]).includes(change.path),
+  )
     ? "material"
     : "editorial";
 }
@@ -237,9 +244,9 @@ function diffCriteria(
   for (const criterion of next) {
     if (!oldById.has(criterion.id)) changes.push({ path: "acceptanceCriteria", kind: "added" });
   }
-  if (changes.length === 0 && !sameValue(previous, next)) {
-    changes.push({ path: "acceptanceCriteria", kind: "modified" });
-  }
+  // Same ids, same content (in-place rewrites already threw above): the only
+  // remaining difference is ORDER, and order carries no meaning for criteria.
+  // A reorder must not read as a material change and stale verification.
   return changes;
 }
 

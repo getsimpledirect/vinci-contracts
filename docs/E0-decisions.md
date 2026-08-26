@@ -256,9 +256,10 @@ as removal of the old id and addition under a new id; it is never rewritten in
 place.
 
 Adding required `contractVersion` and conditional `supersedes` fields is not
-purely additive, and `WorkOrder` was already declared frozen. Following D3's
-rule that every non-additive schema change increments the inline version,
-`WorkOrder.schemaVersion` and `WORK_ORDER_SCHEMA_META.version` move from 1 to 2.
+purely additive, and `WorkOrder` was already declared frozen. D3 requires every
+schema to carry its own compatibility contract, and a newly required field is a
+compatibility break by that contract's own terms, so `WorkOrder.schemaVersion`
+and `WORK_ORDER_SCHEMA_META.version` move from 1 to 2.
 Migration is explicit: a legacy schema-v1 work order becomes schema v2 with
 `contractVersion: 1` and no `supersedes`. Validation does not silently supply
 that value, because doing so would hide which records were actually migrated.
