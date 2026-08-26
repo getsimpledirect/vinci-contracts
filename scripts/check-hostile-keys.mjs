@@ -79,7 +79,6 @@ function hostileInputs() {
  */
 const AUTHORITY_GUARDS = [
   {
-<<<<<<< HEAD
     pkg: "@getsimpledirect/vinci-device-auth",
     export: "isCredentialActiveAt",
     label: "isCredentialActiveAt(credential, at)",
@@ -88,7 +87,8 @@ const AUTHORITY_GUARDS = [
       fn({ kind: "device", id: "c", deviceId: "d", keyHash: "a".repeat(64), prefix: "p", clientType: "work", scopes: ["inference"], createdAt: "2026-08-26T11:00:00.000Z", revokedAt: null, expiresAt: "2026-08-26T12:10:00.000Z", publicKey: null }, "2026-08-26T12:00:00.000Z") === true
       && fn({ kind: "device", id: "c", deviceId: "d", keyHash: "a".repeat(64), prefix: "p", clientType: "work", scopes: ["inference"], createdAt: "2026-08-26T11:00:00.000Z", revokedAt: "2026-08-26T12:00:00.000Z", expiresAt: null, publicKey: null }, "2026-08-26T12:00:00.000Z") === false
       && fn({ kind: "device", id: "c", deviceId: "d", keyHash: "a".repeat(64), prefix: "p", clientType: "work", scopes: ["inference"], createdAt: "2026-08-26T11:00:00.000Z", revokedAt: null, expiresAt: "2026-08-26T12:00:00.000Z", publicKey: null }, "2026-08-26T12:00:00.000Z") === false,
-=======
+  },
+  {
     pkg: "@getsimpledirect/vinci-session-stream",
     export: "frameMatchesBinding",
     label: "frameMatchesBinding(frame, binding)",
@@ -133,7 +133,6 @@ const AUTHORITY_GUARDS = [
       return fn(frame, { ...frame }) === true
         && fn(frame, { ...frame, organizationId: null }) === false;
     },
->>>>>>> origin/main
   },
   {
     pkg: "@getsimpledirect/vinci-worker-capabilities",
@@ -373,12 +372,9 @@ const AUTHORITY_GUARDS = [
  * though the conclusion held.
  */
 const REQUIRED_GUARDS = [
-<<<<<<< HEAD
   "isCredentialActiveAt(credential, at)",
-=======
   "frameMatchesBinding(frame, binding)",
   "frameMatchesBinding(validFrame, binding)",
->>>>>>> origin/main
   "mayIssue(role, 'pause')",
   "mayIssue('owner', command)",
   "isGrantStrictlyNarrower(a, b)",
