@@ -6,15 +6,19 @@ Package names use the organization-owned `@getsimpledirect` scope required by Gi
 
 ## The Layer Hierarchy
 
-This repository enforces a strict downward dependency rule: Layer 0 has no dependencies; Layer 1 packages depend only on Layer 0; Layer 2 packages depend on Layer 0 and Layer 1. This rule is checked by the gate across package manifests, TypeScript imports, tsconfig project references, and tsconfig path aliases including extends chains. A circular dependency anywhere fails the build, because each layer's validator cannot safely invoke one from a higher layer.
+This repository enforces a strict downward dependency rule: a package may depend only on packages in lower layers, never on its own layer or above. The rule is checked by the gate across package manifests, TypeScript imports, tsconfig project references, and tsconfig path aliases including extends chains. A circular dependency anywhere fails the build, because each layer's validator cannot safely invoke one from a higher layer. The table below is the layering `scripts/check-dependency-graph.mjs` enforces; if they ever disagree, the script is right and this table is stale.
 
 | Layer | Packages |
 |-------|----------|
-| **0** | `contracts` (scalars, actors, IDs, base types) |
-| **1** | `evidence`, `policy`, `work-orders`, `approvals`, `device-auth`, `remote-protocol`, `model-classes` |
-| **2** | `receipts`, `run-events` |
+| **0** | `contracts` (scalars, actors, IDs, base types, validation result) |
+| **1** | `policy`, `model-classes`, `evidence`, `approvals`, `device-auth` |
+| **2** | `receipts`, `run-events`, `work-orders` |
+| **3** | `remote-protocol` (session identity, roles, the authority channel) |
+| **4** | `session-stream` (the ephemeral human-facing channel of a remote session) |
 
-Each layer knows everything below it; nothing above. Layers 1 and 2 export only the types and validators they define—never re-export upward.
+Each layer knows everything below it; nothing above. Packages export only the types and validators they define—never re-export upward.
+
+Three channels, three packages, deliberately not one: `run-events` (layer 2) is the durable, content-minimal record — its payload values are ids, enums, counts, digests, timestamps and flags, never free text; `remote-protocol` (layer 3) carries signed authority commands; `session-stream` (layer 4) carries what a supervising human sees while a worker runs — current action, a bounded diff, a question, a warning — with `retention: "ephemeral"` so it is never mistaken for the record.
 
 ## Using the Record Types
 
