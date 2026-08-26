@@ -1,3 +1,5 @@
+import { WORKER_WARNING_CODES } from "@getsimpledirect/vinci-run-events";
+
 import type { ArtifactId } from "@getsimpledirect/vinci-contracts";
 
 /** Closed deliberately: internal model reasoning is not session-stream data. */
@@ -39,7 +41,17 @@ export type QuestionBody = {
   readonly prompt: string;
 };
 
+/** A closed code from the durable `worker.warning` vocabulary. */
+export type WorkerWarningCode = (typeof WORKER_WARNING_CODES)[number];
+
 export type WarningBody = {
+  /**
+   * Correlates this ephemeral, human-readable line to the durable
+   * `worker.warning` event, which carries only the code and a count. The code
+   * is the join key; the message is the display text the durable record
+   * deliberately does not hold.
+   */
+  readonly reasonCode: WorkerWarningCode;
   readonly message: string;
 };
 

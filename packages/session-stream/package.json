@@ -10,7 +10,9 @@
     "package.json"
   ],
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "registry": "https://registry.npmjs.org",
+    "access": "public",
+    "provenance": true
   },
   "repository": {
     "type": "git",
@@ -25,7 +27,8 @@
   },
   "dependencies": {
     "@getsimpledirect/vinci-contracts": "0.1.0",
-    "@getsimpledirect/vinci-remote-protocol": "0.1.0"
+    "@getsimpledirect/vinci-remote-protocol": "0.1.0",
+    "@getsimpledirect/vinci-run-events": "0.1.0"
   },
   "devDependencies": {
     "typescript": "5.9.3"

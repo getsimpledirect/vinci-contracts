@@ -38,7 +38,7 @@ const VALID_BODIES = {
     digest: DIGEST,
   },
   question: { questionId: "question-1", prompt: "Which environment should I deploy to?" },
-  warning: { message: "The local cache is stale." },
+  warning: { reasonCode: "provider_stalled", message: "The provider has not answered in 40s." },
   artifact_preview: {
     artifactId: "artifact-1",
     mime: "text/plain",
@@ -237,5 +237,22 @@ describe("durable and ephemeral envelopes are mutually exclusive", () => {
     const sessionFrame = frame("question", VALID_BODIES.question);
     expect(validateSessionFrame(sessionFrame).ok).toBe(true);
     expect(validateRunEvent(sessionFrame).ok).toBe(false);
+  });
+});
+
+describe("warning frames correlate to the durable worker.warning vocabulary", () => {
+  it("rejects a reasonCode outside WORKER_WARNING_CODES", () => {
+    const result = validateSessionFrame(
+      frame("warning", { reasonCode: "something_else", message: "free text" }),
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.issues.map((i) => i.code)).toContain("unknown_reason_code");
+    }
+  });
+
+  it("rejects a warning with no reasonCode at all", () => {
+    const result = validateSessionFrame(frame("warning", { message: "orphan" }));
+    expect(result.ok).toBe(false);
   });
 });

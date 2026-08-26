@@ -25,6 +25,9 @@
     },
     {
       "path": "../remote-protocol"
+    },
+    {
+      "path": "../run-events"
     }
   ]
 }

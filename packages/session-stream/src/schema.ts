@@ -1,3 +1,8 @@
+import { WORKER_WARNING_CODES } from "@getsimpledirect/vinci-run-events";
+function isWorkerWarningCode(value: unknown): value is (typeof WORKER_WARNING_CODES)[number] {
+  return typeof value === "string" && (WORKER_WARNING_CODES as readonly string[]).includes(value);
+}
+
 import {
   fail,
   isCanonicalTimestamp,
@@ -40,7 +45,7 @@ const BODY_FIELDS: Readonly<Record<SessionFrameKind, readonly string[]>> = {
   tool_activity: ["toolName", "summary"],
   diff_preview: ["path", "hunk", "truncated", "digest"],
   question: ["questionId", "prompt"],
-  warning: ["message"],
+  warning: ["message", "reasonCode"],
   artifact_preview: ["artifactId", "mime", "caption", "textExcerpt", "digest"],
   redaction_notice: ["count", "category"],
 };
@@ -214,6 +219,15 @@ function validateBody(kind: SessionFrameKind, body: PlainRecord, issues: Validat
       requiredText(body.prompt, "/body/prompt", issues);
       break;
     case "warning":
+      if (!isWorkerWarningCode(body.reasonCode)) {
+        issues.push(
+          issue(
+            "/body/reasonCode",
+            "unknown_reason_code",
+            `expected one of ${WORKER_WARNING_CODES.join(", ")}`,
+          ),
+        );
+      }
       requiredText(body.message, "/body/message", issues);
       break;
     case "artifact_preview": {
