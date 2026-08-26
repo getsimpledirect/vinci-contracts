@@ -6,15 +6,21 @@ Package names use the organization-owned `@getsimpledirect` scope required by Gi
 
 ## The Layer Hierarchy
 
-This repository enforces a strict downward dependency rule: Layer 0 has no dependencies; Layer 1 packages depend only on Layer 0; Layer 2 packages depend on Layer 0 and Layer 1. This rule is checked by the gate across package manifests, TypeScript imports, tsconfig project references, and tsconfig path aliases including extends chains. A circular dependency anywhere fails the build, because each layer's validator cannot safely invoke one from a higher layer.
+This repository enforces a strict downward dependency rule: a package may depend only on packages in lower layers, never on its own layer or above. The rule is checked by the gate across package manifests, TypeScript imports, tsconfig project references, and tsconfig path aliases including extends chains. A circular dependency anywhere fails the build, because each layer's validator cannot safely invoke one from a higher layer. The table below is the layering `scripts/check-dependency-graph.mjs` enforces; if they ever disagree, the script is right and this table is stale.
 
 | Layer | Packages |
 |-------|----------|
-| **0** | `contracts` (scalars, actors, IDs, base types) |
-| **1** | `evidence`, `policy`, `work-orders`, `approvals`, `device-auth`, `remote-protocol`, `model-classes` |
-| **2** | `receipts`, `run-events` |
+| **0** | `contracts` (scalars, actors, IDs, base types, validation result) |
+| **1** | `policy`, `model-classes`, `evidence`, `approvals`, `device-auth` |
+| **2** | `receipts`, `run-events`, `work-orders` |
+| **3** | `remote-protocol` (session identity, roles, the authority channel) |
+| **4** | `session-stream` (the ephemeral human-facing channel of a remote session), `worker-capabilities` (what an adapter can enforce, and the trust level derived from it) |
 
-Each layer knows everything below it; nothing above. Layers 1 and 2 export only the types and validators they define—never re-export upward.
+Each layer knows everything below it; nothing above. Packages export only the types and validators they define—never re-export upward.
+
+Three channels, three packages, deliberately not one: `run-events` (layer 2) is the durable, content-minimal record — its payload values are ids, enums, counts, digests, timestamps and flags, never free text; `remote-protocol` (layer 3) carries signed authority commands; `session-stream` (layer 4) carries what a supervising human sees while a worker runs — current action, a bounded diff, a question, a warning — with `retention: "ephemeral"` so it is never mistaken for the record.
+
+`worker-capabilities` (layer 4) answers a different question: what can THIS worker's adapter actually honour? A `WorkerDeclaration` carries a closed `CapabilityMatrix`; the trust level (`inventoried → observed → supervised → governed → assured`) is derived from the matrix, never trusted from the declaration, and a declaration that claims more than it demonstrates is rejected. A UI renders `renderableRemoteCommands(matrix, role)` — the adapter axis intersected with what remote-protocol lets the role issue — and nothing else, so a control is never shown that the system cannot enforce.
 
 ## Using the Record Types
 
@@ -108,7 +114,8 @@ import {
 } from "@getsimpledirect/vinci-work-orders";
 
 const workOrder: WorkOrder = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  contractVersion: 1,
   id: "order-001",
   request: "Review and approve the authentication module refactor",
   scope: "packages/auth only",
@@ -136,6 +143,8 @@ const workOrder: WorkOrder = {
 const result = validateWorkOrder(workOrder);
 // Valid: true
 ```
+
+Criteria are fixed before execution and change only by amendment, never by edit. `amendWorkOrder(previous, patch, { amendmentId, changedBy, changedAt, reason })` returns the next contract version (`contractVersion + 1`, `supersedes` pointing at the previous one) and a `ContractAmendment` recording who changed what and why. A criterion is never rewritten in place: change its statement and you must remove the old id and add a new one, because verdicts pin to criterion ids. `classifyMateriality` fails closed — only `request`, `attentionBudget` and `expiresAt` are editorial; anything else is material, and `verificationIsStaleAfter(amendment)` tells a consumer to stale its current verdict (the stale verdict stays as history). A reorder of identical criteria is not a change.
 
 ### DecisionPacket
 

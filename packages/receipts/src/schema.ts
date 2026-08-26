@@ -4,6 +4,7 @@ import {
   hasField,
   isActorKind,
   isCanonicalTimestamp,
+  isVerdictStatus,
   ok,
   toPlainRecord,
   type PlainRecord,
@@ -13,7 +14,7 @@ import {
 } from "@getsimpledirect/vinci-contracts";
 import { receiptDigest } from "./digest.ts";
 import type { Correction } from "./correction.ts";
-import type { Receipt } from "./receipt.ts";
+import { RECEIPT_DECLARED_FIELDS, type Receipt } from "./receipt.ts";
 import type { VerificationRecord } from "./verdict.ts";
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
@@ -25,10 +26,6 @@ function issue(path: string, code: string, message: string): ValidationIssue {
 
 function isTerminalState(value: unknown): value is string {
   return typeof value === "string" && ["DONE", "DONE_UNVERIFIED", "BLOCKED", "FAILED", "CANCELLED"].includes(value);
-}
-
-function isVerdictStatus(value: unknown): value is string {
-  return typeof value === "string" && ["VERIFIED_PASS", "VERIFIED_FAIL", "CONDITIONAL", "UNVERIFIED"].includes(value);
 }
 
 function validateActor(raw: unknown, path: string, issues: ValidationIssue[]): void {
@@ -71,6 +68,40 @@ function validateWorkspace(raw: unknown, path: string, issues: ValidationIssue[]
   }
 }
 
+function validateHumanAttention(raw: unknown, path: string, issues: ValidationIssue[]): void {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    issues.push(issue(path, "invalid_attention", "humanAttention must be an object"));
+    return;
+  }
+
+  const attention = raw as Record<string, unknown>;
+  const fields = ["seconds", "interruptions", "decisions", "escalations"] as const;
+  const known = new Set<string>(fields);
+  for (const key of Object.keys(attention)) {
+    if (!known.has(key)) {
+      issues.push(
+        issue(`${path}/${key}`, "unexpected_field", "humanAttention carries only aggregate counts"),
+      );
+    }
+  }
+  for (const field of fields) {
+    if (!hasField(attention as PlainRecord, field)) {
+      issues.push(issue(`${path}/${field}`, "required_field", `${field} is required`));
+      continue;
+    }
+    const value = attention[field];
+    if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || Object.is(value, -0)) {
+      issues.push(
+        issue(
+          `${path}/${field}`,
+          "invalid_count",
+          `${field} must be a non-negative safe integer`,
+        ),
+      );
+    }
+  }
+}
+
 export function validateReceipt(input: unknown): ValidationResult<Receipt> {
   const plain = toPlainRecord(input);
   if (!plain.ok) return plain;
@@ -79,13 +110,7 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
   const issues: ValidationIssue[] = [];
   const unknownFields: Record<string, unknown> = {};
 
-  const KNOWN_FIELDS = new Set([
-    "receiptVersion", "receiptId", "runId", "objective", "workspace", "requester", "worker",
-    "modelId", "providerId", "executionLocation", "policyId", "policyVersion", "startedAt",
-    "completedAt", "activeDuration", "finalState", "actionSummary", "resourcesAccessed",
-    "changesMade", "artifactsProduced", "approvalIds", "evidenceIds", "verdict", "spend",
-    "unresolvedConditions", "resumeInstructions", "rollbackInfo", "digest", "signature",
-  ]);
+  const KNOWN_FIELDS = new Set<string>(RECEIPT_DECLARED_FIELDS);
 
   for (const [key, value] of Object.entries(record)) {
     if (!KNOWN_FIELDS.has(key)) {
@@ -93,8 +118,8 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
     }
   }
 
-  if (record.receiptVersion !== 1) {
-    issues.push(issue("/receiptVersion", "invalid_schema_version", "receipt schema is version 1"));
+  if (record.receiptVersion !== 2) {
+    issues.push(issue("/receiptVersion", "invalid_schema_version", "receipt schema is version 2"));
   }
 
   for (const field of ["receiptId", "runId"] as const) {
@@ -143,6 +168,8 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
   if (typeof record.activeDuration !== "number" || !Number.isSafeInteger(record.activeDuration) || record.activeDuration < 0) {
     issues.push(issue("/activeDuration", "invalid_duration", "activeDuration must be a non-negative safe integer"));
   }
+
+  validateHumanAttention(record.humanAttention, "/humanAttention", issues);
 
   if (!isTerminalState(record.finalState)) {
     issues.push(issue("/finalState", "invalid_state", "finalState must be a terminal state"));
@@ -300,11 +327,12 @@ export function validateCorrection(input: unknown): ValidationResult<Correction>
 
 export const RECEIPT_SCHEMA_META: SchemaMeta = {
   id: "vinci.receipt",
-  version: 1,
+  version: 2,
   compatibility: "frozen",
   unknownFields: "preserve",
   malformedData: "fail-closed",
-  migration: "none",
+  migration:
+    "version 1 receipts are rejected; missing historical attention measurements cannot be inferred",
 };
 
 export const VERIFICATION_STATUS_SCHEMA_META: SchemaMeta = {

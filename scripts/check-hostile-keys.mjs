@@ -79,6 +79,25 @@ function hostileInputs() {
  */
 const AUTHORITY_GUARDS = [
   {
+    pkg: "@getsimpledirect/vinci-worker-capabilities",
+    export: "renderableRemoteCommands",
+    label: "renderableRemoteCommands(matrix, 'approver')",
+    // The guard returns a command list; "granted a yes" means it offered at
+    // least one command, so the probe projects the list to that boolean.
+    call: (fn, hostile) => fn(hostile, "approver").length > 0,
+    control: (fn) =>
+      fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "approver").includes("approve_pending_approval")
+      && !fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "collaborator").includes("approve_pending_approval")
+      && fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "viewer").length === 0,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-worker-capabilities",
+    export: "renderableRemoteCommands",
+    label: "renderableRemoteCommands(matrix, role)",
+    call: (fn, hostile) => fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, hostile).length > 0,
+    control: (fn) => fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "owner").includes("pause") && fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "viewer").length === 0,
+  },
+  {
     pkg: "@getsimpledirect/vinci-remote-protocol",
     export: "mayIssue",
     label: "mayIssue(role, 'pause')",
@@ -361,6 +380,9 @@ const NOT_AUTHORITY_GUARDS = {
   // much is left", not "may this happen" — the guards above answer that, and
   // they validate before calling it.
   "@getsimpledirect/vinci-work-orders.attentionRemaining": "computes remaining counts; not a permission",
+  "@getsimpledirect/vinci-work-orders.amendWorkOrder": "constructor over validated inputs; its output is validated",
+  "@getsimpledirect/vinci-work-orders.classifyMateriality": "total classification over typed contract changes",
+  "@getsimpledirect/vinci-work-orders.verificationIsStaleAfter": "projection from a validated amendment, not an authority decision",
   "@getsimpledirect/vinci-contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
   // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.
   // Returning true for an accessor is correct — the key is own-present — so
@@ -405,11 +427,18 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-evidence.blamesSubmittedWork": "enum membership over FAILURE_OWNERS",
   "@getsimpledirect/vinci-evidence.verdictAssessmentFor": "constructor; its output is validated",
   "@getsimpledirect/vinci-receipts.receiptDigest": "encoder over an already-validated record",
+  "@getsimpledirect/vinci-receipts.attentionPerVerifiedOutcome": "pure aggregation over already-validated receipts; not a permission",
   "@getsimpledirect/vinci-run-events.eventDigest": "encoder over an already-validated record",
   "@getsimpledirect/vinci-receipts.verificationAgainst": "requires current state; covered by receipts suite",
   "@getsimpledirect/vinci-run-events.verifyAppend": "covered by the run-events suite",
   "@getsimpledirect/vinci-device-auth.parseKeyHash": "parser returning a ValidationResult",
   "@getsimpledirect/vinci-device-auth.revoke": "state transition over an already-validated record",
+  "@getsimpledirect/vinci-session-stream.nextSeqIsValid": "predicate over safe integers; answers whether next is the unused sequence after prev",
+  "@getsimpledirect/vinci-worker-capabilities.isTrustLevel": "enum membership",
+  "@getsimpledirect/vinci-worker-capabilities.compareTrustLevels": "comparison over members of the ordered trust vocabulary",
+  "@getsimpledirect/vinci-worker-capabilities.derivedTrustLevel": "derivation over an already-validated capability matrix",
+  "@getsimpledirect/vinci-worker-capabilities.permittedRemoteCommands": "UI projection over an already-validated capability matrix",
+  "@getsimpledirect/vinci-worker-capabilities.trustLevelLabel": "total label lookup over the trust vocabulary",
 };
 
 /**

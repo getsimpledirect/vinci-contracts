@@ -89,7 +89,7 @@ function validatePayloadValue(
       }
       break;
     case "count":
-      if (typeof inner !== "number" || !Number.isSafeInteger(inner) || inner < 0) {
+      if (typeof inner !== "number" || !Number.isSafeInteger(inner) || inner < 0 || Object.is(inner, -0)) {
         issues.push(issue(path, "invalid_count", "a count is a non-negative safe integer"));
       }
       break;
@@ -219,8 +219,8 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
     }
   }
 
-  if (record.schemaVersion !== 1) {
-    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 1"));
+  if (record.schemaVersion !== 2) {
+    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 2"));
   }
   for (const field of ["eventId", "runId", "idempotencyKey", "traceId"] as const) {
     const value = record[field];
@@ -276,7 +276,7 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
 
 export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
   id: "vinci.run-event",
-  version: 1,
+  version: 2,
   /**
    * FROZEN, not additive-only, and the pair below is why.
    *
@@ -318,5 +318,6 @@ export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
    */
   unknownFields: "reject",
   malformedData: "fail-closed",
-  migration: "none",
+  migration:
+    "version 1 events are rejected; missing historical attention measurements cannot be inferred",
 };

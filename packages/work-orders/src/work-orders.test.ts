@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
+  CONTRACT_AMENDMENT_SCHEMA_META,
   EXHAUSTION_POLICIES,
+  WORK_ORDER_SCHEMA_META,
+  amendWorkOrder,
   attentionRemaining,
+  classifyMateriality,
   mayInterrupt,
   mayRequireDecision,
   validateAttentionBudget,
+  validateContractAmendment,
   validateDecisionPacket,
   validateWorkOrder,
+  verificationIsStaleAfter,
+  type WorkOrder,
 } from "./index.ts";
 
 const budget = () => ({ interruptions: 3, decisions: 2, onExhaustion: "block" as const });
@@ -28,7 +35,8 @@ const validPacket = () => ({
 });
 
 const validOrder = () => ({
-  schemaVersion: 1 as const,
+  schemaVersion: 2 as const,
+  contractVersion: 1,
   id: "wo-1",
   request: "Add rate limiting to the public API.",
   scope: "The /v1 HTTP handlers only; no infrastructure or DNS changes.",
@@ -148,9 +156,25 @@ describe("a decision packet must be answerable without going elsewhere", () => {
 });
 
 describe("a work order fixes what done means before work starts", () => {
-  it("accepts a complete order", () => {
+  it("accepts contract v1 without supersedes", () => {
     const result = validateWorkOrder(validOrder());
     expect(result.ok ? [] : result.issues).toEqual([]);
+  });
+
+  it("refuses contract v2 without supersedes", () => {
+    const result = validateWorkOrder({ ...validOrder(), contractVersion: 2 });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? [] : result.issues.map((i) => i.code)).toContain("supersedes_required");
+  });
+
+  it("refuses a supersedes contractVersion that is not the immediate predecessor", () => {
+    const result = validateWorkOrder({
+      ...validOrder(),
+      contractVersion: 2,
+      supersedes: { contractVersion: 2, amendmentId: "amendment-1" },
+    });
+    expect(result.ok).toBe(false);
+    expect(result.ok ? [] : result.issues.map((i) => i.code)).toContain("supersedes_version_mismatch");
   });
 
   it("refuses an order with no acceptance criteria", () => {
@@ -205,5 +229,137 @@ describe("a work order fixes what done means before work starts", () => {
       expect(() => validateWorkOrder(hostile)).not.toThrow();
       expect(validateWorkOrder(hostile).ok).toBe(false);
     }
+  });
+});
+
+describe("work-contract amendments are append-only", () => {
+  const attribution = () => ({
+    amendmentId: "amendment-1",
+    changedBy: "user-2",
+    changedAt: "2026-08-23T13:00:00.000Z",
+    reason: "The limit must cover burst traffic discovered during planning.",
+  });
+
+  it("replaces a changed criterion id and stales current verification", () => {
+    const previous = validOrder() as WorkOrder;
+    const replacement = {
+      id: "c.limits.v2",
+      statement: "Requests over 120/min receive 429.",
+      verifiedBy: "Integration test against a live handler.",
+    };
+    const { next, amendment } = amendWorkOrder(
+      previous,
+      { acceptanceCriteria: [replacement] },
+      attribution(),
+    );
+
+    expect(next.id).toBe(previous.id);
+    expect(next.contractVersion).toBe(2);
+    expect(next.supersedes).toEqual({ contractVersion: 1, amendmentId: "amendment-1" });
+    expect(next.acceptanceCriteria.map((criterion) => criterion.id)).toEqual(["c.limits.v2"]);
+    expect(amendment.changes).toEqual([
+      { path: "acceptanceCriteria", kind: "removed" },
+      { path: "acceptanceCriteria", kind: "added" },
+    ]);
+    expect(verificationIsStaleAfter(amendment)).toBe(true);
+    expect(amendment.materiality).toBe("material");
+  });
+
+  it("classifies a request-only amendment as editorial without staling verification", () => {
+    const { amendment } = amendWorkOrder(
+      validOrder() as WorkOrder,
+      { request: "Add rate limiting and document the result for the public API." },
+      attribution(),
+    );
+
+    expect(amendment.changes).toEqual([{ path: "request", kind: "modified" }]);
+    expect(amendment.materiality).toBe("editorial");
+    expect(verificationIsStaleAfter(amendment)).toBe(false);
+  });
+
+  it("rejects rewriting a criterion under its existing id", () => {
+    const oldCriterion = validOrder().acceptanceCriteria[0];
+    expect(() => amendWorkOrder(
+      validOrder() as WorkOrder,
+      {
+        acceptanceCriteria: [{
+          ...oldCriterion,
+          statement: "Requests over 120/min receive 429.",
+        }],
+      },
+      attribution(),
+    )).toThrow(/criterion_rewritten_in_place/);
+  });
+
+  it("never mutates the previous work order", () => {
+    const previous = validOrder() as WorkOrder;
+    const snapshot = structuredClone(previous);
+
+    amendWorkOrder(
+      previous,
+      { request: "Add rate limiting to every public /v1 handler." },
+      attribution(),
+    );
+
+    expect(previous).toEqual(snapshot);
+  });
+
+  it("validates amendment attribution, consecutive versions, paths, and derived materiality", () => {
+    const { amendment } = amendWorkOrder(
+      validOrder() as WorkOrder,
+      { scope: "All /v1 HTTP handlers; no infrastructure or DNS changes." },
+      attribution(),
+    );
+    expect(validateContractAmendment(amendment).ok).toBe(true);
+    expect(validateContractAmendment({ ...amendment, changedAt: "tomorrow" }).ok).toBe(false);
+    expect(validateContractAmendment({ ...amendment, toVersion: 9 }).ok).toBe(false);
+    expect(validateContractAmendment({ ...amendment, materiality: "editorial" }).ok).toBe(false);
+    expect(validateContractAmendment({
+      ...amendment,
+      changes: [{ path: "requestedBy", kind: "modified" }],
+    }).ok).toBe(false);
+  });
+
+  it("exports the materiality rule and complete schema metadata", () => {
+    expect(classifyMateriality([{ path: "grantedAuthority", kind: "modified" }])).toBe("material");
+    expect(classifyMateriality([{ path: "attentionBudget", kind: "modified" }])).toBe("editorial");
+    expect(WORK_ORDER_SCHEMA_META).toMatchObject({ version: 2, compatibility: "frozen" });
+    expect(CONTRACT_AMENDMENT_SCHEMA_META).toMatchObject({ version: 1, compatibility: "frozen" });
+  });
+});
+
+describe("materiality boundary (review fixes)", () => {
+  const twoCriteria = () => ({
+    ...validOrder(),
+    acceptanceCriteria: [
+      ...validOrder().acceptanceCriteria,
+      { id: "c.docs", statement: "The limit is documented.", verifiedBy: "Docs review." },
+    ],
+  });
+  const meta = { amendmentId: "amend-reorder", changedBy: "george", changedAt: "2026-08-26T00:00:00.000Z", reason: "tidy" };
+
+  it("a reorder-only patch is not an amendment at all", () => {
+    const previous = twoCriteria();
+    expect(() =>
+      amendWorkOrder(previous, { acceptanceCriteria: [...previous.acceptanceCriteria].reverse() }, meta),
+    ).toThrow(/no_contract_changes/);
+  });
+
+  it("reordering identical criteria alongside an editorial change stays editorial", () => {
+    const previous = twoCriteria();
+    const { amendment } = amendWorkOrder(
+      previous,
+      { acceptanceCriteria: [...previous.acceptanceCriteria].reverse(), request: "Add rate limiting to the public API (v2 wording)." },
+      meta,
+    );
+    expect(amendment.changes.map((c) => c.path)).toEqual(["request"]);
+    expect(amendment.materiality).toBe("editorial");
+    expect(verificationIsStaleAfter(amendment)).toBe(false);
+  });
+
+  it("fails closed: a path outside EDITORIAL_PATHS is material", () => {
+    expect(classifyMateriality([{ path: "scope", kind: "modified" }])).toBe("material");
+    expect(classifyMateriality([{ path: "not-a-known-path" as never, kind: "modified" }])).toBe("material");
+    expect(classifyMateriality([{ path: "request", kind: "modified" }])).toBe("editorial");
   });
 });
