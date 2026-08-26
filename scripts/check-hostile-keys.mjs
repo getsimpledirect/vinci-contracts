@@ -409,6 +409,11 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-device-auth.parseKeyHash": "parser returning a ValidationResult",
   "@getsimpledirect/vinci-device-auth.revoke": "state transition over an already-validated record",
   "@getsimpledirect/vinci-session-stream.nextSeqIsValid": "predicate over safe integers; answers whether next is the unused sequence after prev",
+  "@getsimpledirect/vinci-worker-capabilities.isTrustLevel": "enum membership",
+  "@getsimpledirect/vinci-worker-capabilities.compareTrustLevels": "comparison over members of the ordered trust vocabulary",
+  "@getsimpledirect/vinci-worker-capabilities.derivedTrustLevel": "derivation over an already-validated capability matrix",
+  "@getsimpledirect/vinci-worker-capabilities.permittedRemoteCommands": "UI projection over an already-validated capability matrix",
+  "@getsimpledirect/vinci-worker-capabilities.trustLevelLabel": "total label lookup over the trust vocabulary",
 };
 
 /**
