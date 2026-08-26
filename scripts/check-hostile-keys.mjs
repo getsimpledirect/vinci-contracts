@@ -361,6 +361,9 @@ const NOT_AUTHORITY_GUARDS = {
   // much is left", not "may this happen" — the guards above answer that, and
   // they validate before calling it.
   "@getsimpledirect/vinci-work-orders.attentionRemaining": "computes remaining counts; not a permission",
+  "@getsimpledirect/vinci-work-orders.amendWorkOrder": "constructor over validated inputs; its output is validated",
+  "@getsimpledirect/vinci-work-orders.classifyMateriality": "total classification over typed contract changes",
+  "@getsimpledirect/vinci-work-orders.verificationIsStaleAfter": "projection from a validated amendment, not an authority decision",
   "@getsimpledirect/vinci-contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
   // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.
   // Returning true for an accessor is correct — the key is own-present — so
