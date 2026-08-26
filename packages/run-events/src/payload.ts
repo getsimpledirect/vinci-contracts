@@ -1,4 +1,9 @@
-import { CONSEQUENTIAL_ACTION_CLASSES, RISK_LEVELS, VERDICT_STATUSES } from "@getsimpledirect/vinci-contracts";
+import {
+  CONSEQUENTIAL_ACTION_CLASSES,
+  REMOTE_DECISION_REJECTIONS,
+  RISK_LEVELS,
+  VERDICT_STATUSES,
+} from "@getsimpledirect/vinci-contracts";
 import { EVIDENCE_PROVENANCE_CASES } from "@getsimpledirect/vinci-evidence";
 import { RUN_EVENT_TYPES, type RunEventType } from "./event-types.ts";
 
@@ -153,6 +158,38 @@ export const PAYLOAD_FIELDS = {
     approvalId: { kind: "id", required: true },
     humanSeconds: { kind: "count", required: true },
   },
+  "device.revoked": {
+    deviceId: { kind: "id", required: true },
+    credentialId: { kind: "id", required: true },
+    revokedBy: {
+      kind: "enum",
+      required: true,
+      members: ["self", "dashboard", "platform"],
+    },
+  },
+  // The host records relay availability from its own observed sequence.
+  "relay.unavailable": { sinceSeq: { kind: "count", required: true } },
+  "relay.restored": { gapFrames: { kind: "count", required: true } },
+  // Platform records host reachability from its heartbeat view.
+  "host.unreachable": { lastHeartbeatAt: { kind: "at", required: true } },
+  "host.reachable": {},
+  // The command kind is resolved from the command envelope named by this
+  // digest. Repeating the layer-3 command vocabulary here would invert the
+  // dependency graph or create a second vocabulary that can drift.
+  "authority.acknowledged": {
+    commandId: { kind: "id", required: true },
+    commandDigest: { kind: "digest", required: true },
+  },
+  // Rejection reasons stay readable. A digest-only rejection would identify
+  // the command without telling an operator why the host refused it.
+  "authority.rejected": {
+    commandId: { kind: "id", required: true },
+    rejectionCode: {
+      kind: "enum",
+      required: true,
+      members: REMOTE_DECISION_REJECTIONS,
+    },
+  },
   "capability.used": {
     capabilityId: { kind: "id", required: true },
     resourceDigest: { kind: "digest", required: false },
@@ -227,7 +264,7 @@ type ValueFor<K extends ValueKind> = Extract<PayloadValue, { kind: K }>;
  * allowlist adds it to the type, and a field absent from the allowlist does not
  * exist in the type.
  */
-export type PayloadFor<T extends RunEventType> = {
+type DeclaredPayloadFor<T extends RunEventType> = {
   readonly [F in keyof (typeof PAYLOAD_FIELDS)[T] as (typeof PAYLOAD_FIELDS)[T][F] extends {
     required: true;
   }
@@ -240,6 +277,10 @@ export type PayloadFor<T extends RunEventType> = {
     ? F
     : never]?: ValueFor<(typeof PAYLOAD_FIELDS)[T][F] extends { kind: infer K extends ValueKind } ? K : never>;
 };
+
+export type PayloadFor<T extends RunEventType> = keyof (typeof PAYLOAD_FIELDS)[T] extends never
+  ? Readonly<Record<string, never>>
+  : DeclaredPayloadFor<T>;
 
 /** Kept for the runtime validator, which walks fields generically. */
 export type RunEventPayload = { readonly [field: string]: PayloadValue };

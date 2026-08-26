@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
+import {
+  REMOTE_DECISION_REJECTIONS,
+  assertSchemaMetaComplete,
+} from "@getsimpledirect/vinci-contracts";
 import {
   PAYLOAD_FIELDS,
   RUN_EVENT_SCHEMA_META,
@@ -18,9 +21,11 @@ const AT = "2026-08-23T00:00:00.000Z";
 const actor = { kind: "worker", workerId: "w-1" } as const;
 
 const event = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   eventId: "evt-1",
   runId: "run-1",
+  organizationId: null,
+  workspaceId: "workspace-1",
   sequence: 1,
   type: "run.started",
   actor,
@@ -222,6 +227,177 @@ describe("human attention events", () => {
   });
 });
 
+describe("durable relay and security events", () => {
+  const digest = "a".repeat(64);
+  const cases = [
+    {
+      type: "device.revoked",
+      actor: { kind: "system", component: "platform" },
+      payload: {
+        deviceId: { kind: "id", value: "device-1" },
+        credentialId: { kind: "id", value: "credential-1" },
+        revokedBy: { kind: "enum", value: "dashboard" },
+      },
+    },
+    {
+      type: "relay.unavailable",
+      actor: { kind: "system", component: "host" },
+      payload: { sinceSeq: { kind: "count", value: 14 } },
+    },
+    {
+      type: "relay.restored",
+      actor: { kind: "system", component: "host" },
+      payload: { gapFrames: { kind: "count", value: 3 } },
+    },
+    {
+      type: "host.unreachable",
+      actor: { kind: "system", component: "platform" },
+      payload: { lastHeartbeatAt: { kind: "at", value: AT } },
+    },
+    {
+      type: "host.reachable",
+      actor: { kind: "system", component: "platform" },
+      payload: {},
+    },
+    {
+      type: "authority.acknowledged",
+      actor: { kind: "system", component: "host" },
+      payload: {
+        commandId: { kind: "id", value: "command-1" },
+        commandDigest: { kind: "digest", value: digest },
+      },
+    },
+    {
+      type: "authority.rejected",
+      actor: { kind: "system", component: "host" },
+      payload: {
+        commandId: { kind: "id", value: "command-1" },
+        rejectionCode: { kind: "enum", value: "binding_mismatch" },
+      },
+    },
+  ] as const;
+
+  it.each(cases)("accepts a valid $type event", ({ type, actor: eventActor, payload }) => {
+    expect(validateRunEvent(event({ type, actor: eventActor, payload })).ok).toBe(true);
+  });
+
+  it.each(cases)("rejects free text on $type", ({ type, actor: eventActor, payload }) => {
+    const result = validateRunEvent(
+      event({
+        type,
+        actor: eventActor,
+        payload: {
+          ...payload,
+          message: { kind: "id", value: "This free text must not enter durable history" },
+        },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(
+      result.ok === false
+        && result.issues.some(
+          (entry) => entry.path === "/payload/message" && entry.code === "field_not_allowed",
+        ),
+    ).toBe(true);
+    expect(JSON.stringify(result)).not.toContain("This free text must not enter durable history");
+  });
+
+  it("rejects unknown members of the new enum fields", () => {
+    const revoked = validateRunEvent(
+      event({
+        type: "device.revoked",
+        payload: {
+          deviceId: { kind: "id", value: "device-1" },
+          credentialId: { kind: "id", value: "credential-1" },
+          revokedBy: { kind: "enum", value: "operator" },
+        },
+      }),
+    );
+    const rejected = validateRunEvent(
+      event({
+        type: "authority.rejected",
+        payload: {
+          commandId: { kind: "id", value: "command-1" },
+          rejectionCode: { kind: "enum", value: "because_i_said_so" },
+        },
+      }),
+    );
+
+    for (const result of [revoked, rejected]) {
+      expect(result.ok).toBe(false);
+      expect(
+        result.ok === false
+          && result.issues.some((entry) => entry.code === "unknown_enum_member"),
+      ).toBe(true);
+    }
+  });
+
+  it.each(REMOTE_DECISION_REJECTIONS)(
+    "accepts readable authority rejection code %s",
+    (rejectionCode) => {
+      expect(
+        validateRunEvent(
+          event({
+            type: "authority.rejected",
+            actor: { kind: "system", component: "host" },
+            payload: {
+              commandId: { kind: "id", value: "command-1" },
+              rejectionCode: { kind: "enum", value: rejectionCode },
+            },
+          }),
+        ).ok,
+      ).toBe(true);
+    },
+  );
+
+  it("uses the layer-0 rejection vocabulary instead of redeclaring it", () => {
+    expect(PAYLOAD_FIELDS["authority.rejected"].rejectionCode.members).toBe(
+      REMOTE_DECISION_REJECTIONS,
+    );
+  });
+
+  it("does not duplicate command kind beside the envelope digest", () => {
+    const result = validateRunEvent(
+      event({
+        type: "authority.acknowledged",
+        actor: { kind: "system", component: "host" },
+        payload: {
+          commandId: { kind: "id", value: "command-1" },
+          commandDigest: { kind: "digest", value: digest },
+          command: { kind: "enum", value: "pause" },
+        },
+      }),
+    );
+    expect(result.ok).toBe(false);
+    expect(
+      result.ok === false
+        && result.issues.some(
+          (entry) => entry.path === "/payload/command" && entry.code === "field_not_allowed",
+        ),
+    ).toBe(true);
+  });
+});
+
+describe("every durable event carries its binding", () => {
+  it("requires workspaceId and a present nullable organizationId", () => {
+    const { workspaceId: _workspace, ...withoutWorkspace } = event();
+    const { organizationId: _organization, ...withoutOrganization } = event();
+
+    expect(validateRunEvent(withoutWorkspace).ok).toBe(false);
+    expect(validateRunEvent(withoutOrganization).ok).toBe(false);
+    expect(validateRunEvent(event({ organizationId: null })).ok).toBe(true);
+    expect(validateRunEvent(event({ organizationId: "organization-1" })).ok).toBe(true);
+  });
+
+  it.each([
+    ["workspaceId", "workspace with spaces"],
+    ["organizationId", "organization with spaces"],
+    ["organizationId", 1],
+  ])("rejects invalid %s binding value %p", (field, value) => {
+    expect(validateRunEvent(event({ [field]: value })).ok).toBe(false);
+  });
+});
+
 describe("actor arms are validated for presence and type, not just names", () => {
   it("refuses a worker actor with no workerId", () => {
     // Accepted before: the name allowlist says nothing about presence.
@@ -294,8 +470,10 @@ describe("canonicalization and identity", () => {
       type: "run.started",
       sequence: 1,
       runId: "run-1",
+      organizationId: null,
+      workspaceId: "workspace-1",
       eventId: "evt-1",
-      schemaVersion: 2,
+      schemaVersion: 3,
     });
     expect(reordered.ok).toBe(true);
     if (reordered.ok) expect(eventDigest(one)).toBe(eventDigest(reordered.value));
@@ -306,6 +484,8 @@ describe("canonicalization and identity", () => {
     const variants: RunEvent[] = [
       valid({ eventId: "evt-2" }),
       valid({ sequence: 2 }),
+      valid({ organizationId: "organization-1" }),
+      valid({ workspaceId: "workspace-2" }),
       valid({ occurredAt: "2026-08-23T00:00:01.000Z" }),
       valid({ traceId: "trace-2" }),
       valid({ idempotencyKey: "key-2" }),
@@ -373,12 +553,45 @@ describe("appending to the log", () => {
     expect(verdict.kind).toBe("reject");
     expect(verdict.kind === "reject" && verdict.rejection.reason).toBe("time_went_backwards");
   });
+
+  it.each([
+    {
+      label: "workspace",
+      change: { workspaceId: "workspace-2" },
+      expected: { organizationId: null, workspaceId: "workspace-1" },
+      received: { organizationId: null, workspaceId: "workspace-2" },
+    },
+    {
+      label: "organization",
+      change: { organizationId: "organization-2" },
+      expected: { organizationId: null, workspaceId: "workspace-1" },
+      received: { organizationId: "organization-2", workspaceId: "workspace-1" },
+    },
+  ])("rejects a $label binding change within one run", ({ change, expected, received }) => {
+    const first = valid();
+    const rebound = valid({
+      eventId: "evt-2",
+      sequence: 2,
+      idempotencyKey: "key-2",
+      ...change,
+    });
+
+    expect(verifyAppend(first, rebound, seenWith(first))).toEqual({
+      kind: "reject",
+      rejection: {
+        reason: "binding_changed_within_run",
+        expected,
+        received,
+      },
+    });
+  });
 });
 
 describe("the boundary refuses hostile raw input", () => {
   it.each([
-    ["a __proto__ key", () => JSON.parse(`{"__proto__":{"p":1},"schemaVersion":2}`)],
+    ["a __proto__ key", () => JSON.parse(`{"__proto__":{"p":1},"schemaVersion":3}`)],
     ["an unknown top-level field", () => event({ extra: 1 })],
+    ["a version-2 event", () => event({ schemaVersion: 2 })],
     ["a wrong schema version", () => event({ schemaVersion: 1 })],
     ["an unknown event type", () => event({ type: "run.exploded" })],
     ["a non-canonical timestamp", () => event({ occurredAt: "2026-08-23T00:00:00Z" })],
@@ -403,7 +616,7 @@ describe("the boundary refuses hostile raw input", () => {
 
   it("answers all six schema questions", () => {
     expect(() => assertSchemaMetaComplete(RUN_EVENT_SCHEMA_META)).not.toThrow();
-    expect(RUN_EVENT_SCHEMA_META.version).toBe(2);
+    expect(RUN_EVENT_SCHEMA_META.version).toBe(3);
     expect(RUN_EVENT_SCHEMA_META.unknownFields).toBe("reject");
   });
 });
@@ -415,9 +628,11 @@ describe("the payload type is wired to the event, not merely derived beside it",
     // structural guarantee that holds only at runtime is a runtime check with a
     // comment attached.
     const good: RunEventFor<"run.question"> = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       eventId: "evt-1",
       runId: "run-1" as RunEvent["runId"],
+      organizationId: null,
+      workspaceId: "workspace-1" as RunEvent["workspaceId"],
       sequence: 1,
       type: "run.question",
       actor,
@@ -441,9 +656,11 @@ describe("the payload type is wired to the event, not merely derived beside it",
 
   it("rejects a payload belonging to a different event type", () => {
     const mismatched = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       eventId: "evt-1",
       runId: "run-1",
+      organizationId: null,
+      workspaceId: "workspace-1",
       sequence: 1,
       type: "run.question",
       actor,
@@ -454,6 +671,33 @@ describe("the payload type is wired to the event, not merely derived beside it",
       payload: { workerId: { kind: "id", value: "w-1" } },
     } satisfies RunEventFor<"run.question">;
     expect(validateRunEvent(mismatched).ok).toBe(false);
+  });
+
+  it("closes an event type whose payload has no fields", () => {
+    const reachable: RunEventFor<"host.reachable"> = {
+      schemaVersion: 3,
+      eventId: "evt-1",
+      runId: "run-1" as RunEvent["runId"],
+      organizationId: null,
+      workspaceId: "workspace-1" as RunEvent["workspaceId"],
+      sequence: 1,
+      type: "host.reachable",
+      actor: { kind: "system", component: "platform" },
+      occurredAt: AT,
+      idempotencyKey: "key-1",
+      traceId: "trace-1",
+      payload: {},
+    };
+    expect(validateRunEvent(reachable).ok).toBe(true);
+
+    const smuggled: RunEventFor<"host.reachable"> = {
+      ...reachable,
+      payload: {
+        // @ts-expect-error host.reachable has a closed, empty payload
+        message: { kind: "id", value: "content" },
+      },
+    };
+    expect(validateRunEvent(smuggled).ok).toBe(false);
   });
 
   it("declares a compatibility policy its validator actually honours", () => {
@@ -504,9 +748,11 @@ describe("what identifier shape-checking actually enforces", () => {
   // prose and not token-shaped content. These tests assert the property that
   // holds, so nobody reads the suite as proving the stronger one.
   const question = (value: string) => ({
-    schemaVersion: 2,
+    schemaVersion: 3,
     eventId: "evt-1",
     runId: "run-1",
+    organizationId: null,
+    workspaceId: "workspace-1",
     sequence: 1,
     type: "run.question",
     actor,

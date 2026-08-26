@@ -169,20 +169,11 @@ export type RemoteDecisionState =
   | { readonly kind: "confirmed"; readonly confirmedAt: string }
   | { readonly kind: "rejected_by_host"; readonly reason: RemoteDecisionRejection };
 
-export const REMOTE_DECISION_REJECTIONS = [
-  /** The chosen option was not one the host offered. */
-  "option_not_offered",
-  /** The approval expired before the decision arrived. */
-  "expired",
-  /** The request was already settled, locally or by another device. */
-  "already_settled",
-  /** The device's role does not permit this decision. */
-  "not_permitted",
-  /** The session moved on; the request no longer exists. */
-  "session_changed",
-] as const;
-
-export type RemoteDecisionRejection = (typeof REMOTE_DECISION_REJECTIONS)[number];
+// The rejection vocabulary lives in layer-0 contracts so the run-event audit
+// log (authority.rejected.rejectionCode) and this validator can never disagree
+// about what a readable reason is. Re-exported here for existing importers.
+export { REMOTE_DECISION_REJECTIONS, type RemoteDecisionRejection } from "@getsimpledirect/vinci-contracts";
+import { REMOTE_DECISION_REJECTIONS, type RemoteDecisionRejection } from "@getsimpledirect/vinci-contracts";
 
 /**
  * Validate a remote decision state arriving from untrusted input.

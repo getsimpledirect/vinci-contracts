@@ -11,6 +11,17 @@ import type { RunEvent } from "./event.ts";
  */
 export type AppendRejection =
   | { readonly reason: "wrong_run"; readonly expected: string; readonly received: string }
+  | {
+      readonly reason: "binding_changed_within_run";
+      readonly expected: {
+        readonly organizationId: RunEvent["organizationId"];
+        readonly workspaceId: RunEvent["workspaceId"];
+      };
+      readonly received: {
+        readonly organizationId: RunEvent["organizationId"];
+        readonly workspaceId: RunEvent["workspaceId"];
+      };
+    }
   | { readonly reason: "sequence_not_contiguous"; readonly expected: number; readonly received: number }
   | { readonly reason: "sequence_reused"; readonly sequence: number }
   | { readonly reason: "time_went_backwards"; readonly previous: string; readonly received: string }
@@ -84,6 +95,29 @@ export function verifyAppend(
     return sameEvent
       ? { kind: "duplicate", existingSequence: existing.sequence }
       : { kind: "reject", rejection: { reason: "idempotency_conflict", sequence: existing.sequence } };
+  }
+
+  if (
+    previous !== null
+    && (
+      previous.organizationId !== candidate.organizationId
+      || previous.workspaceId !== candidate.workspaceId
+    )
+  ) {
+    return {
+      kind: "reject",
+      rejection: {
+        reason: "binding_changed_within_run",
+        expected: {
+          organizationId: previous.organizationId,
+          workspaceId: previous.workspaceId,
+        },
+        received: {
+          organizationId: candidate.organizationId,
+          workspaceId: candidate.workspaceId,
+        },
+      },
+    };
   }
 
   if (previous === null) {

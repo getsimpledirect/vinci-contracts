@@ -318,11 +318,12 @@ describe("sequence semantics", () => {
 
 describe("durable and ephemeral envelopes are mutually exclusive", () => {
   const runEvent = {
-    // run-events moved to schema 2 when attention capture landed (D10);
-    // a version-1 event is now rejected, so a "valid durable event" is v2.
-    schemaVersion: 2,
+    // Run-events schema 3 adds a literal tenant binding to every durable event.
+    schemaVersion: 3,
     eventId: "event-1",
     runId: "run-1",
+    organizationId: null,
+    workspaceId: "workspace-1",
     sequence: 1,
     type: "run.question",
     actor: { kind: "worker", workerId: "worker-1" },
