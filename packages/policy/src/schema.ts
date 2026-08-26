@@ -34,7 +34,11 @@ import {
 
 export const POLICY_MANIFEST_SCHEMA_META = {
   id: "vinci.policy-manifest",
-  version: 1,
+  // 2: autonomyCeilings became REQUIRED. A newly required field is a
+  // compatibility break under D3's per-schema contract, so this is a new
+  // version rather than an additive change; a version-1 manifest (no ceilings)
+  // fails validation instead of silently governing with no ceiling at all.
+  version: 2,
   compatibility: "additive-only",
   /**
    * Preserved everywhere except under `/credentials`, where an unrecognised
@@ -43,16 +47,20 @@ export const POLICY_MANIFEST_SCHEMA_META = {
    */
   unknownFields: "preserve",
   malformedData: "fail-closed",
-  migration: "none",
+  migration:
+    "version 1 manifests are rejected: they carry no autonomyCeilings, and a ceiling cannot be inferred — a manifest that says nothing about autonomy must not govern as if it said everything",
 } as const satisfies SchemaMeta;
 
 export const POLICY_DECISION_SCHEMA_META = {
   id: "vinci.policy-decision",
-  version: 1,
+  // 2: requestedRung and reversibility became REQUIRED on the request (see the
+  // manifest meta above for why that is a version, not an addition).
+  version: 2,
   compatibility: "additive-only",
   unknownFields: "preserve",
   malformedData: "fail-closed",
-  migration: "none",
+  migration:
+    "version 1 requests are rejected: requestedRung and reversibility are required and cannot be inferred; a host that has not classified reversibility must not be evaluated as if it had",
 } as const satisfies SchemaMeta;
 
 type JsonObject = Record<string, unknown>;

@@ -220,7 +220,7 @@ function decide(
   manifest: PolicyManifest,
   request: PolicyActionRequest,
   matchingRules: readonly ApprovalRule[],
-  externalAction: ConsequentialActionClass | undefined,
+  _externalAction: ConsequentialActionClass | undefined,
 ): PolicyDecision {
   const controllingPolicy = { policyId: manifest.policyId, version: manifest.version };
   const denied = matchingRules.find((rule) => rule.decision.kind === "deny");
@@ -275,21 +275,6 @@ function decide(
         CONTACT_POLICY_OWNER,
       ],
     };
-  }
-
-  const effectivelyIrreversible = request.reversibility.class === "irreversible"
-    || (
-      request.reversibility.class === "conditionally_reversible"
-      && !request.reversibility.checkpointAvailable
-    );
-  const irreversibleBypass = externalAction !== undefined
-    && (manifest.irreversibleAllowedWithoutApproval ?? []).includes(externalAction);
-  if (effectivelyIrreversible && !irreversibleBypass) {
-    return approvalRequired(
-      manifest,
-      request,
-      "The host/policy reversibility classification requires approval before this action may proceed.",
-    );
   }
 
   const allowed = matchingRules.find((rule) => rule.decision.kind === "allow_automatically");
@@ -471,6 +456,24 @@ export function evaluatePolicyDecision(
     }
     if (ceiling !== undefined && compareAutonomyRungs(readable.requestedRung, ceiling) > 0) {
       return ceilingExceeded(policy, readable, ceiling);
+    }
+    // Reversibility is decided BEFORE rule matching: an irreversible action
+    // with no matching rule must resolve to approval-required, not to an
+    // undetermined "unknown action" that a caller might treat as merely
+    // unconfigured. Fail closed on the stronger of the two.
+    const effectivelyIrreversible = readable.reversibility.class === "irreversible"
+      || (
+        readable.reversibility.class === "conditionally_reversible"
+        && !readable.reversibility.checkpointAvailable
+      );
+    const irreversibleBypass = externalAction !== undefined
+      && (policy.irreversibleAllowedWithoutApproval ?? []).includes(externalAction);
+    if (effectivelyIrreversible && !irreversibleBypass) {
+      return approvalRequired(
+        policy,
+        readable,
+        "The host/policy reversibility classification requires approval before this action may proceed.",
+      );
     }
     const specificRules = policy.approvals.rules.filter((rule) => {
       if (rule.appliesTo.kind === "capability") {

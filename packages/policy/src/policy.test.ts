@@ -396,6 +396,34 @@ describe("evaluatePolicyDecision", () => {
     expect(decision.reason.code).toBe("autonomy_ceiling_exceeded");
   });
 
+  it("an explicit human_reserved ceiling makes every request at that class approval-required", () => {
+    const manifest = manifestWithRules([allowDeployment]);
+    manifest.autonomyCeilings.deployment = "human_reserved";
+
+    const decision = evaluatePolicyDecision(manifest, deploymentRequest({ requestedRung: "observe" }));
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
+  it("an irreversible action with NO matching rule is approval-required, not unknown_action", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([]),
+      deploymentRequest({
+        reversibility: {
+          class: "irreversible",
+          classifiedBy: "host",
+          checkpointAvailable: false,
+          undoMethod: null,
+          cannotRestore: ["production rows"],
+        },
+      }),
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
   it("never automatically allows a human_reserved action", () => {
     const decision = evaluatePolicyDecision(
       manifestWithRules([allowDeployment]),
