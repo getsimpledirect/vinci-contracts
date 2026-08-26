@@ -3,7 +3,7 @@
 The nouns of §7, with the type that represents each one. A term means the same
 thing in every repository, or it is not in this file.
 
-Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
+Package references use the organization-owned `@getsimpledirect` scope on the public npm registry; the deliberate `vinci-` prefix avoids claiming generic package names.
 
 Where a repository already had its own word for one of these, the existing word
 is listed so migrations can be mechanical.

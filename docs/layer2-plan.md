@@ -4,7 +4,7 @@ E0 is frozen at `b35a188`. This work happens on `layer2/receipts-run-events`;
 `main` does not move, and no E0 package is modified. Layer 2 integrates only
 after its own gate and its own independent review.
 
-Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
+Package references use the organization-owned `@getsimpledirect` scope on the public npm registry; the deliberate `vinci-` prefix avoids claiming generic package names.
 
 ## Governing contract, inventoried
 

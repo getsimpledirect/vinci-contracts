@@ -21,9 +21,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      # Narrow on purpose. This job may write packages and read the repository,
-      # and can do nothing else with the token.
-      packages: write
+      # Narrow on purpose. This job may mint an OIDC token for npm provenance and
+      # read the repository, and can do nothing else. Publishing itself uses NPM_TOKEN.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -31,7 +31,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
-          registry-url: https://npm.pkg.github.com
+          registry-url: https://registry.npmjs.org
           scope: "@getsimpledirect"
 
       - name: Install from the lockfile
@@ -64,7 +64,7 @@ jobs:
       - name: Publish
         if: ${{ github.event_name == 'push' || inputs.dry_run == false }}
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           # Dependency order, DERIVED from the manifests rather than listed here.
@@ -78,7 +78,7 @@ jobs:
           fi
           while read -r pkg; do
             echo "── $pkg ──"
-            npm publish --workspace "packages/$pkg" --access restricted
+            npm publish --workspace "packages/$pkg" --access public --provenance
           done < "$RUNNER_TEMP/order.txt"
 
       - name: Dry run
