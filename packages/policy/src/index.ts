@@ -20,6 +20,7 @@ export * from "./decision.ts";
 export * from "./evaluation.ts";
 export * from "./manifest.ts";
 export * from "./schema.ts";
+export * from "./autonomy.ts";
 
 // Re-exporting these avoids a second definition while keeping schema consumers
 // on the policy package's public surface.

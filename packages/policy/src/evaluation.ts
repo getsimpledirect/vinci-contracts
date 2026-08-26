@@ -1,10 +1,20 @@
 import {
+  isConsequentialActionClass,
   isIdentifier,
   ownData,
   plainActor,
   type Actor,
+  type ConsequentialActionClass,
   type PolicyId,
 } from "@getsimpledirect/vinci-contracts";
+import {
+  REVERSIBILITY_CLASSES,
+  REVERSIBILITY_CLASSIFIERS,
+  compareAutonomyRungs,
+  isAutonomyRung,
+  type ReversibilityClass,
+  type ReversibilityClassification,
+} from "./autonomy.ts";
 import type {
   PolicyActionRequest,
   PolicyDecision,
@@ -13,7 +23,6 @@ import type {
   PolicyUndeterminedReasonCode,
 } from "./decision.ts";
 import {
-  EXTERNAL_SIDE_EFFECT_CLASSES,
   type ApprovalGrant,
   type ApprovalRequirement,
   type ApprovalRule,
@@ -54,12 +63,50 @@ function actorSnapshot(value: unknown): Actor | null {
   return actor as Actor;
 }
 
+const FAIL_CLOSED_REVERSIBILITY = {
+  class: "irreversible",
+  classifiedBy: "policy",
+  checkpointAvailable: false,
+  undoMethod: null,
+  cannotRestore: ["The request's reversibility classification could not be read."],
+} as const satisfies ReversibilityClassification;
+
+function reversibilitySnapshot(value: unknown): ReversibilityClassification | null {
+  const reversibilityClass = ownData(value, "class");
+  const classifiedBy = ownData(value, "classifiedBy");
+  const checkpointAvailable = ownData(value, "checkpointAvailable");
+  const undoMethod = ownData(value, "undoMethod");
+  const cannotRestore = ownData(value, "cannotRestore");
+  if (
+    typeof reversibilityClass !== "string"
+    || !(REVERSIBILITY_CLASSES as readonly string[]).includes(reversibilityClass)
+    || typeof classifiedBy !== "string"
+    || !(REVERSIBILITY_CLASSIFIERS as readonly string[]).includes(classifiedBy)
+    || typeof checkpointAvailable !== "boolean"
+    || (undoMethod !== null && (typeof undoMethod !== "string" || undoMethod.length === 0))
+    || !Array.isArray(cannotRestore)
+    || !cannotRestore.every((entry) => typeof entry === "string" && entry.length > 0)
+  ) {
+    return null;
+  }
+  return {
+    class: reversibilityClass as ReversibilityClassification["class"],
+    classifiedBy: classifiedBy as ReversibilityClassification["classifiedBy"],
+    checkpointAvailable,
+    undoMethod,
+    cannotRestore,
+  };
+}
+
 function requestSnapshot(request: unknown): PolicyActionRequest {
   const action = ownData(request, "action");
   const description = ownData(request, "description");
   const target = ownData(request, "target");
   const requestedBy = ownData(request, "requestedBy");
   const actor = actorSnapshot(requestedBy);
+  const requestedRung = ownData(request, "requestedRung");
+  const reversibility = reversibilitySnapshot(ownData(request, "reversibility"));
+  const workerClaim = ownData(request, "workerClaimedReversibility");
   return {
     action: typeof action === "string" && action.length > 0 ? action : "unknown-action",
     description:
@@ -68,6 +115,12 @@ function requestSnapshot(request: unknown): PolicyActionRequest {
         : "Policy action request could not be read.",
     ...(typeof target === "string" && target.length > 0 ? { target } : {}),
     requestedBy: actor ?? { kind: "system", component: "policy-evaluator" },
+    requestedRung: isAutonomyRung(requestedRung) ? requestedRung : "human_reserved",
+    reversibility: reversibility ?? FAIL_CLOSED_REVERSIBILITY,
+    ...(typeof workerClaim === "string"
+      && (REVERSIBILITY_CLASSES as readonly string[]).includes(workerClaim)
+      ? { workerClaimedReversibility: workerClaim as ReversibilityClass }
+      : {}),
   };
 }
 
@@ -76,13 +129,21 @@ function readableRequest(request: unknown): PolicyActionRequest | undefined {
   const description = ownData(request, "description");
   const target = ownData(request, "target");
   const requestedBy = actorSnapshot(ownData(request, "requestedBy"));
+  const requestedRung = ownData(request, "requestedRung");
+  const reversibility = reversibilitySnapshot(ownData(request, "reversibility"));
+  const workerClaim = ownData(request, "workerClaimedReversibility");
   if (
     typeof action !== "string" ||
     action.length === 0 ||
     typeof description !== "string" ||
     description.length === 0 ||
     (target !== undefined && (typeof target !== "string" || target.length === 0)) ||
-    requestedBy === null
+    requestedBy === null ||
+    !isAutonomyRung(requestedRung) ||
+    reversibility === null ||
+    (workerClaim !== undefined
+      && (typeof workerClaim !== "string"
+        || !(REVERSIBILITY_CLASSES as readonly string[]).includes(workerClaim)))
   ) {
     return undefined;
   }
@@ -91,6 +152,11 @@ function readableRequest(request: unknown): PolicyActionRequest | undefined {
     description,
     ...(typeof target === "string" ? { target } : {}),
     requestedBy,
+    requestedRung,
+    reversibility,
+    ...(workerClaim !== undefined
+      ? { workerClaimedReversibility: workerClaim as ReversibilityClass }
+      : {}),
   };
 }
 
@@ -154,6 +220,7 @@ function decide(
   manifest: PolicyManifest,
   request: PolicyActionRequest,
   matchingRules: readonly ApprovalRule[],
+  _externalAction: ConsequentialActionClass | undefined,
 ): PolicyDecision {
   const controllingPolicy = { policyId: manifest.policyId, version: manifest.version };
   const denied = matchingRules.find((rule) => rule.decision.kind === "deny");
@@ -227,6 +294,50 @@ function decide(
       explanation: `Policy rule "${allowed.id}" automatically allows this action.`,
     },
     controllingPolicy,
+  };
+}
+
+function approvalRequired(
+  manifest: PolicyManifest,
+  request: PolicyActionRequest,
+  explanation: string,
+): PolicyDecision {
+  return {
+    outcome: "denied",
+    request,
+    reason: { code: "approval_required", explanation },
+    controllingPolicy: { policyId: manifest.policyId, version: manifest.version },
+    grant: { kind: "allow-once" },
+    availableOptions: [
+      {
+        kind: "request_approval",
+        description: "Request one-time approval from an authorized human.",
+      },
+      CONTACT_POLICY_OWNER,
+    ],
+  };
+}
+
+function ceilingExceeded(
+  manifest: PolicyManifest,
+  request: PolicyActionRequest,
+  ceiling: Exclude<PolicyActionRequest["requestedRung"], "human_reserved">,
+): PolicyDecision {
+  return {
+    outcome: "denied",
+    request,
+    reason: {
+      code: "autonomy_ceiling_exceeded",
+      explanation: `Requested autonomy rung "${request.requestedRung}" exceeds the policy ceiling "${ceiling}".`,
+    },
+    controllingPolicy: { policyId: manifest.policyId, version: manifest.version },
+    availableOptions: [
+      {
+        kind: "change_request",
+        description: `Retry at or below the "${ceiling}" autonomy rung.`,
+      },
+      CONTACT_POLICY_OWNER,
+    ],
   };
 }
 
@@ -332,9 +443,38 @@ export function evaluatePolicyDecision(
 
     const { action } = readable;
 
-    const externalAction = (EXTERNAL_SIDE_EFFECT_CLASSES as readonly string[]).includes(action)
-      ? action
-      : undefined;
+    const externalAction = isConsequentialActionClass(action) ? action : undefined;
+    const ceiling = externalAction === undefined
+      ? undefined
+      : policy.autonomyCeilings[externalAction] ?? "human_reserved";
+    if (readable.requestedRung === "human_reserved" || ceiling === "human_reserved") {
+      return approvalRequired(
+        policy,
+        readable,
+        "This action is human-reserved and can never be automatically allowed.",
+      );
+    }
+    if (ceiling !== undefined && compareAutonomyRungs(readable.requestedRung, ceiling) > 0) {
+      return ceilingExceeded(policy, readable, ceiling);
+    }
+    // Reversibility is decided BEFORE rule matching: an irreversible action
+    // with no matching rule must resolve to approval-required, not to an
+    // undetermined "unknown action" that a caller might treat as merely
+    // unconfigured. Fail closed on the stronger of the two.
+    const effectivelyIrreversible = readable.reversibility.class === "irreversible"
+      || (
+        readable.reversibility.class === "conditionally_reversible"
+        && !readable.reversibility.checkpointAvailable
+      );
+    const irreversibleBypass = externalAction !== undefined
+      && (policy.irreversibleAllowedWithoutApproval ?? []).includes(externalAction);
+    if (effectivelyIrreversible && !irreversibleBypass) {
+      return approvalRequired(
+        policy,
+        readable,
+        "The host/policy reversibility classification requires approval before this action may proceed.",
+      );
+    }
     const specificRules = policy.approvals.rules.filter((rule) => {
       if (rule.appliesTo.kind === "capability") {
         return rule.appliesTo.capability === action;
@@ -382,7 +522,7 @@ export function evaluatePolicyDecision(
       );
     }
 
-    return decide(policy, readable, matchingRules);
+    return decide(policy, readable, matchingRules, externalAction);
   } catch {
     return undetermined(
       manifest,

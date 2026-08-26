@@ -216,7 +216,9 @@ describe("sequence semantics", () => {
 
 describe("durable and ephemeral envelopes are mutually exclusive", () => {
   const runEvent = {
-    schemaVersion: 1,
+    // run-events moved to schema 2 when attention capture landed (D10);
+    // a version-1 event is now rejected, so a "valid durable event" is v2.
+    schemaVersion: 2,
     eventId: "event-1",
     runId: "run-1",
     sequence: 1,

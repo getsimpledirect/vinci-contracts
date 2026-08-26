@@ -135,6 +135,10 @@ export const PAYLOAD_FIELDS = {
   // The question's TEXT is not here. It lives wherever questions live; this
   // carries its identifier. That is the whole point of the allowlist.
   "run.question": { questionId: { kind: "id", required: true } },
+  "run.question_answered": {
+    questionId: { kind: "id", required: true },
+    humanSeconds: { kind: "count", required: true },
+  },
   "approval.requested": {
     approvalId: { kind: "id", required: true },
     actionClass: { kind: "enum", required: true, members: CONSEQUENTIAL_ACTION_CLASSES },
@@ -143,8 +147,12 @@ export const PAYLOAD_FIELDS = {
   "approval.granted": {
     approvalId: { kind: "id", required: true },
     narrowed: { kind: "flag", required: true },
+    humanSeconds: { kind: "count", required: true },
   },
-  "approval.denied": { approvalId: { kind: "id", required: true } },
+  "approval.denied": {
+    approvalId: { kind: "id", required: true },
+    humanSeconds: { kind: "count", required: true },
+  },
   "capability.used": {
     capabilityId: { kind: "id", required: true },
     resourceDigest: { kind: "digest", required: false },
@@ -186,9 +194,17 @@ export const PAYLOAD_FIELDS = {
     snapshotDigest: { kind: "digest", required: true },
     staled: { kind: "flag", required: true },
   },
+  // The four attention aggregates are the HOST's claim about the run, in the
+  // same sense the terminal state is: the contract cannot reconcile them against
+  // the per-event humanSeconds (a consumer holding the full event stream can),
+  // so a reader must treat a disagreement as the host's error, not the events'.
   "run.completed": {
     terminalState: { kind: "enum", required: true, members: ["DONE", "DONE_UNVERIFIED"] },
     receiptDigest: { kind: "digest", required: false },
+    humanAttentionSeconds: { kind: "count", required: true },
+    humanDecisions: { kind: "count", required: true },
+    humanInterruptions: { kind: "count", required: true },
+    escalations: { kind: "count", required: true },
   },
   "run.failed": { reasonCode: { kind: "enum", required: true, members: RUN_FAILURE_CODES } },
   "run.blocked": { reasonCode: { kind: "enum", required: true, members: RUN_BLOCKED_CODES } },
