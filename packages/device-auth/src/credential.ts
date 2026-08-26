@@ -216,7 +216,12 @@ function isTimestamp(value: unknown): value is Timestamp {
   return isCanonicalTimestamp(value);
 }
 
-export function decodeCanonicalBase64Url(value: unknown): Buffer | undefined {
+/**
+ * Returns the decoded bytes of a canonical, unpadded base64url string, or
+ * undefined. Typed as Uint8Array so the published declaration does not depend
+ * on Node's `Buffer` type — a consumer without @types/node could not resolve it.
+ */
+export function decodeCanonicalBase64Url(value: unknown): Uint8Array | undefined {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
   const decoded = Buffer.from(value, "base64url");
   return decoded.toString("base64url") === value ? decoded : undefined;
