@@ -18,7 +18,12 @@ compatibility decision recorded here, rather than an edit.
 External stability is not claimed. Nothing outside this organization depends on
 these packages, and v0.1 says so.
 
-Publication is public. Ruled 2026-08-26: the packages publish to the public npm
+Publication target, amended 2026-08-26 (later the same day): the packages publish
+to GitHub Packages (`npm.pkg.github.com`) for now — internal consumers only, no
+npm account, `GITHUB_TOKEN` publishes, no provenance. The public-npm ruling below
+stands as the destination and takes effect when Vinci Code adopts these contracts
+(a public package cannot depend on a private registry); until then the CLI does
+not consume them. Original ruling, kept for the reasoning: the packages publish to the public npm
 registry under the `@getsimpledirect` scope, with provenance, not to GitHub
 Packages. The reason is mechanical before it is strategic: the MIT-licensed
 `vinci-code-cli` is a consumer, and a public package cannot depend on a private
@@ -27,7 +32,7 @@ widen the stability claim above — 0.x on a public registry is still 0.x — bu
 does mean the protocol is readable by anyone from 0.1.0 onward, which is the
 intended shape (an open worker protocol with an open reference worker).
 
-Package references use the organization-owned `@getsimpledirect` scope on the public npm registry; the deliberate `vinci-` prefix avoids claiming generic package names.
+Package references use the organization-owned `@getsimpledirect` scope, published to GitHub Packages for now (public npm when Vinci Code adopts these contracts); the deliberate `vinci-` prefix avoids claiming generic package names.
 
 The exit gate this repo exists to satisfy (§17, E0):
 

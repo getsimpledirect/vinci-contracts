@@ -3,7 +3,7 @@
 What the repositories actually define today, where those definitions disagree,
 and which disagreements this repository settles.
 
-Package references use the organization-owned `@getsimpledirect` scope on the public npm registry; the deliberate `vinci-` prefix avoids claiming generic package names.
+Package references use the organization-owned `@getsimpledirect` scope, published to GitHub Packages for now (public npm when Vinci Code adopts these contracts); the deliberate `vinci-` prefix avoids claiming generic package names.
 
 The E0 exit gate is "no repository independently defines conflicting run
 states" (§17). Reaching it required finding the conflicts first. Several were
