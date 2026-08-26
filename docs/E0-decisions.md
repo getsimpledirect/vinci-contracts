@@ -284,3 +284,40 @@ control is rendered only when the adapter has demonstrated that it can enforce
 the corresponding command. This is a product truthfulness boundary: showing a
 pause, restriction, approval, steering, or abort control that the adapter
 cannot carry out would offer authority the system does not have.
+## D9 — Work contracts change by amendment, never by erasure
+
+D7 is intentionally not used here because it is already allocated on another
+branch. This decision takes D8 so the histories can merge without making two
+different decisions share an identifier.
+
+Acceptance criteria are fixed before consequential execution begins. Editing a
+criterion after execution turns the test into a description of what happened:
+the worker could always be made to pass by moving the target over its result.
+The durable work contract therefore has its own monotonic `contractVersion`.
+Version 1 has no predecessor; every later version identifies the immediately
+preceding version and the amendment that created the transition. The work order
+id remains stable because it identifies the work, while the contract version
+identifies which terms governed it.
+
+An amendment records who changed the contract, when, why, and which closed-set
+fields changed. Changes to acceptance criteria, scope, or granted authority are
+material and make a current verification stale. Request wording, attention
+budget, and an expiry extension are editorial and preserve current verification.
+A stale verdict remains immutable history, but is no longer current for the new
+contract version.
+
+Criterion ids are semantic identities, not array keys. Verdicts are pinned to
+them, so reusing an id for a different statement or verification method would
+make old evidence appear to verify new terms. A changed criterion is represented
+as removal of the old id and addition under a new id; it is never rewritten in
+place.
+
+Adding required `contractVersion` and conditional `supersedes` fields is not
+purely additive, and `WorkOrder` was already declared frozen. D3 requires every
+schema to carry its own compatibility contract, and a newly required field is a
+compatibility break by that contract's own terms, so `WorkOrder.schemaVersion`
+and `WORK_ORDER_SCHEMA_META.version` move from 1 to 2.
+Migration is explicit: a legacy schema-v1 work order becomes schema v2 with
+`contractVersion: 1` and no `supersedes`. Validation does not silently supply
+that value, because doing so would hide which records were actually migrated.
+`ContractAmendment` begins independently at schema version 1.
