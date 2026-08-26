@@ -22,9 +22,11 @@ import {
 import {
   BROADENING_COMMANDS,
   REVERSIBLE_BRAKING_COMMANDS,
-  STEERING_COMMANDS,
-  TERMINAL_COMMANDS,
   type RemoteCommandKind,
+  STEERING_COMMANDS,
+  type SessionRole,
+  TERMINAL_COMMANDS,
+  mayIssue,
 } from "@getsimpledirect/vinci-remote-protocol";
 
 /** Ordered from the least to the most demonstrated oversight. */
@@ -246,7 +248,14 @@ export const UNMAPPED_COMMANDS = [] as const satisfies readonly {
   readonly reason: string;
 }[];
 
-/** The complete command allowlist a UI may render for this worker. */
+/**
+ * The ADAPTER axis only: every command this worker can actually honour. This is
+ * necessary for rendering a control and not sufficient — authority has a second
+ * axis, the role of the person holding the device, and `approve_pending_approval`
+ * in particular is broadening and owner/approver-only in remote-protocol. A UI
+ * must call `renderableRemoteCommands(matrix, role)`, which intersects both axes;
+ * rendering this list alone offers authority the session does not have.
+ */
 export function permittedRemoteCommands(matrix: CapabilityMatrix): readonly RemoteCommandKind[] {
   return MAPPED_COMMANDS.filter((command) => COMMAND_RULES[command](matrix));
 }
@@ -406,3 +415,48 @@ export const WORKER_DECLARATION_SCHEMA_META: SchemaMeta = {
   malformedData: "fail-closed",
   migration: "none",
 };
+
+/**
+ * What a UI may render for THIS worker in front of THIS role: the adapter can
+ * honour it AND remote-protocol lets the role issue it. Both axes are decided
+ * elsewhere; this function only intersects them, so neither can be widened here.
+ */
+export function renderableRemoteCommands(
+  matrix: CapabilityMatrix,
+  role: SessionRole,
+): readonly RemoteCommandKind[] {
+  // This is an authority guard, so it is probed with hostile input by the
+  // hostile-key sweep: a matrix that is not a plain closed record, or a role
+  // that is not a string, yields NO commands rather than throwing or guessing.
+  if (!isPlainCapabilityMatrix(matrix)) return [];
+  return permittedRemoteCommands(matrix).filter((command) => mayIssue(role, command));
+}
+
+const CAPABILITY_BOOLEAN_KEYS = [
+  "activityStream",
+  "questions",
+  "steering",
+  "pause",
+  "restrictToReadOnly",
+  "abort",
+  "filesystemEnforcement",
+  "networkEnforcement",
+  "structuredEvidence",
+  "nativeReceipts",
+  "safeResume",
+  "independentVerification",
+] as const;
+
+function isPlainCapabilityMatrix(value: unknown): value is CapabilityMatrix {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const proto = Object.getPrototypeOf(value);
+  if (proto !== Object.prototype && proto !== null) return false;
+  const record = value as Record<string, unknown>;
+  const keys = Object.keys(record);
+  if (keys.length !== CAPABILITY_BOOLEAN_KEYS.length + 1) return false;
+  for (const key of CAPABILITY_BOOLEAN_KEYS) {
+    if (!Object.hasOwn(record, key) || typeof record[key] !== "boolean") return false;
+  }
+  const approvals = Object.hasOwn(record, "approvals") ? record.approvals : undefined;
+  return approvals === "native" || approvals === "translated" || approvals === "none";
+}

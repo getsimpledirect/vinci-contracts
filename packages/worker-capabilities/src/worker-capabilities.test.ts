@@ -16,6 +16,7 @@ import {
   derivedTrustLevel,
   isTrustLevel,
   permittedRemoteCommands,
+  renderableRemoteCommands,
   trustLevelLabel,
   validateWorkerDeclaration,
   type CapabilityMatrix,
@@ -265,5 +266,30 @@ describe("remote command rendering", () => {
     ];
     expect(new Set(accountedFor)).toEqual(new Set(protocolCommands));
     expect(UNMAPPED_COMMANDS).toEqual([]);
+  });
+});
+
+describe("renderableRemoteCommands intersects the adapter axis with the role axis", () => {
+  const full = matrix({
+    activityStream: true,
+    questions: true,
+    steering: true,
+    approvals: "native",
+    pause: true,
+    restrictToReadOnly: true,
+    abort: true,
+  });
+
+  it("never renders approve for a role remote-protocol refuses", () => {
+    expect(permittedRemoteCommands(full)).toContain("approve_pending_approval");
+    expect(renderableRemoteCommands(full, "collaborator")).not.toContain("approve_pending_approval");
+    expect(renderableRemoteCommands(full, "viewer")).toEqual([]);
+  });
+
+  it("renders approve for an approver, and only what the adapter honours", () => {
+    expect(renderableRemoteCommands(full, "approver")).toContain("approve_pending_approval");
+    const noApprovals = matrix({ ...full, approvals: "none" });
+    expect(renderableRemoteCommands(noApprovals, "owner")).not.toContain("approve_pending_approval");
+    expect(renderableRemoteCommands(noApprovals, "owner")).not.toContain("deny_pending_approval");
   });
 });

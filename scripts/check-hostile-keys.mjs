@@ -79,6 +79,25 @@ function hostileInputs() {
  */
 const AUTHORITY_GUARDS = [
   {
+    pkg: "@getsimpledirect/vinci-worker-capabilities",
+    export: "renderableRemoteCommands",
+    label: "renderableRemoteCommands(matrix, 'approver')",
+    // The guard returns a command list; "granted a yes" means it offered at
+    // least one command, so the probe projects the list to that boolean.
+    call: (fn, hostile) => fn(hostile, "approver").length > 0,
+    control: (fn) =>
+      fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "approver").includes("approve_pending_approval")
+      && !fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "collaborator").includes("approve_pending_approval")
+      && fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "viewer").length === 0,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-worker-capabilities",
+    export: "renderableRemoteCommands",
+    label: "renderableRemoteCommands(matrix, role)",
+    call: (fn, hostile) => fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, hostile).length > 0,
+    control: (fn) => fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "owner").includes("pause") && fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "viewer").length === 0,
+  },
+  {
     pkg: "@getsimpledirect/vinci-remote-protocol",
     export: "mayIssue",
     label: "mayIssue(role, 'pause')",
