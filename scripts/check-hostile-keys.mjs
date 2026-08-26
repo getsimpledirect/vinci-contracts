@@ -79,6 +79,25 @@ function hostileInputs() {
  */
 const AUTHORITY_GUARDS = [
   {
+    pkg: "@getsimpledirect/vinci-worker-capabilities",
+    export: "renderableRemoteCommands",
+    label: "renderableRemoteCommands(matrix, 'approver')",
+    // The guard returns a command list; "granted a yes" means it offered at
+    // least one command, so the probe projects the list to that boolean.
+    call: (fn, hostile) => fn(hostile, "approver").length > 0,
+    control: (fn) =>
+      fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "approver").includes("approve_pending_approval")
+      && !fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "collaborator").includes("approve_pending_approval")
+      && fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "viewer").length === 0,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-worker-capabilities",
+    export: "renderableRemoteCommands",
+    label: "renderableRemoteCommands(matrix, role)",
+    call: (fn, hostile) => fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, hostile).length > 0,
+    control: (fn) => fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "owner").includes("pause") && fn({ activityStream: true, questions: true, steering: true, approvals: "native", pause: true, restrictToReadOnly: true, abort: true, filesystemEnforcement: false, networkEnforcement: false, structuredEvidence: false, nativeReceipts: false, safeResume: false, independentVerification: false }, "viewer").length === 0,
+  },
+  {
     pkg: "@getsimpledirect/vinci-remote-protocol",
     export: "mayIssue",
     label: "mayIssue(role, 'pause')",
@@ -409,6 +428,11 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-device-auth.parseKeyHash": "parser returning a ValidationResult",
   "@getsimpledirect/vinci-device-auth.revoke": "state transition over an already-validated record",
   "@getsimpledirect/vinci-session-stream.nextSeqIsValid": "predicate over safe integers; answers whether next is the unused sequence after prev",
+  "@getsimpledirect/vinci-worker-capabilities.isTrustLevel": "enum membership",
+  "@getsimpledirect/vinci-worker-capabilities.compareTrustLevels": "comparison over members of the ordered trust vocabulary",
+  "@getsimpledirect/vinci-worker-capabilities.derivedTrustLevel": "derivation over an already-validated capability matrix",
+  "@getsimpledirect/vinci-worker-capabilities.permittedRemoteCommands": "UI projection over an already-validated capability matrix",
+  "@getsimpledirect/vinci-worker-capabilities.trustLevelLabel": "total label lookup over the trust vocabulary",
 };
 
 /**

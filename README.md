@@ -14,11 +14,13 @@ This repository enforces a strict downward dependency rule: a package may depend
 | **1** | `policy`, `model-classes`, `evidence`, `approvals`, `device-auth` |
 | **2** | `receipts`, `run-events`, `work-orders` |
 | **3** | `remote-protocol` (session identity, roles, the authority channel) |
-| **4** | `session-stream` (the ephemeral human-facing channel of a remote session) |
+| **4** | `session-stream` (the ephemeral human-facing channel of a remote session), `worker-capabilities` (what an adapter can enforce, and the trust level derived from it) |
 
 Each layer knows everything below it; nothing above. Packages export only the types and validators they define—never re-export upward.
 
 Three channels, three packages, deliberately not one: `run-events` (layer 2) is the durable, content-minimal record — its payload values are ids, enums, counts, digests, timestamps and flags, never free text; `remote-protocol` (layer 3) carries signed authority commands; `session-stream` (layer 4) carries what a supervising human sees while a worker runs — current action, a bounded diff, a question, a warning — with `retention: "ephemeral"` so it is never mistaken for the record.
+
+`worker-capabilities` (layer 4) answers a different question: what can THIS worker's adapter actually honour? A `WorkerDeclaration` carries a closed `CapabilityMatrix`; the trust level (`inventoried → observed → supervised → governed → assured`) is derived from the matrix, never trusted from the declaration, and a declaration that claims more than it demonstrates is rejected. A UI renders `renderableRemoteCommands(matrix, role)` — the adapter axis intersected with what remote-protocol lets the role issue — and nothing else, so a control is never shown that the system cannot enforce.
 
 ## Using the Record Types
 

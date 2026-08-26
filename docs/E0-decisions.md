@@ -103,8 +103,8 @@ consumer can create a cycle:
                     worker-protocol
 
                     remote-protocol
-                           |
-                    session-stream
+                           |       |
+                    session-stream worker-capabilities
 ```
 
 `@getsimpledirect/vinci-contracts` holds only what every other package needs: identifier types,
@@ -127,6 +127,10 @@ reference the verdict.
 protocol version and session identity, while also using the base run and
 timestamp types. This keeps the ephemeral display transport from becoming an
 upward dependency of the durable run-event package.
+
+`worker-capabilities` also sits above `remote-protocol`: it projects the
+authority vocabulary into the controls an adapter can actually enforce. It is
+beside, and does not depend on, `session-stream`.
 
 ## D3 — Every schema carries its own compatibility contract
 
@@ -266,3 +270,17 @@ may truncate a diff and truthfully set its `truncated` flag before sending it;
 an oversized frame or hunk received on the wire is rejected. Sequence zero is
 valid, and every later accepted frame must be exactly one greater than the
 previous value so gaps and replays are distinguishable.
+
+## D8 — Worker trust is derived, and controls require demonstrated capability
+
+A worker declaration may state a control level, but that statement is not the
+source of trust. The adapter's demonstrated capability matrix is the source,
+and the control level is derived from it. A declaration above the derived level
+is refused; a declaration below it is allowed because a worker may decline to
+claim everything its adapter demonstrated.
+
+The same matrix is the sole source for remote controls shown by Admin. A
+control is rendered only when the adapter has demonstrated that it can enforce
+the corresponding command. This is a product truthfulness boundary: showing a
+pause, restriction, approval, steering, or abort control that the adapter
+cannot carry out would offer authority the system does not have.
