@@ -2,7 +2,7 @@
 
 Shared types and validators for the Vinci platform, used by five repositories (vinci-code, vinci-work, vinci-mobile, vinci-platform, vinci-chat) that currently maintain drifting local copies. This monorepo closes that divergence by defining one canonical set of record types, their shapes, and their validation rules—so teams can build against the same definitions instead of against guesses about what they meant to agree on.
 
-Package names use the organization-owned `@getsimpledirect` scope required by GitHub Packages. The deliberate `vinci-` prefix keeps these contracts namespaced without claiming generic package names.
+Package names use the organization-owned `@getsimpledirect` scope on the public npm registry. The deliberate `vinci-` prefix keeps these contracts namespaced without claiming generic package names.
 
 ## The Layer Hierarchy
 

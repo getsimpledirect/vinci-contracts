@@ -18,7 +18,16 @@ compatibility decision recorded here, rather than an edit.
 External stability is not claimed. Nothing outside this organization depends on
 these packages, and v0.1 says so.
 
-Package references use the organization-owned `@getsimpledirect` scope required by GitHub Packages; the deliberate `vinci-` prefix avoids claiming generic package names.
+Publication is public. Ruled 2026-08-26: the packages publish to the public npm
+registry under the `@getsimpledirect` scope, with provenance, not to GitHub
+Packages. The reason is mechanical before it is strategic: the MIT-licensed
+`vinci-code-cli` is a consumer, and a public package cannot depend on a private
+registry without breaking every community install. Public publication does not
+widen the stability claim above — 0.x on a public registry is still 0.x — but it
+does mean the protocol is readable by anyone from 0.1.0 onward, which is the
+intended shape (an open worker protocol with an open reference worker).
+
+Package references use the organization-owned `@getsimpledirect` scope on the public npm registry; the deliberate `vinci-` prefix avoids claiming generic package names.
 
 The exit gate this repo exists to satisfy (§17, E0):
 
