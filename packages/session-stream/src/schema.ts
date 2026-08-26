@@ -1,3 +1,4 @@
+import { SESSION_FRAME_SCHEMA_VERSION } from "./frame.ts";
 import { WORKER_WARNING_CODES } from "@getsimpledirect/vinci-run-events";
 function isWorkerWarningCode(value: unknown): value is (typeof WORKER_WARNING_CODES)[number] {
   return typeof value === "string" && (WORKER_WARNING_CODES as readonly string[]).includes(value);
@@ -39,6 +40,7 @@ export const MAX_DIFF_HUNK_BYTES = 16 * 1024;
 export const MAX_TOOL_SUMMARY_BYTES = 2 * 1024;
 
 const ENVELOPE_FIELDS = [
+  "schemaVersion",
   "protocolVersion",
   "sessionId",
   "runId",
@@ -353,6 +355,15 @@ export function validateSessionFrame(input: unknown): ValidationResult<SessionFr
     );
   }
 
+  if (record.schemaVersion !== SESSION_FRAME_SCHEMA_VERSION) {
+    issues.push(
+      issue(
+        "/schemaVersion",
+        "invalid_schema_version",
+        `session frames are schema version ${SESSION_FRAME_SCHEMA_VERSION}; version 1 frames carry no binding and are rejected`,
+      ),
+    );
+  }
   if (record.protocolVersion !== REMOTE_PROTOCOL_VERSION) {
     issues.push(
       issue(

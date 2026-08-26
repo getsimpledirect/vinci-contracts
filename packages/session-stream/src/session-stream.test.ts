@@ -18,6 +18,7 @@ const DIGEST = "a".repeat(64);
 
 function frame(kind: string, body: Record<string, unknown>, overrides: Record<string, unknown> = {}) {
   return {
+    schemaVersion: 2,
     protocolVersion: REMOTE_PROTOCOL_VERSION,
     sessionId: "session-1",
     runId: "run-1",
@@ -357,5 +358,44 @@ describe("warning frames correlate to the durable worker.warning vocabulary", ()
   it("rejects a warning with no reasonCode at all", () => {
     const result = validateSessionFrame(frame("warning", { message: "orphan" }));
     expect(result.ok).toBe(false);
+  });
+});
+
+describe("frame schema version and binding coverage (review fixes)", () => {
+  it("rejects a version-1 frame on the wire, not just in the meta", () => {
+    const result = validateSessionFrame(frame("current_action", VALID_BODIES.current_action, { schemaVersion: 1 }));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.issues.map((i) => i.code)).toContain("invalid_schema_version");
+  });
+
+  it("rejects organizationId: undefined as distinct from explicit null", () => {
+    const result = validateSessionFrame(frame("current_action", VALID_BODIES.current_action, { organizationId: undefined }));
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts a frame just under the byte cap with the binding fields present", () => {
+    const probe = frame("warning", { ...VALID_BODIES.warning, message: "x" });
+    const overhead = Buffer.byteLength(JSON.stringify(probe), "utf8") - 1;
+    const message = "x".repeat(MAX_SESSION_FRAME_BYTES - overhead);
+    expect(validateSessionFrame(frame("warning", { ...VALID_BODIES.warning, message })).ok).toBe(true);
+    expect(validateSessionFrame(frame("warning", { ...VALID_BODIES.warning, message: message + "x" })).ok).toBe(false);
+  });
+
+  it("a run event carrying organizationId and workspaceId still is not a session frame", () => {
+    const event = {
+      schemaVersion: 2,
+      eventId: "event-1",
+      runId: "run-1",
+      organizationId: null,
+      workspaceId: "workspace-1",
+      sequence: 1,
+      type: "run.question",
+      actor: { kind: "worker", workerId: "worker-1" },
+      occurredAt: AT,
+      idempotencyKey: "idem-1",
+      traceId: "trace-1",
+      payload: { questionId: "q-1" },
+    };
+    expect(validateSessionFrame(event).ok).toBe(false);
   });
 });
