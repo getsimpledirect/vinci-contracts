@@ -35,7 +35,7 @@ const validPacket = () => ({
 });
 
 const validOrder = () => ({
-  schemaVersion: 2 as const,
+  schemaVersion: 3 as const,
   contractVersion: 1,
   id: "wo-1",
   request: "Add rate limiting to the public API.",
@@ -46,6 +46,18 @@ const validOrder = () => ({
   grantedAuthority: ["edit files under src/api", "run the test suite"],
   attentionBudget: budget(),
   requestedBy: { kind: "user", userId: "u-1" },
+  owner: { kind: "user", userId: "owner-1" } as const,
+  riskClassification: {
+    level: "low" as const,
+    consequentialClasses: [],
+    rationale: "Changes are confined to local request handling and are fully testable.",
+  },
+  verifier: { kind: "none", verifierId: null, independence: "none" } as const,
+  rollbackConditions: [],
+  escalationRules: [
+    { when: "verifier_unavailable", to: { kind: "user", userId: "owner-1" }, within: 900 },
+    { when: "policy_undetermined", to: { kind: "user", userId: "owner-1" }, within: 300 },
+  ] as const,
   issuedAt: "2026-08-23T12:00:00.000Z",
   expiresAt: "2026-08-24T12:00:00.000Z",
 });
@@ -156,7 +168,7 @@ describe("a decision packet must be answerable without going elsewhere", () => {
 });
 
 describe("a work order fixes what done means before work starts", () => {
-  it("accepts contract v1 without supersedes", () => {
+  it("accepts a low-risk mission with no verifier and no rollback", () => {
     const result = validateWorkOrder(validOrder());
     expect(result.ok ? [] : result.issues).toEqual([]);
   });
@@ -232,6 +244,76 @@ describe("a work order fixes what done means before work starts", () => {
   });
 });
 
+describe("a mission contract carries durable accountability and recovery", () => {
+  const issueCodes = (input: unknown) => {
+    const result = validateWorkOrder(input);
+    return result.ok ? [] : result.issues.map((problem) => problem.code);
+  };
+
+  it("rejects worker and verifier owners with owner_must_be_human", () => {
+    for (const owner of [
+      { kind: "worker", workerId: "worker-1" },
+      { kind: "verifier", verifierId: "verifier-1", independent: true },
+    ]) {
+      expect(issueCodes({ ...validOrder(), owner })).toContain("owner_must_be_human");
+    }
+  });
+
+  it("rejects non-low risk that names no consequential class", () => {
+    expect(issueCodes({
+      ...validOrder(),
+      riskClassification: {
+        level: "medium",
+        consequentialClasses: [],
+        rationale: "The work may affect production behavior.",
+      },
+    })).toContain("risk_without_classes");
+  });
+
+  it("rejects consequential work with no verifier", () => {
+    expect(issueCodes({
+      ...validOrder(),
+      riskClassification: {
+        level: "high",
+        consequentialClasses: ["deployment"],
+        rationale: "The mission deploys to production.",
+      },
+      rollbackConditions: [
+        { trigger: "Deployment health check fails.", action: "revert_to_checkpoint", checkpointRequired: true },
+      ],
+    })).toContain("consequential_work_needs_verifier");
+  });
+
+  it("rejects same-worker review presented as independent", () => {
+    expect(issueCodes({
+      ...validOrder(),
+      verifier: { kind: "independent", verifierId: "verifier-1", independence: "same-worker" },
+    })).toContain("self_review_is_not_independent");
+  });
+
+  it("rejects a consequential order without rollback", () => {
+    expect(issueCodes({
+      ...validOrder(),
+      riskClassification: {
+        level: "medium",
+        consequentialClasses: ["external_communication"],
+        rationale: "The mission sends a message outside the organization.",
+      },
+      verifier: { kind: "human", verifierId: "user-reviewer", independence: "human" },
+      rollbackConditions: [],
+    })).toContain("consequential_work_needs_rollback");
+  });
+
+  it("rejects escalation rules that leave an undecidable case uncovered", () => {
+    expect(issueCodes({
+      ...validOrder(),
+      escalationRules: [
+        { when: "verifier_unavailable", to: { kind: "user", userId: "owner-1" }, within: 900 },
+      ],
+    })).toContain("escalation_gap");
+  });
+});
+
 describe("work-contract amendments are append-only", () => {
   const attribution = () => ({
     amendmentId: "amendment-1",
@@ -273,6 +355,35 @@ describe("work-contract amendments are append-only", () => {
     );
 
     expect(amendment.changes).toEqual([{ path: "request", kind: "modified" }]);
+    expect(amendment.materiality).toBe("editorial");
+    expect(verificationIsStaleAfter(amendment)).toBe(false);
+  });
+
+  it("makes a verifier amendment material and stales current verification", () => {
+    const { amendment } = amendWorkOrder(
+      validOrder() as WorkOrder,
+      { verifier: { kind: "deterministic", verifierId: "test-suite", independence: "same-worker" } },
+      attribution(),
+    );
+
+    expect(amendment.changes).toEqual([{ path: "verifier", kind: "modified" }]);
+    expect(amendment.materiality).toBe("material");
+    expect(verificationIsStaleAfter(amendment)).toBe(true);
+  });
+
+  it("keeps an escalation-rules amendment editorial without staling verification", () => {
+    const previous = validOrder() as WorkOrder;
+    const { amendment } = amendWorkOrder(
+      previous,
+      {
+        escalationRules: previous.escalationRules.map((rule) =>
+          rule.when === "policy_undetermined" ? { ...rule, within: 120 } : rule,
+        ),
+      },
+      attribution(),
+    );
+
+    expect(amendment.changes).toEqual([{ path: "escalationRules", kind: "modified" }]);
     expect(amendment.materiality).toBe("editorial");
     expect(verificationIsStaleAfter(amendment)).toBe(false);
   });
@@ -323,7 +434,7 @@ describe("work-contract amendments are append-only", () => {
   it("exports the materiality rule and complete schema metadata", () => {
     expect(classifyMateriality([{ path: "grantedAuthority", kind: "modified" }])).toBe("material");
     expect(classifyMateriality([{ path: "attentionBudget", kind: "modified" }])).toBe("editorial");
-    expect(WORK_ORDER_SCHEMA_META).toMatchObject({ version: 2, compatibility: "frozen" });
+    expect(WORK_ORDER_SCHEMA_META).toMatchObject({ version: 3, compatibility: "frozen" });
     expect(CONTRACT_AMENDMENT_SCHEMA_META).toMatchObject({ version: 1, compatibility: "frozen" });
   });
 });

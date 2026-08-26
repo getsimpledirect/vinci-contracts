@@ -105,16 +105,22 @@ const result = validateVerdictRecord(verdict);
 
 ### WorkOrder
 
-A bounded grant of authority to do a specific piece of work. Specifies what "done" means (acceptanceCriteria, fixed before work starts), what authority is granted (grantedAuthority, stated positively), and how much of a human's attention it may cost (attentionBudget). Work without pre-stated criteria is unjudgeable; work without defined authority is undefined.
+A durable mission contract for a bounded piece of work. It specifies what "done" means (acceptanceCriteria, fixed before work starts), what authority is granted (grantedAuthority, stated positively), and how much of a human's attention it may cost (attentionBudget). Work without pre-stated criteria is unjudgeable; work without defined authority is undefined.
+
+A mission contract persists across sessions, models, and people: its human owner answers for the mission, its risk classification names the consequential action classes involved, verifier independence is declared rather than assumed, and rollback conditions plus escalation rules are written before execution begins.
 
 ```typescript
+import { toUserId } from "@getsimpledirect/vinci-contracts";
 import {
   validateWorkOrder,
   type WorkOrder,
 } from "@getsimpledirect/vinci-work-orders";
 
+const ownerId = toUserId("user-alice");
+if (ownerId === null) throw new Error("invalid owner id");
+
 const workOrder: WorkOrder = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   contractVersion: 1,
   id: "order-001",
   request: "Review and approve the authentication module refactor",
@@ -134,8 +140,35 @@ const workOrder: WorkOrder = {
   },
   requestedBy: {
     kind: "user",
-    userId: "user-alice",
+    userId: ownerId,
   },
+  owner: {
+    kind: "user",
+    userId: ownerId,
+  },
+  riskClassification: {
+    level: "low",
+    consequentialClasses: [],
+    rationale: "The work is a code review with no production-side action.",
+  },
+  verifier: {
+    kind: "deterministic",
+    verifierId: "auth-test-suite",
+    independence: "same-worker",
+  },
+  rollbackConditions: [],
+  escalationRules: [
+    {
+      when: "verifier_unavailable",
+      to: { kind: "user", userId: ownerId },
+      within: 900,
+    },
+    {
+      when: "policy_undetermined",
+      to: { kind: "user", userId: ownerId },
+      within: 300,
+    },
+  ],
   issuedAt: "2026-08-23T14:00:00.000Z",
   expiresAt: "2026-08-24T14:00:00.000Z",
 };
@@ -144,7 +177,7 @@ const result = validateWorkOrder(workOrder);
 // Valid: true
 ```
 
-Criteria are fixed before execution and change only by amendment, never by edit. `amendWorkOrder(previous, patch, { amendmentId, changedBy, changedAt, reason })` returns the next contract version (`contractVersion + 1`, `supersedes` pointing at the previous one) and a `ContractAmendment` recording who changed what and why. A criterion is never rewritten in place: change its statement and you must remove the old id and add a new one, because verdicts pin to criterion ids. `classifyMateriality` fails closed — only `request`, `attentionBudget` and `expiresAt` are editorial; anything else is material, and `verificationIsStaleAfter(amendment)` tells a consumer to stale its current verdict (the stale verdict stays as history). A reorder of identical criteria is not a change.
+Criteria are fixed before execution and change only by amendment, never by edit. `amendWorkOrder(previous, patch, { amendmentId, changedBy, changedAt, reason })` returns the next contract version (`contractVersion + 1`, `supersedes` pointing at the previous one) and a `ContractAmendment` recording who changed what and why. A criterion is never rewritten in place: change its statement and you must remove the old id and add a new one, because verdicts pin to criterion ids. `classifyMateriality` fails closed — only `request`, `attentionBudget`, `escalationRules`, and `expiresAt` are editorial; anything else is material, and `verificationIsStaleAfter(amendment)` tells a consumer to stale its current verdict (the stale verdict stays as history). A reorder of identical criteria is not a change.
 
 ### DecisionPacket
 
