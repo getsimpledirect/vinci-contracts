@@ -27,8 +27,9 @@ import { validateAttentionBudget, type AttentionBudget } from "./attention.ts";
  *
  *   acceptanceCriteria — what "done" means, fixed BEFORE the work starts. A
  *   criterion written afterwards is a description of what happened, and cannot
- *   fail. This is the same rule the verdict record enforces, moved to where the
- *   claim originates.
+ *   fail. Amendments therefore create a new contract version, and a changed
+ *   criterion receives a new id rather than rewriting the meaning of an id that
+ *   may already have a verdict pinned to it.
  *
  *   attentionBudget — how much of a human this may cost. See attention.ts.
  *
@@ -36,7 +37,11 @@ import { validateAttentionBudget, type AttentionBudget } from "./attention.ts";
  *   prohibition is not a grant; anything not listed is not permitted.
  */
 export type WorkOrder = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
+  /** Monotonic version of this work's contract; the work order id stays stable. */
+  readonly contractVersion: number;
+  /** Required after v1 and points to the immediately preceding contract version. */
+  readonly supersedes?: WorkOrderSupersedes;
   readonly id: string;
   /** What was asked for, in the requester's words. */
   readonly request: string;
@@ -52,6 +57,11 @@ export type WorkOrder = {
   readonly issuedAt: string;
   /** A grant with no end is not bounded. */
   readonly expiresAt: string;
+};
+
+export type WorkOrderSupersedes = {
+  readonly contractVersion: number;
+  readonly amendmentId: string;
 };
 
 export type AcceptanceCriterion = {
@@ -116,7 +126,7 @@ export function validateWorkOrder(input: unknown): ValidationResult<WorkOrder> {
   const issues: ValidationIssue[] = [];
 
   const known = [
-    "schemaVersion", "id", "request", "scope", "acceptanceCriteria",
+    "schemaVersion", "contractVersion", "supersedes", "id", "request", "scope", "acceptanceCriteria",
     "grantedAuthority", "attentionBudget", "requestedBy", "issuedAt", "expiresAt",
   ];
   for (const key of Object.keys(record)) {
@@ -124,8 +134,41 @@ export function validateWorkOrder(input: unknown): ValidationResult<WorkOrder> {
       issues.push(issue(`/${key}`, "unknown_field", "a work order carries only its declared fields"));
     }
   }
-  if (record.schemaVersion !== 1) {
-    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 1"));
+  if (record.schemaVersion !== 2) {
+    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 2"));
+  }
+  if (!Number.isSafeInteger(record.contractVersion) || (record.contractVersion as number) < 1) {
+    issues.push(issue("/contractVersion", "invalid_contract_version", "contractVersion is an integer at least 1"));
+  }
+
+  const hasSupersedes = Object.hasOwn(record, "supersedes");
+  if (record.contractVersion === 1 && hasSupersedes) {
+    issues.push(issue("/supersedes", "supersedes_forbidden", "contract version 1 supersedes nothing"));
+  } else if (typeof record.contractVersion === "number" && record.contractVersion > 1) {
+    if (!hasSupersedes) {
+      issues.push(issue("/supersedes", "supersedes_required", "contract versions after 1 must identify their predecessor"));
+    } else if (typeof record.supersedes !== "object" || record.supersedes === null || Array.isArray(record.supersedes)) {
+      issues.push(issue("/supersedes", "invalid_type", "supersedes is an object"));
+    } else {
+      const supersedes = record.supersedes as Record<string, unknown>;
+      for (const key of Object.keys(supersedes)) {
+        if (!["contractVersion", "amendmentId"].includes(key)) {
+          issues.push(issue(`/supersedes/${key}`, "unknown_field", "supersedes carries only its declared fields"));
+        }
+      }
+      if (supersedes.contractVersion !== record.contractVersion - 1) {
+        issues.push(
+          issue(
+            "/supersedes/contractVersion",
+            "supersedes_version_mismatch",
+            "supersedes.contractVersion must be exactly one less than contractVersion",
+          ),
+        );
+      }
+      if (!isIdentifier(supersedes.amendmentId)) {
+        issues.push(issue("/supersedes/amendmentId", "invalid_id", "amendmentId is an identifier"));
+      }
+    }
   }
   if (!isIdentifier(record.id)) {
     issues.push(issue("/id", "invalid_id", "id is an identifier"));
@@ -216,9 +259,9 @@ export function validateWorkOrder(input: unknown): ValidationResult<WorkOrder> {
 
 export const WORK_ORDER_SCHEMA_META: SchemaMeta = {
   id: "vinci.work-order",
-  version: 1,
+  version: 2,
   compatibility: "frozen",
   unknownFields: "reject",
   malformedData: "fail-closed",
-  migration: "none",
+  migration: "Rewrite schema v1 records explicitly as schema v2 contract version 1 records without supersedes; validation never defaults the new field.",
 };

@@ -92,6 +92,10 @@ consumer can create a cycle:
                      +-----+-----+
                            |
                     worker-protocol
+
+                    remote-protocol
+                           |       |
+                    session-stream worker-capabilities
 ```
 
 `@getsimpledirect/vinci-contracts` holds only what every other package needs: identifier types,
@@ -109,6 +113,15 @@ reference the verdict.
 
 `scripts/check-dependency-graph.mjs` enforces this in CI. A package that imports
 "upward" fails the build rather than being caught in review.
+
+`session-stream` sits above `remote-protocol`: its frames carry the remote
+protocol version and session identity, while also using the base run and
+timestamp types. This keeps the ephemeral display transport from becoming an
+upward dependency of the durable run-event package.
+
+`worker-capabilities` also sits above `remote-protocol`: it projects the
+authority vocabulary into the controls an adapter can actually enforce. It is
+beside, and does not depend on, `session-stream`.
 
 ## D3 — Every schema carries its own compatibility contract
 
@@ -227,7 +240,79 @@ recorded here rather than an edit.
 Namespacing (`deploy:*`) stays a feature to design deliberately if real policies
 need it. It is not a default to slip into.
 
-## D-next — Human attention is a measured institutional cost
+## D7 — Session frames are ephemeral display transport, not run history
+
+`@getsimpledirect/vinci-session-stream` is the human-facing stream for a live
+remote session. Its frames carry bounded current-action, tool, diff, question,
+warning, artifact-preview, and redaction-notice content. They are explicitly
+marked `retention: "ephemeral"` and must not be persisted or replayed as though
+they were `RunEvent` records.
+
+The two envelopes are intentionally mutually exclusive. Session frames use
+`protocolVersion`, `sessionId`, `seq`, `at`, `kind`, and `body`; durable run
+events use their versioned event envelope. A question frame correlates to the
+content-minimized durable `run.question` event by `questionId`, while its prompt
+exists only in the ephemeral stream. Model chain-of-thought is not a frame kind
+and cannot be added as unrecognised content because both envelope and body
+fields are closed.
+
+Size enforcement is a receiver-side refusal, not automatic truncation. The host
+may truncate a diff and truthfully set its `truncated` flag before sending it;
+an oversized frame or hunk received on the wire is rejected. Sequence zero is
+valid, and every later accepted frame must be exactly one greater than the
+previous value so gaps and replays are distinguishable.
+
+## D8 — Worker trust is derived, and controls require demonstrated capability
+
+A worker declaration may state a control level, but that statement is not the
+source of trust. The adapter's demonstrated capability matrix is the source,
+and the control level is derived from it. A declaration above the derived level
+is refused; a declaration below it is allowed because a worker may decline to
+claim everything its adapter demonstrated.
+
+The same matrix is the sole source for remote controls shown by Admin. A
+control is rendered only when the adapter has demonstrated that it can enforce
+the corresponding command. This is a product truthfulness boundary: showing a
+pause, restriction, approval, steering, or abort control that the adapter
+cannot carry out would offer authority the system does not have.
+## D9 — Work contracts change by amendment, never by erasure
+
+D7 is intentionally not used here because it is already allocated on another
+branch. This decision takes D8 so the histories can merge without making two
+different decisions share an identifier.
+
+Acceptance criteria are fixed before consequential execution begins. Editing a
+criterion after execution turns the test into a description of what happened:
+the worker could always be made to pass by moving the target over its result.
+The durable work contract therefore has its own monotonic `contractVersion`.
+Version 1 has no predecessor; every later version identifies the immediately
+preceding version and the amendment that created the transition. The work order
+id remains stable because it identifies the work, while the contract version
+identifies which terms governed it.
+
+An amendment records who changed the contract, when, why, and which closed-set
+fields changed. Changes to acceptance criteria, scope, or granted authority are
+material and make a current verification stale. Request wording, attention
+budget, and an expiry extension are editorial and preserve current verification.
+A stale verdict remains immutable history, but is no longer current for the new
+contract version.
+
+Criterion ids are semantic identities, not array keys. Verdicts are pinned to
+them, so reusing an id for a different statement or verification method would
+make old evidence appear to verify new terms. A changed criterion is represented
+as removal of the old id and addition under a new id; it is never rewritten in
+place.
+
+Adding required `contractVersion` and conditional `supersedes` fields is not
+purely additive, and `WorkOrder` was already declared frozen. D3 requires every
+schema to carry its own compatibility contract, and a newly required field is a
+compatibility break by that contract's own terms, so `WorkOrder.schemaVersion`
+and `WORK_ORDER_SCHEMA_META.version` move from 1 to 2.
+Migration is explicit: a legacy schema-v1 work order becomes schema v2 with
+`contractVersion: 1` and no `supersedes`. Validation does not silently supply
+that value, because doing so would hide which records were actually migrated.
+`ContractAmendment` begins independently at schema version 1.
+## D10 — Human attention is a measured institutional cost
 
 The number is assigned at merge. Three open changes currently contest the
 post-D6 numbering, so the heading deliberately does not guess it.
