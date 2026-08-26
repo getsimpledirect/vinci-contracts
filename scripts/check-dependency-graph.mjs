@@ -20,6 +20,7 @@ const LAYERS = [
   ["@getsimpledirect/vinci-policy", "@getsimpledirect/vinci-model-classes", "@getsimpledirect/vinci-evidence", "@getsimpledirect/vinci-approvals", "@getsimpledirect/vinci-device-auth"],
   ["@getsimpledirect/vinci-receipts", "@getsimpledirect/vinci-run-events", "@getsimpledirect/vinci-work-orders"],
   ["@getsimpledirect/vinci-worker-protocol", "@getsimpledirect/vinci-remote-protocol"],
+  ["@getsimpledirect/vinci-session-stream"],
 ];
 
 const layerOf = new Map();

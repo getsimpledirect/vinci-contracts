@@ -101,6 +101,10 @@ consumer can create a cycle:
                      +-----+-----+
                            |
                     worker-protocol
+
+                    remote-protocol
+                           |
+                    session-stream
 ```
 
 `@getsimpledirect/vinci-contracts` holds only what every other package needs: identifier types,
@@ -118,6 +122,11 @@ reference the verdict.
 
 `scripts/check-dependency-graph.mjs` enforces this in CI. A package that imports
 "upward" fails the build rather than being caught in review.
+
+`session-stream` sits above `remote-protocol`: its frames carry the remote
+protocol version and session identity, while also using the base run and
+timestamp types. This keeps the ephemeral display transport from becoming an
+upward dependency of the durable run-event package.
 
 ## D3 — Every schema carries its own compatibility contract
 
@@ -235,3 +244,25 @@ recorded here rather than an edit.
 
 Namespacing (`deploy:*`) stays a feature to design deliberately if real policies
 need it. It is not a default to slip into.
+
+## D7 — Session frames are ephemeral display transport, not run history
+
+`@getsimpledirect/vinci-session-stream` is the human-facing stream for a live
+remote session. Its frames carry bounded current-action, tool, diff, question,
+warning, artifact-preview, and redaction-notice content. They are explicitly
+marked `retention: "ephemeral"` and must not be persisted or replayed as though
+they were `RunEvent` records.
+
+The two envelopes are intentionally mutually exclusive. Session frames use
+`protocolVersion`, `sessionId`, `seq`, `at`, `kind`, and `body`; durable run
+events use their versioned event envelope. A question frame correlates to the
+content-minimized durable `run.question` event by `questionId`, while its prompt
+exists only in the ephemeral stream. Model chain-of-thought is not a frame kind
+and cannot be added as unrecognised content because both envelope and body
+fields are closed.
+
+Size enforcement is a receiver-side refusal, not automatic truncation. The host
+may truncate a diff and truthfully set its `truncated` flag before sending it;
+an oversized frame or hunk received on the wire is rejected. Sequence zero is
+valid, and every later accepted frame must be exactly one greater than the
+previous value so gaps and replays are distinguishable.
