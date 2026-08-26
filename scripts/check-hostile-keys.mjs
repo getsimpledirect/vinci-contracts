@@ -356,6 +356,7 @@ const REQUIRED_GUARDS = [
  * the gate rather than silently going unexamined.
  */
 const NOT_AUTHORITY_GUARDS = {
+  "@getsimpledirect/vinci-device-auth.decodeCanonicalBase64Url": "pure encoding predicate: returns the decoded bytes of canonical unpadded base64url or undefined; grants nothing",
   "@getsimpledirect/vinci-approvals.applyApprovalDecision": "state transition over an already-validated decision",
   "@getsimpledirect/vinci-approvals.createApprovalDecision": "constructor; its output is validated",
   "@getsimpledirect/vinci-approvals.collectActorUnknownFields": "helper used inside a validator, after the snapshot",

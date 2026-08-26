@@ -856,6 +856,9 @@ describe("relay access token", () => {
     ["invalid_record", { binding: null }],
     ["invalid_signature_algorithm", { signature: { ...relayToken().signature, alg: "HS256" } }],
     ["invalid_signature_value", { signature: { ...relayToken().signature, value: "" } }],
+    ["invalid_signature_value", { signature: { ...relayToken().signature, value: Buffer.alloc(63, 1).toString("base64url") } }],
+    ["invalid_signature_value", { signature: { ...relayToken().signature, value: Buffer.alloc(64, 1).toString("base64") } }],
+    ["invalid_timestamp", { expiresAt: "2026-08-26T00:00:00Z" }],
   ])("drives the %s rejection", (code, override) => {
     const result = validateRelayAccessToken(relayToken(override));
     expect(result.ok).toBe(false);

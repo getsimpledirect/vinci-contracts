@@ -1,3 +1,4 @@
+import { decodeCanonicalBase64Url } from "./credential.ts";
 import {
   canonicalize,
   fail,
@@ -118,6 +119,10 @@ function requireId(record: PlainRecord, field: string, path: string, issues: Val
  * Validates token structure, audience, binding, role, and lifetime. It does
  * NOT verify the Ed25519 signature; callers must verify the returned token's
  * signing payload against the trusted issuer key before granting authority.
+ * Nor does it consult the clock: `expiresAt` is checked for shape and for the
+ * lifetime cap relative to `issuedAt`, and whether the token has ALREADY
+ * expired is the consumer's check against its own trusted time source — a
+ * validator that read the clock would be non-deterministic and untestable.
  */
 export function validateRelayAccessToken(input: unknown): ValidationResult<RelayAccessToken> {
   const plain = toPlainRecord(input);
@@ -218,12 +223,15 @@ export function validateRelayAccessToken(input: unknown): ValidationResult<Relay
         ),
       );
     }
-    if (typeof signature.value !== "string" || signature.value.length === 0) {
+    // Same strictness as the credential public key: canonical unpadded
+    // base64url, and exactly the 64 bytes an Ed25519 signature is. Structure
+    // only — verification against the issuer key remains the caller's duty.
+    if (decodeCanonicalBase64Url(signature.value)?.length !== 64) {
       issues.push(
         issue(
           "/signature/value",
           "invalid_signature_value",
-          "signature.value must be a non-empty string",
+          "signature.value must be canonical base64url encoding exactly 64 bytes (an Ed25519 signature)",
         ),
       );
     }

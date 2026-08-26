@@ -216,7 +216,7 @@ function isTimestamp(value: unknown): value is Timestamp {
   return isCanonicalTimestamp(value);
 }
 
-function decodeCanonicalBase64Url(value: unknown): Buffer | undefined {
+export function decodeCanonicalBase64Url(value: unknown): Buffer | undefined {
   if (typeof value !== "string" || !/^[A-Za-z0-9_-]+$/.test(value)) return undefined;
   const decoded = Buffer.from(value, "base64url");
   return decoded.toString("base64url") === value ? decoded : undefined;
