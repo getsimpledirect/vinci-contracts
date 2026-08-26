@@ -1,4 +1,9 @@
 import type { Actor, CanonicalGrant, PolicyId } from "@getsimpledirect/vinci-contracts";
+import type {
+  AutonomyRung,
+  ReversibilityClass,
+  ReversibilityClassification,
+} from "./autonomy.ts";
 
 export type PolicyReference = {
   readonly policyId: PolicyId;
@@ -10,6 +15,11 @@ export type PolicyActionRequest = {
   readonly description: string;
   readonly target?: string;
   readonly requestedBy: Actor;
+  readonly requestedRung: AutonomyRung;
+  /** Authoritative host/policy classification. Evaluation reads this field. */
+  readonly reversibility: ReversibilityClassification;
+  /** Advisory worker assertion, retained for audit but never used for authority. */
+  readonly workerClaimedReversibility?: ReversibilityClass;
 };
 
 export const POLICY_ALLOWED_REASON_CODES = ["automatic_allow", "approval_satisfied"] as const;
@@ -27,6 +37,7 @@ export const POLICY_DENIED_REASON_CODES = [
   "runtime_limit_exceeded",
   "retry_limit_exceeded",
   "verification_required",
+  "autonomy_ceiling_exceeded",
 ] as const;
 export type PolicyDeniedReasonCode = (typeof POLICY_DENIED_REASON_CODES)[number];
 

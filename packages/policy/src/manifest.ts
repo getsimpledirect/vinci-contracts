@@ -7,6 +7,7 @@ import {
   type Timestamp,
   type UserId,
 } from "@getsimpledirect/vinci-contracts";
+import type { AutonomyRung } from "./autonomy.ts";
 
 export const SYMLINK_HANDLING = ["deny", "allow_within_roots", "read_target_only"] as const;
 export type SymlinkHandling = (typeof SYMLINK_HANDLING)[number];
@@ -213,6 +214,8 @@ export type RetentionPolicy = {
 };
 
 export const POLICY_MANIFEST_SECTION_NAMES = [
+  "autonomyCeilings",
+  "irreversibleAllowedWithoutApproval",
   "resources",
   "filesystem",
   "applications",
@@ -232,6 +235,10 @@ export type PolicyManifest = {
   readonly policyId: PolicyId;
   readonly version: number;
   readonly displayName: string;
+  /** Per-action limits; an omitted class is evaluated as `human_reserved`. */
+  readonly autonomyCeilings: Record<ConsequentialActionClass, AutonomyRung>;
+  /** Omission is the fail-closed default: no irreversible class bypasses approval. */
+  readonly irreversibleAllowedWithoutApproval?: readonly ConsequentialActionClass[];
   readonly resources: ResourcePolicy;
   readonly filesystem: FilesystemPolicy;
   readonly applications: ApplicationPolicy;

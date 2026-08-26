@@ -1,11 +1,15 @@
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 import {
+  AUTONOMY_RUNGS,
+  AUTONOMY_RUNG_MEANINGS,
   EXTERNAL_SIDE_EFFECT_CLASSES,
   POLICY_DECISION_SCHEMA_META,
   POLICY_MANIFEST_SECTION_NAMES,
   POLICY_MANIFEST_SCHEMA_META,
   assertSchemaMetaComplete,
+  compareAutonomyRungs,
   evaluatePolicyDecision,
+  isAutonomyRung,
   validatePolicyDecision,
   validatePolicyManifest,
   type CredentialPolicy,
@@ -20,6 +24,20 @@ const validManifest = {
   policyId: "policy-test" as PolicyId,
   version: 1,
   displayName: "Test policy",
+  autonomyCeilings: {
+    deployment: "bounded_production",
+    production_database_change: "bounded_production",
+    external_communication: "bounded_production",
+    financial_obligation: "bounded_production",
+    billing_modification: "bounded_production",
+    content_publication: "bounded_production",
+    customer_data_deletion: "bounded_production",
+    access_control_change: "bounded_production",
+    protected_branch_update: "bounded_production",
+    infrastructure_purchase: "bounded_production",
+    security_policy_change: "bounded_production",
+  },
+  irreversibleAllowedWithoutApproval: [],
   resources: {
     allowedKinds: ["local_process"],
     maximumCpuCores: 2,
@@ -160,6 +178,8 @@ describe("policy schemas", () => {
 describe("policy vocabulary", () => {
   it("exposes every named manifest section without aliases", () => {
     expect(POLICY_MANIFEST_SECTION_NAMES).toEqual([
+      "autonomyCeilings",
+      "irreversibleAllowedWithoutApproval",
       "resources",
       "filesystem",
       "applications",
@@ -209,6 +229,22 @@ describe("policy vocabulary", () => {
     };
     expectTypeOf<SecretBearingPolicy>().not.toMatchTypeOf<CredentialPolicy>();
   });
+
+  it("exports the ordered autonomy ladder and UI meanings", () => {
+    expect(AUTONOMY_RUNGS).toEqual([
+      "observe",
+      "recommend",
+      "sandbox",
+      "reversible",
+      "bounded_production",
+      "human_reserved",
+    ]);
+    expect(Object.keys(AUTONOMY_RUNG_MEANINGS)).toEqual(AUTONOMY_RUNGS);
+    expect(isAutonomyRung("sandbox")).toBe(true);
+    expect(isAutonomyRung("assured")).toBe(false);
+    expect(compareAutonomyRungs("observe", "sandbox")).toBeLessThan(0);
+    expect(compareAutonomyRungs("human_reserved", "bounded_production")).toBeGreaterThan(0);
+  });
 });
 
 describe("policy decisions", () => {
@@ -220,6 +256,14 @@ describe("policy decisions", () => {
         description: "Deploy service",
         target: "production",
         requestedBy: { kind: "system", component: "test" },
+        requestedRung: "bounded_production",
+        reversibility: {
+          class: "reversible",
+          classifiedBy: "host",
+          checkpointAvailable: true,
+          undoMethod: "redeploy_previous_release",
+          cannotRestore: [],
+        },
       },
       reason: { code: "explicit_deny", explanation: "Production deploys are denied" },
       controllingPolicy: { policyId: "policy-test" as PolicyId, version: 1 },
@@ -232,6 +276,14 @@ describe("policy decisions", () => {
         description: "Deploy service",
         target: "production",
         requestedBy: { kind: "system", component: "test" },
+        requestedRung: "bounded_production",
+        reversibility: {
+          class: "reversible",
+          classifiedBy: "host",
+          checkpointAvailable: true,
+          undoMethod: "redeploy_previous_release",
+          cannotRestore: [],
+        },
       },
       reason: { code: "unknown_action", explanation: "No rule recognizes this deploy type" },
       controllingPolicy: { policyId: "policy-test" as PolicyId, version: 1 },
@@ -249,6 +301,14 @@ describe("policy decisions", () => {
         action: "deploy",
         description: "Deploy service",
         requestedBy: { kind: "system", component: "test" },
+        requestedRung: "bounded_production",
+        reversibility: {
+          class: "reversible",
+          classifiedBy: "policy",
+          checkpointAvailable: true,
+          undoMethod: "redeploy_previous_release",
+          cannotRestore: [],
+        },
       },
       reason: { code: "missing_context", explanation: "The target environment is unknown" },
       controllingPolicy: { policyId: "policy-test", version: 1 },
@@ -264,6 +324,14 @@ describe("evaluatePolicyDecision", () => {
     description: "Deploy the service",
     target: "production",
     requestedBy: { kind: "system", component: "policy-test" },
+    requestedRung: "bounded_production",
+    reversibility: {
+      class: "reversible",
+      classifiedBy: "host",
+      checkpointAvailable: true,
+      undoMethod: "redeploy_previous_release",
+      cannotRestore: [],
+    },
   } as const satisfies PolicyActionRequest;
 
   function manifestWithRules(
@@ -301,6 +369,136 @@ describe("evaluatePolicyDecision", () => {
       grant: { kind: "allow-once" },
     },
   } as const;
+
+  const allowDeployment = {
+    id: "allow-deployment",
+    description: "Deployment is allowed by the approval-rule axis",
+    appliesTo: { kind: "external_side_effect", actionClass: "deployment" },
+    decision: { kind: "allow_automatically" },
+  } as const;
+
+  const deploymentRequest = (overrides: Partial<PolicyActionRequest> = {}): PolicyActionRequest => ({
+    ...request,
+    action: "deployment",
+    ...overrides,
+  });
+
+  it("denies a requested rung above the action-class ceiling", () => {
+    const manifest = manifestWithRules([allowDeployment]);
+    manifest.autonomyCeilings.deployment = "recommend";
+
+    const decision = evaluatePolicyDecision(
+      manifest,
+      deploymentRequest({ requestedRung: "sandbox" }),
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("autonomy_ceiling_exceeded");
+  });
+
+  it("never automatically allows a human_reserved action", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([allowDeployment]),
+      deploymentRequest({ requestedRung: "human_reserved" }),
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+    if (decision.outcome === "denied") {
+      expect(decision.availableOptions[0].kind).toBe("request_approval");
+    }
+  });
+
+  it("requires approval for an irreversible action", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([allowDeployment]),
+      deploymentRequest({
+        reversibility: {
+          class: "irreversible",
+          classifiedBy: "host",
+          checkpointAvailable: false,
+          undoMethod: null,
+          cannotRestore: ["customer notifications already delivered"],
+        },
+      }),
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
+  it("treats conditionally_reversible without a checkpoint as irreversible", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([allowDeployment]),
+      deploymentRequest({
+        reversibility: {
+          class: "conditionally_reversible",
+          classifiedBy: "policy",
+          checkpointAvailable: false,
+          undoMethod: "restore_checkpoint",
+          cannotRestore: [],
+        },
+      }),
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
+  it("ignores a worker's reversible claim when the host classifies the action as irreversible", () => {
+    const decision = evaluatePolicyDecision(
+      manifestWithRules([allowDeployment]),
+      deploymentRequest({
+        workerClaimedReversibility: "reversible",
+        reversibility: {
+          class: "irreversible",
+          classifiedBy: "host",
+          checkpointAvailable: false,
+          undoMethod: null,
+          cannotRestore: ["external recipient state"],
+        },
+      }),
+    );
+
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
+  it("fails closed to human_reserved when an action-class ceiling is missing", () => {
+    const manifest = manifestWithRules([allowDeployment]);
+    const { deployment: _deployment, ...incompleteCeilings } = manifest.autonomyCeilings;
+    const incompleteManifest = {
+      ...manifest,
+      autonomyCeilings: incompleteCeilings,
+    } as unknown as PolicyManifest;
+
+    expect(validatePolicyManifest(incompleteManifest).ok).toBe(true);
+    const decision = evaluatePolicyDecision(incompleteManifest, deploymentRequest());
+    expect(decision.outcome).toBe("denied");
+    expect(decision.reason.code).toBe("approval_required");
+  });
+
+  it("allows an explicitly allowlisted irreversible class to follow existing rules", () => {
+    const manifest = {
+      ...manifestWithRules([allowDeployment]),
+      irreversibleAllowedWithoutApproval: ["deployment"],
+    } as const satisfies PolicyManifest;
+    const decision = evaluatePolicyDecision(
+      manifest,
+      deploymentRequest({
+        reversibility: {
+          class: "irreversible",
+          classifiedBy: "policy",
+          checkpointAvailable: false,
+          undoMethod: null,
+          cannotRestore: ["production side effect"],
+        },
+      }),
+    );
+
+    expect(decision.outcome).toBe("allowed");
+    expect(decision.reason.code).toBe("automatic_allow");
+  });
 
   it("allows a genuinely exact capability match", () => {
     const decision = evaluatePolicyDecision(manifestWithRules([allowDeploy]), request);
@@ -558,7 +756,19 @@ describe("branded identifiers use the constructor rule in policy records", () =>
 
   const allowedDecision = (requestedBy: Record<string, unknown>, policyId = "policy-test") => ({
     outcome: "allowed",
-    request: { action: "read", description: "Read a repository", requestedBy },
+    request: {
+      action: "read",
+      description: "Read a repository",
+      requestedBy,
+      requestedRung: "observe",
+      reversibility: {
+        class: "read_only",
+        classifiedBy: "policy",
+        checkpointAvailable: false,
+        undoMethod: null,
+        cannotRestore: [],
+      },
+    },
     reason: { code: "automatic_allow", explanation: "Read access is allowed" },
     controllingPolicy: { policyId, version: 1 },
   });

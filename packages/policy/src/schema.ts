@@ -1,4 +1,5 @@
 import {
+  CONSEQUENTIAL_ACTION_CLASSES,
   fail,
   isIdentifier,
   ok,
@@ -7,6 +8,11 @@ import {
   type ValidationResult,
   toPlainRecord,
 } from "@getsimpledirect/vinci-contracts";
+import {
+  AUTONOMY_RUNGS,
+  REVERSIBILITY_CLASSES,
+  REVERSIBILITY_CLASSIFIERS,
+} from "./autonomy.ts";
 import {
   POLICY_ALLOWED_REASON_CODES,
   POLICY_DECISION_OPTION_KINDS,
@@ -480,6 +486,21 @@ function validateExternalSideEffects(
   });
 }
 
+function validateAutonomyCeilings(
+  value: unknown,
+  issues: ValidationIssue[],
+  unknown: UnknownFields,
+): void {
+  const path = "/autonomyCeilings";
+  const object = objectValue(value, path, CONSEQUENTIAL_ACTION_CLASSES, issues, unknown);
+  if (!object) return;
+  for (const actionClass of CONSEQUENTIAL_ACTION_CLASSES) {
+    if (Object.hasOwn(object, actionClass)) {
+      enumValue(object[actionClass], AUTONOMY_RUNGS, `${path}/${actionClass}`, issues);
+    }
+  }
+}
+
 function validateMoney(
   value: unknown,
   path: string,
@@ -689,6 +710,15 @@ export function validatePolicyManifest(input: unknown): ValidationResult<PolicyM
   identifier(object.policyId, "/policyId", issues);
   positiveInteger(object.version, "/version", issues);
   requiredString(object.displayName, "/displayName", issues);
+  validateAutonomyCeilings(object.autonomyCeilings, issues, unknownFields);
+  if (object.irreversibleAllowedWithoutApproval !== undefined) {
+    enumArray(
+      object.irreversibleAllowedWithoutApproval,
+      CONSEQUENTIAL_ACTION_CLASSES,
+      "/irreversibleAllowedWithoutApproval",
+      issues,
+    );
+  }
   validateResources(object.resources, issues, unknownFields);
   validateFilesystem(object.filesystem, issues, unknownFields);
   validateApplications(object.applications, issues, unknownFields);
@@ -768,12 +798,61 @@ function validateDecisionRequest(
   issues: ValidationIssue[],
   unknown: UnknownFields,
 ): void {
-  const object = objectValue(value, path, ["action", "description", "target", "requestedBy"], issues, unknown);
+  const object = objectValue(
+    value,
+    path,
+    [
+      "action",
+      "description",
+      "target",
+      "requestedBy",
+      "requestedRung",
+      "reversibility",
+      "workerClaimedReversibility",
+    ],
+    issues,
+    unknown,
+  );
   if (!object) return;
   requiredString(object.action, `${path}/action`, issues);
   requiredString(object.description, `${path}/description`, issues);
   if (object.target !== undefined) requiredString(object.target, `${path}/target`, issues);
   validateActor(object.requestedBy, `${path}/requestedBy`, issues, unknown);
+  enumValue(object.requestedRung, AUTONOMY_RUNGS, `${path}/requestedRung`, issues);
+  const reversibilityPath = `${path}/reversibility`;
+  const reversibility = objectValue(
+    object.reversibility,
+    reversibilityPath,
+    ["class", "classifiedBy", "checkpointAvailable", "undoMethod", "cannotRestore"],
+    issues,
+    unknown,
+  );
+  if (reversibility) {
+    enumValue(reversibility.class, REVERSIBILITY_CLASSES, `${reversibilityPath}/class`, issues);
+    enumValue(
+      reversibility.classifiedBy,
+      REVERSIBILITY_CLASSIFIERS,
+      `${reversibilityPath}/classifiedBy`,
+      issues,
+    );
+    requiredBoolean(
+      reversibility.checkpointAvailable,
+      `${reversibilityPath}/checkpointAvailable`,
+      issues,
+    );
+    if (reversibility.undoMethod !== null) {
+      requiredString(reversibility.undoMethod, `${reversibilityPath}/undoMethod`, issues);
+    }
+    stringArray(reversibility.cannotRestore, `${reversibilityPath}/cannotRestore`, issues);
+  }
+  if (object.workerClaimedReversibility !== undefined) {
+    enumValue(
+      object.workerClaimedReversibility,
+      REVERSIBILITY_CLASSES,
+      `${path}/workerClaimedReversibility`,
+      issues,
+    );
+  }
 }
 
 function validateDecisionReason(
