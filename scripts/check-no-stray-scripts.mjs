@@ -40,6 +40,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 /** Every file permitted at the repository root. Regular files only. */
 const ALLOWED_ROOT_FILES = [
   ".gitignore",
+  // Pins, by commit fingerprint, the deliberate fake secrets used as
+  // hostile-input fixtures so secret scanners on the public repo do not
+  // re-flag them. Anything else secret-shaped is still caught.
+  ".gitleaksignore",
   "README.md",
   "eslint.config.mjs",
   "package-lock.json",
