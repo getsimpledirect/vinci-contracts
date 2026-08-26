@@ -79,6 +79,52 @@ function hostileInputs() {
  */
 const AUTHORITY_GUARDS = [
   {
+    pkg: "@getsimpledirect/vinci-session-stream",
+    export: "frameMatchesBinding",
+    label: "frameMatchesBinding(frame, binding)",
+    call: (fn, hostile) => fn(hostile, {
+      protocolVersion: 1,
+      organizationId: null,
+      workspaceId: "workspace-1",
+      runId: "run-1",
+      sessionId: "session-1",
+    }),
+    control: (fn) => {
+      const frame = {
+        protocolVersion: 1,
+        organizationId: null,
+        workspaceId: "workspace-1",
+        runId: "run-1",
+        sessionId: "session-1",
+      };
+      return fn(frame, { ...frame }) === true
+        && fn(frame, { ...frame, runId: "run-2" }) === false;
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-session-stream",
+    export: "frameMatchesBinding",
+    label: "frameMatchesBinding(validFrame, binding)",
+    call: (fn, hostile) => fn({
+      protocolVersion: 1,
+      organizationId: null,
+      workspaceId: "workspace-1",
+      runId: "run-1",
+      sessionId: "session-1",
+    }, hostile),
+    control: (fn) => {
+      const frame = {
+        protocolVersion: 1,
+        organizationId: "organization-1",
+        workspaceId: "workspace-1",
+        runId: "run-1",
+        sessionId: "session-1",
+      };
+      return fn(frame, { ...frame }) === true
+        && fn(frame, { ...frame, organizationId: null }) === false;
+    },
+  },
+  {
     pkg: "@getsimpledirect/vinci-worker-capabilities",
     export: "renderableRemoteCommands",
     label: "renderableRemoteCommands(matrix, 'approver')",
@@ -316,6 +362,8 @@ const AUTHORITY_GUARDS = [
  * though the conclusion held.
  */
 const REQUIRED_GUARDS = [
+  "frameMatchesBinding(frame, binding)",
+  "frameMatchesBinding(validFrame, binding)",
   "mayIssue(role, 'pause')",
   "mayIssue('owner', command)",
   "isGrantStrictlyNarrower(a, b)",
