@@ -10,4 +10,5 @@ export * from "./remote-decisions.ts";
 export * from "./risk.ts";
 export * from "./scalars.ts";
 export * from "./schema-meta.ts";
+export * from "./session-roles.ts";
 export * from "./states.ts";

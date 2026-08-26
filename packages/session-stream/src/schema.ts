@@ -1,3 +1,4 @@
+import { SESSION_FRAME_SCHEMA_VERSION } from "./frame.ts";
 import { WORKER_WARNING_CODES } from "@getsimpledirect/vinci-run-events";
 function isWorkerWarningCode(value: unknown): value is (typeof WORKER_WARNING_CODES)[number] {
   return typeof value === "string" && (WORKER_WARNING_CODES as readonly string[]).includes(value);
@@ -8,16 +9,24 @@ import {
   isCanonicalTimestamp,
   isDigest,
   isEnumToken,
+  hasField,
   isIdentifier,
   isNonBlankText,
   ok,
+  ownData,
   toPlainRecord,
+  type OrganizationId,
   type PlainRecord,
+  type RunId,
   type SchemaMeta,
   type ValidationIssue,
   type ValidationResult,
+  type WorkspaceId,
 } from "@getsimpledirect/vinci-contracts";
-import { REMOTE_PROTOCOL_VERSION } from "@getsimpledirect/vinci-remote-protocol";
+import {
+  REMOTE_PROTOCOL_VERSION,
+  type SessionId,
+} from "@getsimpledirect/vinci-remote-protocol";
 import { SESSION_FRAME_KINDS, type SessionFrameKind } from "./frame-types.ts";
 import type { SessionFrame } from "./frame.ts";
 
@@ -31,9 +40,12 @@ export const MAX_DIFF_HUNK_BYTES = 16 * 1024;
 export const MAX_TOOL_SUMMARY_BYTES = 2 * 1024;
 
 const ENVELOPE_FIELDS = [
+  "schemaVersion",
   "protocolVersion",
   "sessionId",
   "runId",
+  "organizationId",
+  "workspaceId",
   "seq",
   "at",
   "kind",
@@ -282,6 +294,48 @@ export function nextSeqIsValid(prev: unknown, next: unknown): boolean {
   );
 }
 
+/**
+ * Does this frame name the exact routing authority of the authenticated
+ * connection? The body may be ciphertext; only the authenticated binding
+ * fields are read here.
+ */
+export function frameMatchesBinding(
+  frame: SessionFrame,
+  binding: {
+    readonly protocolVersion: number;
+    readonly organizationId: OrganizationId | null;
+    readonly workspaceId: WorkspaceId;
+    readonly runId: RunId;
+    readonly sessionId: SessionId;
+  },
+): boolean {
+  const frameProtocolVersion = ownData(frame, "protocolVersion");
+  const frameOrganizationId = ownData(frame, "organizationId");
+  const frameWorkspaceId = ownData(frame, "workspaceId");
+  const frameRunId = ownData(frame, "runId");
+  const frameSessionId = ownData(frame, "sessionId");
+  const bindingProtocolVersion = ownData(binding, "protocolVersion");
+  const bindingOrganizationId = ownData(binding, "organizationId");
+  const bindingWorkspaceId = ownData(binding, "workspaceId");
+  const bindingRunId = ownData(binding, "runId");
+  const bindingSessionId = ownData(binding, "sessionId");
+
+  return (
+    typeof frameProtocolVersion === "number"
+    && Number.isSafeInteger(frameProtocolVersion)
+    && frameProtocolVersion >= 1
+    && frameProtocolVersion === bindingProtocolVersion
+    && (frameOrganizationId === null || isIdentifier(frameOrganizationId))
+    && frameOrganizationId === bindingOrganizationId
+    && isIdentifier(frameWorkspaceId)
+    && frameWorkspaceId === bindingWorkspaceId
+    && isIdentifier(frameRunId)
+    && frameRunId === bindingRunId
+    && isIdentifier(frameSessionId)
+    && frameSessionId === bindingSessionId
+  );
+}
+
 export function validateSessionFrame(input: unknown): ValidationResult<SessionFrame> {
   const plain = toPlainRecord(input);
   if (!plain.ok) return plain;
@@ -301,6 +355,15 @@ export function validateSessionFrame(input: unknown): ValidationResult<SessionFr
     );
   }
 
+  if (record.schemaVersion !== SESSION_FRAME_SCHEMA_VERSION) {
+    issues.push(
+      issue(
+        "/schemaVersion",
+        "invalid_schema_version",
+        `session frames are schema version ${SESSION_FRAME_SCHEMA_VERSION}; version 1 frames carry no binding and are rejected`,
+      ),
+    );
+  }
   if (record.protocolVersion !== REMOTE_PROTOCOL_VERSION) {
     issues.push(
       issue(
@@ -312,6 +375,18 @@ export function validateSessionFrame(input: unknown): ValidationResult<SessionFr
   }
   requiredIdentifier(record.sessionId, "/sessionId", issues);
   requiredIdentifier(record.runId, "/runId", issues);
+  if (!hasField(record, "organizationId")) {
+    issues.push(
+      issue(
+        "/organizationId",
+        "required_field",
+        "organizationId must be present and explicitly null for a personal workspace",
+      ),
+    );
+  } else if (record.organizationId !== null) {
+    requiredIdentifier(record.organizationId, "/organizationId", issues);
+  }
+  requiredIdentifier(record.workspaceId, "/workspaceId", issues);
   if (typeof record.seq !== "number" || !Number.isSafeInteger(record.seq) || record.seq < 0) {
     issues.push(issue("/seq", "invalid_sequence", "seq is a non-negative safe integer"));
   }
@@ -346,11 +421,12 @@ function isSessionFrameKind(value: unknown): value is SessionFrameKind {
 
 export const SESSION_FRAME_SCHEMA_META: SchemaMeta & { readonly retention: "ephemeral" } = {
   id: "vinci.session-frame",
-  version: 1,
+  version: 2,
   compatibility: "frozen",
   unknownFields: "reject",
   malformedData: "fail-closed",
-  migration: "none",
+  migration:
+    "Version-1 frames are rejected: an unbound frame cannot be routed safely; producers must add the authenticated organizationId and workspaceId binding fields.",
   /** Frames are display transport and must never be treated as durable records. */
   retention: "ephemeral",
 };

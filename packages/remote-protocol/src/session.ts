@@ -1,4 +1,6 @@
 import type { DeviceId, OrganizationId, RunId, WorkspaceId } from "@getsimpledirect/vinci-contracts";
+export { SESSION_ROLES, isSessionRole } from "@getsimpledirect/vinci-contracts";
+export type { SessionRole } from "@getsimpledirect/vinci-contracts";
 
 /**
  * A remote session is TRANSPORT identity. A run is WORK identity. They are not
@@ -79,16 +81,3 @@ export type SessionBinding = {
   /** Governs what the relay may retain for this session. */
   readonly retentionClass: "zdr_0d" | "days_7" | "days_14" | "days_30";
 };
-
-/**
- * What a device connected to a session may do.
- *
- * Roles are about AUTHORITY, not about what a UI chooses to show. A viewer that
- * can send a steering command is not a viewer.
- */
-export const SESSION_ROLES = ["host", "owner", "approver", "collaborator", "viewer"] as const;
-export type SessionRole = (typeof SESSION_ROLES)[number];
-
-export function isSessionRole(value: unknown): value is SessionRole {
-  return typeof value === "string" && (SESSION_ROLES as readonly string[]).includes(value);
-}
