@@ -375,3 +375,25 @@ automatically allowed. The irreversible-without-approval allowlist defaults to
 empty, and a conditionally reversible action without an available checkpoint is
 treated as irreversible. These defaults require an explicit policy edit before
 authority expands; schema or producer omission never grants it.
+
+## D12 — A work contract is a durable mission contract
+
+Number assigned at merge. A mission must survive the requester’s session, the
+worker model, and any handoff between people. `WorkOrder` therefore names the
+human owner who answers for it, classifies risk using the shared layer-0 risk
+and consequential-action vocabularies, declares verifier independence, and
+writes rollback conditions and escalation routes before execution.
+
+These fields are required because none can be reconstructed safely from a v2
+order. Schema version 3 rejects v2 records rather than inventing an owner,
+downplaying risk, assuming independent review, or fabricating recovery and
+escalation policy. Risk above the lowest level names at least one consequential
+class and cannot omit verification; any named consequential class requires a
+rollback condition. Escalation always reaches a human and explicitly covers
+verifier unavailability and undetermined policy.
+
+Changing owner, risk classification, verifier, or rollback conditions is
+material and stales current verification. Escalation rules are editorial: they
+change how the mission reaches a human when it cannot proceed, not what result
+was accepted. The fail-closed boundary remains unchanged—only explicitly
+editorial paths preserve a verdict.

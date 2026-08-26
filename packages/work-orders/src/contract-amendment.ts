@@ -13,6 +13,10 @@ import type { AttentionBudget } from "./attention.ts";
 import {
   validateWorkOrder,
   type AcceptanceCriterion,
+  type EscalationRule,
+  type MissionVerifier,
+  type RiskClassification,
+  type RollbackCondition,
   type WorkOrder,
 } from "./work-order.ts";
 
@@ -22,6 +26,11 @@ export const CONTRACT_CHANGE_PATHS = [
   "acceptanceCriteria",
   "grantedAuthority",
   "attentionBudget",
+  "owner",
+  "riskClassification",
+  "verifier",
+  "rollbackConditions",
+  "escalationRules",
   "expiresAt",
 ] as const;
 
@@ -37,10 +46,19 @@ export const MATERIAL_PATHS = [
   "acceptanceCriteria",
   "scope",
   "grantedAuthority",
+  "owner",
+  "riskClassification",
+  "verifier",
+  "rollbackConditions",
 ] as const satisfies readonly ContractChangePath[];
 
 /** The only paths whose change leaves a current verdict current. Everything else is material. */
-export const EDITORIAL_PATHS = ["request", "attentionBudget", "expiresAt"] as const;
+export const EDITORIAL_PATHS = [
+  "request",
+  "attentionBudget",
+  "escalationRules",
+  "expiresAt",
+] as const satisfies readonly ContractChangePath[];
 
 export type ContractAmendment = {
   readonly schemaVersion: 1;
@@ -61,6 +79,11 @@ export type WorkOrderPatch = Readonly<Partial<{
   acceptanceCriteria: readonly AcceptanceCriterion[];
   grantedAuthority: readonly string[];
   attentionBudget: AttentionBudget;
+  owner: WorkOrder["owner"];
+  riskClassification: RiskClassification;
+  verifier: MissionVerifier;
+  rollbackConditions: readonly RollbackCondition[];
+  escalationRules: readonly EscalationRule[];
   expiresAt: string;
 }>>;
 
@@ -294,7 +317,7 @@ export function amendWorkOrder(
   const candidate = {
     ...oldOrder,
     ...patchValue,
-    schemaVersion: 2 as const,
+    schemaVersion: 3 as const,
     contractVersion: oldOrder.contractVersion + 1,
     supersedes: {
       contractVersion: oldOrder.contractVersion,
@@ -326,6 +349,17 @@ export function amendWorkOrder(
   }
   if (!sameValue(oldOrder.attentionBudget, next.attentionBudget)) {
     changes.push({ path: "attentionBudget", kind: "modified" });
+  }
+  if (!sameValue(oldOrder.owner, next.owner)) changes.push({ path: "owner", kind: "modified" });
+  if (!sameValue(oldOrder.riskClassification, next.riskClassification)) {
+    changes.push({ path: "riskClassification", kind: "modified" });
+  }
+  if (!sameValue(oldOrder.verifier, next.verifier)) changes.push({ path: "verifier", kind: "modified" });
+  if (!sameValue(oldOrder.rollbackConditions, next.rollbackConditions)) {
+    changes.push({ path: "rollbackConditions", kind: "modified" });
+  }
+  if (!sameValue(oldOrder.escalationRules, next.escalationRules)) {
+    changes.push({ path: "escalationRules", kind: "modified" });
   }
   if (oldOrder.expiresAt !== next.expiresAt) changes.push({ path: "expiresAt", kind: "modified" });
   if (changes.length === 0) {
