@@ -169,6 +169,13 @@ export type RemoteDecisionState =
   | { readonly kind: "confirmed"; readonly confirmedAt: string }
   | { readonly kind: "rejected_by_host"; readonly reason: RemoteDecisionRejection };
 
+/** The discriminant vocabulary, shared by state records and signed results. */
+export const REMOTE_DECISION_STATES = [
+  "provisional",
+  "confirmed",
+  "rejected_by_host",
+] as const satisfies readonly RemoteDecisionState["kind"][];
+
 export const REMOTE_DECISION_REJECTIONS = [
   /** The chosen option was not one the host offered. */
   "option_not_offered",
@@ -180,6 +187,10 @@ export const REMOTE_DECISION_REJECTIONS = [
   "not_permitted",
   /** The session moved on; the request no longer exists. */
   "session_changed",
+  /** Platform or the relay has revoked the signing credential. */
+  "credential_revoked",
+  /** The signed command names a different literal session binding. */
+  "binding_mismatch",
 ] as const;
 
 export type RemoteDecisionRejection = (typeof REMOTE_DECISION_REJECTIONS)[number];
@@ -256,7 +267,7 @@ export function validateRemoteDecisionState(
 
 export const REMOTE_DECISION_STATE_SCHEMA_META: SchemaMeta = {
   id: "vinci.remote-decision-state",
-  version: 1,
+  version: 2,
   /**
    * Frozen, like the session binding beside it: the validator rejects unknown
    * fields, and a schema that refuses additions has not left room for them.
@@ -270,5 +281,5 @@ export const REMOTE_DECISION_STATE_SCHEMA_META: SchemaMeta = {
    * nobody understands must not be carried forward as though it were
    * understood, because the thing it decides is authority.
    */
-  migration: "none",
+  migration: "Version 1 states remain valid unchanged; version 2 adds credential_revoked and binding_mismatch rejection reasons.",
 };
