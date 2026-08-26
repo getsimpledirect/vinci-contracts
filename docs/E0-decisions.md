@@ -398,7 +398,7 @@ change how the mission reaches a human when it cannot proceed, not what result
 was accepted. The fail-closed boundary remains unchanged—only explicitly
 editorial paths preserve a verdict.
 
-## D-next — Every session frame carries its full binding (number assigned at merge)
+## D13 — Every session frame carries its full binding
 
 A session frame carries `protocolVersion`, required-but-nullable
 `organizationId`, `workspaceId`, `runId`, and `sessionId` as authenticated
