@@ -3,8 +3,10 @@ import { assertSchemaMetaComplete, type ReceiptId, type RunId } from "@getsimple
 import {
   CORRECTION_SCHEMA_META,
   RECEIPT_COVERED_FIELDS,
+  RECEIPT_DECLARED_FIELDS,
   RECEIPT_SCHEMA_META,
   VERIFICATION_STATUS_SCHEMA_META,
+  attentionPerVerifiedOutcome,
   canonicalize,
   receiptDigest,
   validateCorrection,
@@ -20,7 +22,7 @@ const COMPLETED_AT = "2026-08-23T12:00:12.345Z";
 
 function unsignedReceipt(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    receiptVersion: 1,
+    receiptVersion: 2,
     receiptId: "receipt-1",
     runId: "run-1",
     objective: "Update the dependency lockfile",
@@ -35,6 +37,7 @@ function unsignedReceipt(overrides: Record<string, unknown> = {}): Record<string
     startedAt: STARTED_AT,
     completedAt: COMPLETED_AT,
     activeDuration: 12_345,
+    humanAttention: { seconds: 25, interruptions: 3, decisions: 2, escalations: 1 },
     finalState: "DONE",
     actionSummary: "Regenerated and checked the lockfile",
     resourcesAccessed: ["repo:vinci", "registry:npm"],
@@ -85,7 +88,7 @@ describe("canonicalization", () => {
 
 describe("receipt digest coverage", () => {
   const mutations: Readonly<Record<(typeof RECEIPT_COVERED_FIELDS)[number], unknown>> = {
-    receiptVersion: 2,
+    receiptVersion: 3,
     receiptId: "receipt-2",
     runId: "run-2",
     objective: "A different objective",
@@ -100,6 +103,7 @@ describe("receipt digest coverage", () => {
     startedAt: "2026-08-23T11:59:59.000Z",
     completedAt: "2026-08-23T12:00:13.345Z",
     activeDuration: 12_346,
+    humanAttention: { seconds: 26, interruptions: 4, decisions: 3, escalations: 2 },
     finalState: "DONE_UNVERIFIED",
     actionSummary: "A different action summary",
     resourcesAccessed: ["repo:different"],
@@ -116,6 +120,7 @@ describe("receipt digest coverage", () => {
 
   it("declares every and only covered field", () => {
     const allReceiptFields = Object.keys(unsignedReceipt()).sort();
+    expect([...RECEIPT_DECLARED_FIELDS].sort()).toEqual(allReceiptFields);
     expect([...RECEIPT_COVERED_FIELDS].sort()).toEqual(
       allReceiptFields.filter((field) => field !== "digest" && field !== "signature"),
     );
@@ -141,6 +146,12 @@ describe("receipt digest coverage", () => {
       resourcesAccessed: base.resourcesAccessed,
       actionSummary: base.actionSummary,
       finalState: base.finalState,
+      humanAttention: {
+        escalations: base.humanAttention.escalations,
+        decisions: base.humanAttention.decisions,
+        interruptions: base.humanAttention.interruptions,
+        seconds: base.humanAttention.seconds,
+      },
       activeDuration: base.activeDuration,
       completedAt: base.completedAt,
       startedAt: base.startedAt,
@@ -166,6 +177,15 @@ describe("receipt digest coverage", () => {
       const changed = { ...base, [field]: mutations[field] } as Receipt;
       expect(receiptDigest(changed), field).not.toBe(receiptDigest(base));
     }
+  });
+
+  it("changes when humanAttention.seconds changes", () => {
+    const base = receipt();
+    const changed = {
+      ...base,
+      humanAttention: { ...base.humanAttention, seconds: base.humanAttention.seconds + 1 },
+    };
+    expect(receiptDigest(changed)).not.toBe(receiptDigest(base));
   });
 
   it("does not cover digest or signature", () => {
@@ -199,6 +219,12 @@ describe("receipt validation", () => {
     ["wrong final state", () => unsignedReceipt({ finalState: "RUNNING" })],
     ["wrong verdict", () => unsignedReceipt({ verdict: "FAILED" })],
     ["negative duration", () => unsignedReceipt({ activeDuration: -1 })],
+    ["missing human attention", () => unsignedReceipt({ humanAttention: undefined })],
+    ["non-object human attention", () => unsignedReceipt({ humanAttention: 1 })],
+    ["missing human attention count", () => unsignedReceipt({ humanAttention: { seconds: 1, interruptions: 1, decisions: 1 } })],
+    ["negative human attention count", () => unsignedReceipt({ humanAttention: { seconds: -1, interruptions: 1, decisions: 1, escalations: 1 } })],
+    ["fractional human attention count", () => unsignedReceipt({ humanAttention: { seconds: 1.5, interruptions: 1, decisions: 1, escalations: 1 } })],
+    ["per-human identity", () => unsignedReceipt({ humanAttention: { seconds: 1, interruptions: 1, decisions: 1, escalations: 1, humanId: "user-1" } })],
     ["fractional spend", () => unsignedReceipt({ spend: 1.5 })],
     ["invalid requester", () => unsignedReceipt({ requester: { kind: "user" } })],
     ["invalid worker", () => unsignedReceipt({ worker: { kind: "worker", workerId: 5 } })],
@@ -206,6 +232,69 @@ describe("receipt validation", () => {
     ["non-string list member", () => unsignedReceipt({ evidenceIds: [1] })],
   ])("rejects %s", (_label, build) => {
     expect(validateReceipt(build()).ok).toBe(false);
+  });
+
+  it("rejects a hostile key inside humanAttention", () => {
+    const candidate = unsignedReceipt({
+      humanAttention: JSON.parse(
+        '{"seconds":1,"interruptions":1,"decisions":1,"escalations":1,"__proto__":{"polluted":true}}',
+      ),
+    });
+    expect(validateReceipt(candidate).ok).toBe(false);
+  });
+});
+
+describe("attention per verified consequential outcome", () => {
+  it("counts only VERIFIED_PASS outcomes but includes every receipt's attention", () => {
+    const receipts = [
+      receipt({
+        receiptId: "receipt-pass-1",
+        verdict: "VERIFIED_PASS",
+        humanAttention: { seconds: 20, interruptions: 1, decisions: 1, escalations: 0 },
+      }),
+      receipt({
+        receiptId: "receipt-conditional",
+        verdict: "CONDITIONAL",
+        humanAttention: { seconds: 15, interruptions: 2, decisions: 1, escalations: 1 },
+      }),
+      receipt({
+        receiptId: "receipt-blocked",
+        verdict: "BLOCKED",
+        finalState: "BLOCKED",
+        humanAttention: { seconds: 10, interruptions: 1, decisions: 1, escalations: 1 },
+      }),
+      receipt({
+        receiptId: "receipt-pass-2",
+        verdict: "VERIFIED_PASS",
+        humanAttention: { seconds: 5, interruptions: 0, decisions: 0, escalations: 0 },
+      }),
+    ];
+
+    expect(attentionPerVerifiedOutcome(receipts)).toEqual({
+      verifiedOutcomes: 2,
+      humanSeconds: 50,
+      secondsPerVerifiedOutcome: 25,
+    });
+  });
+
+  it("returns null rather than infinity or free when there are no verified outcomes", () => {
+    expect(
+      attentionPerVerifiedOutcome([
+        receipt({
+          verdict: "CONDITIONAL",
+          humanAttention: { seconds: 30, interruptions: 1, decisions: 1, escalations: 0 },
+        }),
+      ]),
+    ).toEqual({
+      verifiedOutcomes: 0,
+      humanSeconds: 30,
+      secondsPerVerifiedOutcome: null,
+    });
+    expect(attentionPerVerifiedOutcome([])).toEqual({
+      verifiedOutcomes: 0,
+      humanSeconds: 0,
+      secondsPerVerifiedOutcome: null,
+    });
   });
 });
 
@@ -294,6 +383,7 @@ describe("schema metadata", () => {
       expect(() => assertSchemaMetaComplete(meta)).not.toThrow();
     }
     expect(RECEIPT_SCHEMA_META.unknownFields).toBe("preserve");
+    expect(RECEIPT_SCHEMA_META.version).toBe(2);
     expect(VERIFICATION_STATUS_SCHEMA_META.unknownFields).toBe("reject");
   });
 });

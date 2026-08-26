@@ -18,7 +18,7 @@ const AT = "2026-08-23T00:00:00.000Z";
 const actor = { kind: "worker", workerId: "w-1" } as const;
 
 const event = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   eventId: "evt-1",
   runId: "run-1",
   sequence: 1,
@@ -103,6 +103,125 @@ describe("the payload allowlist bounds where content can appear", () => {
   });
 });
 
+describe("human attention events", () => {
+  const cases = [
+    {
+      type: "run.question_answered",
+      payload: {
+        questionId: { kind: "id", value: "q-1" },
+        humanSeconds: { kind: "count", value: 12 },
+      },
+      newFields: ["questionId", "humanSeconds"],
+    },
+    {
+      type: "approval.granted",
+      payload: {
+        approvalId: { kind: "id", value: "approval-1" },
+        narrowed: { kind: "flag", value: false },
+        humanSeconds: { kind: "count", value: 8 },
+      },
+      newFields: ["humanSeconds"],
+    },
+    {
+      type: "approval.denied",
+      payload: {
+        approvalId: { kind: "id", value: "approval-1" },
+        humanSeconds: { kind: "count", value: 5 },
+      },
+      newFields: ["humanSeconds"],
+    },
+    {
+      type: "run.completed",
+      payload: {
+        terminalState: { kind: "enum", value: "DONE" },
+        humanAttentionSeconds: { kind: "count", value: 25 },
+        humanDecisions: { kind: "count", value: 2 },
+        humanInterruptions: { kind: "count", value: 3 },
+        escalations: { kind: "count", value: 1 },
+      },
+      newFields: [
+        "humanAttentionSeconds",
+        "humanDecisions",
+        "humanInterruptions",
+        "escalations",
+      ],
+    },
+  ] as const;
+
+  it.each(cases)("accepts the complete $type measurement", ({ type, payload }) => {
+    expect(validateRunEvent(event({ type, payload })).ok).toBe(true);
+  });
+
+  it.each(cases)("requires every new $type field", ({ type, payload, newFields }) => {
+    for (const field of newFields) {
+      const incomplete = Object.fromEntries(
+        Object.entries(payload).filter(([key]) => key !== field),
+      );
+      const result = validateRunEvent(event({ type, payload: incomplete }));
+      expect(result.ok, field).toBe(false);
+      expect(
+        result.ok === false &&
+          result.issues.some(
+            (entry) => entry.path === `/payload/${field}` && entry.code === "required_field",
+          ),
+        field,
+      ).toBe(true);
+    }
+  });
+
+  it.each(cases)("validates the kind of every new $type field", ({ type, payload, newFields }) => {
+    for (const field of newFields) {
+      const expectedKind = (
+        PAYLOAD_FIELDS[type][field as keyof (typeof PAYLOAD_FIELDS)[typeof type]] as {
+          kind: string;
+        }
+      ).kind;
+      const wrongValue =
+        expectedKind === "count"
+          ? { kind: "id", value: "not-a-count" }
+          : { kind: "count", value: 1 };
+      const result = validateRunEvent(
+        event({ type, payload: { ...payload, [field]: wrongValue } }),
+      );
+      expect(result.ok, field).toBe(false);
+      expect(
+        result.ok === false &&
+          result.issues.some(
+            (entry) => entry.path === `/payload/${field}` && entry.code === "wrong_value_kind",
+          ),
+        field,
+      ).toBe(true);
+    }
+  });
+
+  it("rejects content and prototype-pollution fields on an answer", () => {
+    const withContent = validateRunEvent(
+      event({
+        type: "run.question_answered",
+        payload: {
+          questionId: { kind: "id", value: "q-1" },
+          humanSeconds: { kind: "count", value: 12 },
+          answer: { kind: "id", value: "SECRET" },
+        },
+      }),
+    );
+    expect(withContent.ok).toBe(false);
+    expect(
+      withContent.ok === false &&
+        withContent.issues.some((entry) => entry.code === "field_not_allowed"),
+    ).toBe(true);
+
+    const hostilePayload = JSON.parse(
+      '{"questionId":{"kind":"id","value":"q-1"},"humanSeconds":{"kind":"count","value":12},"__proto__":{"polluted":true}}',
+    );
+    expect(
+      validateRunEvent(
+        event({ type: "run.question_answered", payload: hostilePayload }),
+      ).ok,
+    ).toBe(false);
+  });
+});
+
 describe("actor arms are validated for presence and type, not just names", () => {
   it("refuses a worker actor with no workerId", () => {
     // Accepted before: the name allowlist says nothing about presence.
@@ -176,7 +295,7 @@ describe("canonicalization and identity", () => {
       sequence: 1,
       runId: "run-1",
       eventId: "evt-1",
-      schemaVersion: 1,
+      schemaVersion: 2,
     });
     expect(reordered.ok).toBe(true);
     if (reordered.ok) expect(eventDigest(one)).toBe(eventDigest(reordered.value));
@@ -258,9 +377,9 @@ describe("appending to the log", () => {
 
 describe("the boundary refuses hostile raw input", () => {
   it.each([
-    ["a __proto__ key", () => JSON.parse(`{"__proto__":{"p":1},"schemaVersion":1}`)],
+    ["a __proto__ key", () => JSON.parse(`{"__proto__":{"p":1},"schemaVersion":2}`)],
     ["an unknown top-level field", () => event({ extra: 1 })],
-    ["a wrong schema version", () => event({ schemaVersion: 2 })],
+    ["a wrong schema version", () => event({ schemaVersion: 1 })],
     ["an unknown event type", () => event({ type: "run.exploded" })],
     ["a non-canonical timestamp", () => event({ occurredAt: "2026-08-23T00:00:00Z" })],
     ["a date that does not exist", () => event({ occurredAt: "2026-02-29T00:00:00.000Z" })],
@@ -284,6 +403,7 @@ describe("the boundary refuses hostile raw input", () => {
 
   it("answers all six schema questions", () => {
     expect(() => assertSchemaMetaComplete(RUN_EVENT_SCHEMA_META)).not.toThrow();
+    expect(RUN_EVENT_SCHEMA_META.version).toBe(2);
     expect(RUN_EVENT_SCHEMA_META.unknownFields).toBe("reject");
   });
 });
@@ -295,7 +415,7 @@ describe("the payload type is wired to the event, not merely derived beside it",
     // structural guarantee that holds only at runtime is a runtime check with a
     // comment attached.
     const good: RunEventFor<"run.question"> = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       eventId: "evt-1",
       runId: "run-1" as RunEvent["runId"],
       sequence: 1,
@@ -321,7 +441,7 @@ describe("the payload type is wired to the event, not merely derived beside it",
 
   it("rejects a payload belonging to a different event type", () => {
     const mismatched = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       eventId: "evt-1",
       runId: "run-1",
       sequence: 1,
@@ -384,7 +504,7 @@ describe("what identifier shape-checking actually enforces", () => {
   // prose and not token-shaped content. These tests assert the property that
   // holds, so nobody reads the suite as proving the stronger one.
   const question = (value: string) => ({
-    schemaVersion: 1,
+    schemaVersion: 2,
     eventId: "evt-1",
     runId: "run-1",
     sequence: 1,

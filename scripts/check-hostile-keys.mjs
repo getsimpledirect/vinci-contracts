@@ -403,6 +403,7 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-evidence.blamesSubmittedWork": "enum membership over FAILURE_OWNERS",
   "@getsimpledirect/vinci-evidence.verdictAssessmentFor": "constructor; its output is validated",
   "@getsimpledirect/vinci-receipts.receiptDigest": "encoder over an already-validated record",
+  "@getsimpledirect/vinci-receipts.attentionPerVerifiedOutcome": "pure aggregation over already-validated receipts; not a permission",
   "@getsimpledirect/vinci-run-events.eventDigest": "encoder over an already-validated record",
   "@getsimpledirect/vinci-receipts.verificationAgainst": "requires current state; covered by receipts suite",
   "@getsimpledirect/vinci-run-events.verifyAppend": "covered by the run-events suite",

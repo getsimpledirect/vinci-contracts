@@ -10,7 +10,11 @@ import { canonicalize } from "@getsimpledirect/vinci-contracts";
  */
 export { canonicalize };
 import { createHash } from "node:crypto";
-import type { Receipt } from "./receipt.ts";
+import {
+  RECEIPT_COVERED_FIELDS,
+  RECEIPT_DECLARED_FIELDS,
+  type Receipt,
+} from "./receipt.ts";
 
 /**
  * Deterministic encoding of a value for identity comparison.
@@ -29,7 +33,12 @@ import type { Receipt } from "./receipt.ts";
  * are never included in the computation.
  */
 export function receiptDigest(receipt: Receipt): string {
-  const toHash = { ...receipt };
-  const { digest: _, signature: __, ...covered } = toHash;
+  const declared = new Set<string>(RECEIPT_DECLARED_FIELDS);
+  const coveredFields = new Set<string>(RECEIPT_COVERED_FIELDS);
+  const covered = Object.fromEntries(
+    Object.entries(receipt).filter(
+      ([field]) => coveredFields.has(field) || !declared.has(field),
+    ),
+  );
   return createHash("sha256").update(canonicalize(covered), "utf8").digest("hex");
 }
