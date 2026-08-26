@@ -108,7 +108,8 @@ import {
 } from "@getsimpledirect/vinci-work-orders";
 
 const workOrder: WorkOrder = {
-  schemaVersion: 1,
+  schemaVersion: 2,
+  contractVersion: 1,
   id: "order-001",
   request: "Review and approve the authentication module refactor",
   scope: "packages/auth only",
@@ -136,6 +137,8 @@ const workOrder: WorkOrder = {
 const result = validateWorkOrder(workOrder);
 // Valid: true
 ```
+
+Criteria are fixed before execution and change only by amendment, never by edit. `amendWorkOrder(previous, patch, { amendmentId, changedBy, changedAt, reason })` returns the next contract version (`contractVersion + 1`, `supersedes` pointing at the previous one) and a `ContractAmendment` recording who changed what and why. A criterion is never rewritten in place: change its statement and you must remove the old id and add a new one, because verdicts pin to criterion ids. `classifyMateriality` fails closed — only `request`, `attentionBudget` and `expiresAt` are editorial; anything else is material, and `verificationIsStaleAfter(amendment)` tells a consumer to stale its current verdict (the stale verdict stays as history). A reorder of identical criteria is not a change.
 
 ### DecisionPacket
 
