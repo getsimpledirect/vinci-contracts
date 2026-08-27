@@ -351,7 +351,7 @@ Both wire schemas bump from 1 to 2. The run-event schema is frozen and explicitl
 requires a version bump for a new event type or payload field. The receipt adds
 a newly required field; under D3's per-schema compatibility contract that is a
 compatibility break, so `receiptVersion` and the receipt schema metadata also
-bump to 2. Package versions remain in repository lockstep at 0.1.0.
+bump to 2. Package versions remain in repository lockstep (0.1.0 → 0.2.0 with the relay↔Platform contract, #18).
 Version-1 records are rejected rather than backfilled: the missing measurement
 cannot be inferred after the fact without inventing institutional-cost data.
 ## D11 — Per-action autonomy and adapter trust are independent axes
