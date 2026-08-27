@@ -169,6 +169,8 @@ export function revocationSnapshotSigningPayload(snapshot: RevocationSnapshot): 
     issuedAt: snapshot.issuedAt,
     issuerKeyId: snapshot.issuerKeyId,
     revoked: snapshot.revoked,
+    // The algorithm is covered by the signature (as for RelayAccessToken) so it cannot be rebound in transit.
+    signature: { alg: snapshot.signature.alg },
   }));
 }
 

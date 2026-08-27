@@ -122,11 +122,18 @@ describe("key directory", () => {
     }
   });
 
-  it("accepts inclusive validity boundaries and an absent planned end", () => {
+  it("accepts an inclusive validFrom, an exclusive validUntil, and an absent planned end", () => {
     expect(validateKeyDirectoryResponse(
-      keyResponse({ entry: keyEntry({ validFrom: NOW, validUntil: NOW }) }),
+      keyResponse({ entry: keyEntry({ validFrom: NOW, validUntil: "2026-08-27T12:00:00.001Z" }) }),
       NOW,
     ).ok).toBe(true);
+    // At the instant validUntil the key is already unusable — the same convention as DeviceCredential expiresAt.
+    const atEnd = validateKeyDirectoryResponse(
+      keyResponse({ entry: keyEntry({ validFrom: "2026-08-27T11:00:00.000Z", validUntil: NOW }) }),
+      NOW,
+    );
+    expect(atEnd.ok).toBe(false);
+    if (!atEnd.ok) expect(atEnd.issues.map((i) => i.code)).toContain("expired");
     const noEnd = keyEntry();
     delete noEnd.validUntil;
     expect(validateKeyDirectoryResponse(keyResponse({ entry: noEnd }), NOW).ok).toBe(true);
@@ -251,7 +258,7 @@ describe("signed revocation snapshot", () => {
     for (const value of cases) expect(validateRevocationSnapshot(value).ok).toBe(false);
   });
 
-  it("produces deterministic bytes across insertion order and excludes signature", () => {
+  it("produces deterministic bytes across insertion order and excludes the signature value", () => {
     const first = validateRevocationSnapshot(revocationSnapshot());
     const second = validateRevocationSnapshot({
       signature: { value: SIGNATURE_BYTES, alg: "Ed25519" },
@@ -267,7 +274,8 @@ describe("signed revocation snapshot", () => {
     const right = revocationSnapshotSigningPayload(second.value);
     expect(left).toEqual(right);
     const text = new TextDecoder().decode(left);
-    expect(text).not.toContain("signature");
+    // The algorithm is covered; the signature bytes themselves are not (self-reference).
+    expect(text).toContain('"signature":{"alg":"Ed25519"}');
     expect(text).not.toContain(SIGNATURE_BYTES);
   });
 

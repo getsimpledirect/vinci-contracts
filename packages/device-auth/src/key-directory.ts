@@ -225,7 +225,8 @@ export function validateKeyDirectoryResponse(
     }
   }
   if (isCanonicalTimestamp(now) && isCanonicalTimestamp(entry.validUntil)) {
-    if (Date.parse(now) > Date.parse(entry.validUntil)) {
+    // Exclusive, matching DeviceCredential expiresAt/revokedAt: at the instant validUntil the key is already unusable.
+    if (Date.parse(now) >= Date.parse(entry.validUntil)) {
       issues.push(issue("/entry/validUntil", "expired", "the key has expired at the supplied instant"));
     }
   }
