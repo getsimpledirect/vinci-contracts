@@ -44,7 +44,17 @@ const MIN_INLINE_ARRAY_MEMBERS = 3;
  *   reason: "Why these declarations must remain independent.",
  * }
  */
-const ALLOWLIST = [];
+const ALLOWLIST = [
+  {
+    comparison: "ordered",
+    members: ["self", "dashboard", "platform"],
+    locations: [
+      "device-auth:src/revocation-snapshot.ts#REVOCATION_ACTORS (const array)",
+      "run-events:src/payload.ts#PAYLOAD_FIELDS.\"device.revoked\".revokedBy (inline array)",
+    ],
+    reason: "Layer-1 device-auth cannot import the Layer-3 run-events payload schema; both wire contracts intentionally use the same revocation-source vocabulary.",
+  },
+];
 
 function sourceFilesUnder(directory) {
   const files = [];

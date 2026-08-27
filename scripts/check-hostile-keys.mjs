@@ -89,6 +89,47 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "device", id: "c", deviceId: "d", keyHash: "a".repeat(64), prefix: "p", clientType: "work", scopes: ["inference"], createdAt: "2026-08-26T11:00:00.000Z", revokedAt: null, expiresAt: "2026-08-26T12:00:00.000Z", publicKey: null }, "2026-08-26T12:00:00.000Z") === false,
   },
   {
+    pkg: "@getsimpledirect/vinci-device-auth",
+    export: "isKeyUsableAt",
+    label: "isKeyUsableAt(entry with hostile status, now, role)",
+    call: (fn, hostile) => fn({ schemaVersion: 1, keyId: "key-1", role: "platform-issuer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: hostile }, "2026-08-26T12:00:00.000Z", "platform-issuer"),
+    control: (fn) =>
+      fn({ schemaVersion: 1, keyId: "key-1", role: "platform-issuer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "active" }, "2026-08-26T12:00:00.000Z", "platform-issuer") === true
+      && fn({ schemaVersion: 1, keyId: "key-1", role: "platform-issuer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "revoked" }, "2026-08-26T12:00:00.000Z", "platform-issuer") === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-device-auth",
+    export: "isKeyUsableAt",
+    label: "isKeyUsableAt(entry with hostile role, now, role)",
+    call: (fn, hostile) => fn({ schemaVersion: 1, keyId: "key-1", role: hostile, key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "active" }, "2026-08-26T12:00:00.000Z", "platform-issuer"),
+    control: (fn) =>
+      fn({ schemaVersion: 1, keyId: "key-1", role: "platform-issuer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "active" }, "2026-08-26T12:00:00.000Z", "platform-issuer") === true
+      && fn({ schemaVersion: 1, keyId: "key-1", role: "device-signer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "active" }, "2026-08-26T12:00:00.000Z", "platform-issuer") === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-device-auth",
+    export: "isKeyUsableAt",
+    label: "isKeyUsableAt(entry, now, hostile role)",
+    call: (fn, hostile) => fn({ schemaVersion: 1, keyId: "key-1", role: "platform-issuer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "active" }, "2026-08-26T12:00:00.000Z", hostile),
+    control: (fn) =>
+      fn({ schemaVersion: 1, keyId: "key-1", role: "platform-issuer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "active" }, "2026-08-26T12:00:00.000Z", "platform-issuer") === true
+      && fn({ schemaVersion: 1, keyId: "key-1", role: "platform-issuer", key: { kind: "Ed25519", keyId: "key-1", key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA" }, validFrom: "2026-08-26T11:00:00.000Z", refreshAfter: "2026-08-26T12:01:00.000Z", status: "active" }, "2026-08-26T12:00:00.000Z", "device-signer") === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-device-auth",
+    export: "isSnapshotNewer",
+    label: "isSnapshotNewer(candidate, currentVersion)",
+    call: (fn, hostile) => fn(hostile, 1),
+    control: (fn) => fn(2, 1) === true && fn(1, 1) === false && fn(0, 1) === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-device-auth",
+    export: "isSnapshotNewer",
+    label: "isSnapshotNewer(2, currentVersion)",
+    call: (fn, hostile) => fn(2, hostile),
+    control: (fn) => fn(2, 1) === true && fn(2, 2) === false,
+  },
+  {
     pkg: "@getsimpledirect/vinci-session-stream",
     export: "frameMatchesBinding",
     label: "frameMatchesBinding(frame, binding)",
@@ -427,6 +468,11 @@ const AUTHORITY_GUARDS = [
  */
 const REQUIRED_GUARDS = [
   "isCredentialActiveAt(credential, at)",
+  "isKeyUsableAt(entry with hostile status, now, role)",
+  "isKeyUsableAt(entry with hostile role, now, role)",
+  "isKeyUsableAt(entry, now, hostile role)",
+  "isSnapshotNewer(candidate, currentVersion)",
+  "isSnapshotNewer(2, currentVersion)",
   "frameMatchesBinding(frame, binding)",
   "frameMatchesBinding(validFrame, binding)",
   "mayIssue(role, 'pause')",
@@ -555,6 +601,7 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-device-auth.parseKeyHash": "parser returning a ValidationResult",
   "@getsimpledirect/vinci-device-auth.credentialIdentityDigest": "digest encoder over an already-validated credential",
   "@getsimpledirect/vinci-device-auth.relayAccessTokenSigningPayload": "canonical encoder over an already-validated token",
+  "@getsimpledirect/vinci-device-auth.revocationSnapshotSigningPayload": "canonical encoder over an already-validated snapshot",
   "@getsimpledirect/vinci-device-auth.revoke": "state transition over an already-validated record",
   "@getsimpledirect/vinci-session-stream.nextSeqIsValid": "predicate over safe integers; answers whether next is the unused sequence after prev",
   "@getsimpledirect/vinci-worker-capabilities.isTrustLevel": "enum membership",
@@ -611,6 +658,9 @@ function grantsYes(value) {
  * accepts the same value. The waiver is per-ARGUMENT-POSITION, never per name.
  */
 const LEGITIMATE_SHAPES = {
+  // A snapshot version is itself a number. The generic numeric probe (7) is
+  // legitimate in the candidate position and is newer than the fixed 1.
+  "isSnapshotNewer(candidate, currentVersion)": ["a number"],
   "plainActor(actor)": ["an object whose kind is an accessor"],
   "actorFieldsAreConsistent(actor)": ["an object whose kind is an accessor"],
   "isProvenanceConsistent('worker_provided', actor)": ["an object whose kind is an accessor"],

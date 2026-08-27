@@ -11,9 +11,12 @@ import {
   DEVICE_SCOPES as DEVICE_SCOPE_LIST,
   ENFORCED_ROLES,
   PAIRING_STATES,
+  KEY_DIRECTORY_SCHEMA_META,
   RELAY_ACCESS_TOKEN_AUDIENCE,
   RELAY_ACCESS_TOKEN_MAX_LIFETIME_MS,
   RELAY_ACCESS_TOKEN_SCHEMA_META,
+  RELAY_ACCESS_TOKEN_REQUEST_SCHEMA_META,
+  REVOCATION_SNAPSHOT_SCHEMA_META,
   ROLES,
   ROLE_SAFE_FALLBACK,
   SCOPES,
@@ -65,6 +68,9 @@ describe("schema meta", () => {
     expect(() => assertSchemaMetaComplete(CREDENTIAL_IDENTITY_SCHEMA_META)).not.toThrow();
     expect(() => assertSchemaMetaComplete(DEVICE_PAIRING_SCHEMA_META)).not.toThrow();
     expect(() => assertSchemaMetaComplete(RELAY_ACCESS_TOKEN_SCHEMA_META)).not.toThrow();
+    expect(() => assertSchemaMetaComplete(KEY_DIRECTORY_SCHEMA_META)).not.toThrow();
+    expect(() => assertSchemaMetaComplete(REVOCATION_SNAPSHOT_SCHEMA_META)).not.toThrow();
+    expect(() => assertSchemaMetaComplete(RELAY_ACCESS_TOKEN_REQUEST_SCHEMA_META)).not.toThrow();
   });
 
   it("declares the credential migration that rejects unknowable v1 expiry", () => {
