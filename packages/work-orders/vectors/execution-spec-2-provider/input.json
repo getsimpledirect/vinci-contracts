@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "workOrderId": "wo-vec-2",
+  "workOrderDigest": "5c36912e6583cc7f1ab6fd54e1cf6f9fe8ef3fd6dc2bd34c8d580c61edbbe4bf",
+  "repository": {
+    "name": "vinci-chat",
+    "owner": "getsimpledirect",
+    "host": "github.com"
+  },
+  "baseRef": "main",
+  "baseCommit": "deadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
+  "targetBranch": "feat/vector-2",
+  "modelClass": "fortissimo",
+  "resourceBounds": {
+    "deadline": "2026-08-26T09:30:00.000Z",
+    "maxRuntimeS": 86400,
+    "budgetUsd": 250
+  },
+  "tools": [
+    "bash"
+  ],
+  "inputArtifacts": [
+    {
+      "digest": "0000000000000000000000000000000000000000000000000000000000000001",
+      "id": "replay-set"
+    },
+    {
+      "id": "api-notes",
+      "digest": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    }
+  ],
+  "requiredCapabilities": [
+    "independentVerification",
+    "nativeReceipts",
+    "abort"
+  ],
+  "evidencePolicy": "receipt",
+  "issuedAt": "2026-08-25T09:31:00.000Z",
+  "provider": "deepinfra"
+}
