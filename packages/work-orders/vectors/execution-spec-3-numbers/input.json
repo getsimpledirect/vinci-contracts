@@ -7,9 +7,9 @@
     "owner": "getsimpledirect",
     "name": "vinci-contracts"
   },
-  "baseRef": "refs/heads/main",
+  "baseRef": "main",
   "baseCommit": "60bd211000000000000000000000000000000000",
-  "targetBranch": "i18n/😀-דּ",
+  "targetBranch": "i18n/vector-3.unicode",
   "modelClass": "forte",
   "resourceBounds": {
     "budgetUsd": 1e-07,

@@ -38,7 +38,7 @@ export const validSpec = (order: WorkOrder = validOrder()): ExecutionSpec => ({
   workOrderId: order.id,
   workOrderDigest: workOrderDigest(order),
   repository: { host: "github.com", owner: "getsimpledirect", name: "vinci-contracts" },
-  baseRef: "refs/heads/main",
+  baseRef: "main",
   baseCommit: "60bd211a3f4c5d6e7f8091a2b3c4d5e6f7a8b9c0",
   targetBranch: "feat/rate-limit",
   modelClass: "forte",

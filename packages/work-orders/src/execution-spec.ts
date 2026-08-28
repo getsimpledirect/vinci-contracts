@@ -48,7 +48,7 @@ export type ExecutionSpec = {
   /** `workOrderDigest` of the exact order this was compiled from. */
   readonly workOrderDigest: string;
   readonly repository: ExecutionRepository;
-  /** The ref the run starts from, e.g. "refs/heads/main" or "main". */
+  /** The branch the run starts from, as a plain branch name ("main", never "refs/heads/main"). */
   readonly baseRef: string;
   /** The commit `baseRef` resolved to when the spec was compiled. 40 lowercase hex. */
   readonly baseCommit: string;
@@ -146,8 +146,28 @@ const SPEC_FIELDS = [
 const MAX_LIST = 100;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
 const HOST_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)*$/;
-/** A git ref or branch: no whitespace, no control characters, bounded. */
-const REF_PATTERN = /^[^\s\x00-\x1f\x7f]{1,255}$/;
+/**
+ * A PLAIN BRANCH NAME, under the rules the worker adopted in vinci-code-cli
+ * PR #8 (vinci/worker/task.mjs branch header) plus `git check-ref-format
+ * --branch` semantics. Both `baseRef` and `targetBranch` are branch names,
+ * never refspecs: the worker builds `refs/heads/<name>` itself, and a value
+ * that already carries refspec syntax (`+`, `:`, `..`, a leading `-`,
+ * `refs/`, `@{`, `~`, `^`) is how a checkout or push lands somewhere other
+ * than where the spec says.
+ *
+ *   - first character alphanumeric (so no leading `-`, `+`, `.`, `/`);
+ *   - then only [A-Za-z0-9._/-]: excludes whitespace, controls, `~ ^ : ? * [ \ @ { }`;
+ *   - no `..`, no `//`, no component beginning with `.` or ending with `.lock`;
+ *   - no trailing `/` or `.`, no `.lock` suffix;
+ *   - no `refs/` anywhere and no `refs.` prefix; not `HEAD`.
+ */
+export function isPlainBranchName(value: unknown): value is string {
+  if (typeof value !== "string" || value.length === 0 || value.length > 255) return false;
+  if (!/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)) return false;
+  if (value.includes("..") || value.includes("//") || value.includes("refs/") || /^refs[/.]/.test(value)) return false;
+  if (value.endsWith("/") || value.endsWith(".") || value.endsWith(".lock") || value === "HEAD") return false;
+  return value.split("/").every((component) => !component.startsWith(".") && !component.endsWith(".lock"));
+}
 /** A CapabilityMatrix key is a camelCase identifier. */
 const CAPABILITY_PATTERN = /^[a-z][A-Za-z0-9]{0,63}$/;
 
@@ -236,8 +256,9 @@ export function validateExecutionSpec(input: unknown): ValidationResult<Executio
   }
 
   for (const field of ["baseRef", "targetBranch"] as const) {
-    if (typeof record[field] !== "string" || !REF_PATTERN.test(record[field] as string)) {
-      issues.push(issue(`/${field}`, "invalid_ref", `${field} is a git ref: no whitespace or control characters`));
+    if (!isPlainBranchName(record[field])) {
+      issues.push(issue(`/${field}`, "invalid_ref",
+        `${field} must be a plain git branch name (letters, digits, ._/-; no leading -/+, no .., no refs/ prefix, no refspec syntax)`));
     }
   }
   if (typeof record.baseCommit !== "string" || !COMMIT_PATTERN.test(record.baseCommit)) {

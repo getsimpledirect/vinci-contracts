@@ -3,6 +3,7 @@ import {
   EXECUTION_OUTPUTS,
   EXECUTION_PROMOTIONS,
   bindExecutionSpec,
+  isPlainBranchName,
   executionSpecDigest,
   validateExecutionSpec,
   workOrderDigest,
@@ -11,16 +12,17 @@ import {
 } from "./index.ts";
 import { reversed, validOrder, validSpec } from "./fixtures.test-helpers.ts";
 
+const codes = (input: unknown): string[] => {
+  const r = validateExecutionSpec(input);
+  return r.ok ? [] : r.issues.map((i) => `${i.path}:${i.code}`);
+};
+
 describe("validateExecutionSpec fails closed", () => {
   it("accepts a well-formed spec, with and without a provider", () => {
     expect(validateExecutionSpec(validSpec()).ok).toBe(true);
     expect(validateExecutionSpec({ ...validSpec(), provider: "deepinfra" }).ok).toBe(true);
   });
 
-  const codes = (input: unknown): string[] => {
-    const r = validateExecutionSpec(input);
-    return r.ok ? [] : r.issues.map((i) => `${i.path}:${i.code}`);
-  };
 
   it("rejects unknown fields at every level", () => {
     expect(codes({ ...validSpec(), repo: "x" })).toContain("/repo:unknown_field");
@@ -35,6 +37,7 @@ describe("validateExecutionSpec fails closed", () => {
     expect(codes({ ...validSpec(), baseCommit: "60bd211" })).toContain("/baseCommit:invalid_commit");
     expect(codes({ ...validSpec(), baseCommit: "60BD211A3F4C5D6E7F8091A2B3C4D5E6F7A8B9C0" })).toContain("/baseCommit:invalid_commit");
     expect(codes({ ...validSpec(), targetBranch: "feat/rate limit" })).toContain("/targetBranch:invalid_ref");
+    expect(codes({ ...validSpec(), baseRef: "refs/heads/main" })).toContain("/baseRef:invalid_ref");
     expect(codes({ ...validSpec(), repository: { host: "GitHub.com", owner: "o", name: "n" } })).toContain("/repository/host:invalid_host");
     expect(codes({ ...validSpec(), modelClass: "" })).toContain("/modelClass:invalid_model_class");
     expect(codes({ ...validSpec(), provider: "" })).toContain("/provider:invalid_provider");
@@ -63,6 +66,36 @@ describe("validateExecutionSpec fails closed", () => {
     expect([...EXECUTION_OUTPUTS]).toEqual(["branch", "patch", "artifact", "none"]);
     expect([...EXECUTION_PROMOTIONS]).toEqual(["pull_request", "none"]);
     expect(codes({ ...validSpec(), evidencePolicy: "pr" })).toContain("/evidencePolicy:unknown_field");
+  });
+});
+
+describe("baseRef and targetBranch are plain branch names (vinci-code-cli PR #8 rules + check-ref-format --branch)", () => {
+  // The exact hostile strings from that PR's tests, plus check-ref-format cases.
+  const HOSTILE = [
+    "+main", "-x", "a:b", "main:evil", "x:refs/heads/evil", "a..b", "refs/heads/x", "refs//x", "refs.foo/x",
+    "a b", "--force", "a@{b}", "a~b", "a^b", "a?b", "a*b", "a[b", "a\\b", "trail/", "x.lock", "HEAD",
+    "a//b", ".hidden", "a/.hidden", "a.lock/b", "trail.", "", "/lead", "a\tb", "a\nb", "@", "a{b}", "m".repeat(256),
+  ];
+  const FINE = ["main", "feat/rate-limit", "release/1.2.3", "worker/msg_e85b659e", "a.b", "v1.0", "x".repeat(255)];
+
+  it("rejects every hostile string, for both fields", () => {
+    for (const bad of HOSTILE) {
+      expect(isPlainBranchName(bad), JSON.stringify(bad)).toBe(false);
+      expect(codes({ ...validSpec(), targetBranch: bad }), JSON.stringify(bad)).toContain("/targetBranch:invalid_ref");
+      expect(codes({ ...validSpec(), baseRef: bad }), JSON.stringify(bad)).toContain("/baseRef:invalid_ref");
+    }
+  });
+
+  it("accepts plain branch names", () => {
+    for (const good of FINE) {
+      expect(isPlainBranchName(good), JSON.stringify(good)).toBe(true);
+      expect(codes({ ...validSpec(), targetBranch: good, baseRef: good }), JSON.stringify(good)).toEqual([]);
+    }
+  });
+
+  it("is a predicate over strings only", () => {
+    expect(isPlainBranchName(null)).toBe(false);
+    expect(isPlainBranchName(["main"])).toBe(false);
   });
 });
 
