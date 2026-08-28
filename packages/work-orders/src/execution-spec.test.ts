@@ -50,6 +50,20 @@ describe("validateExecutionSpec fails closed", () => {
     }
     expect(codes({ ...validSpec(), resourceBounds: { budgetUsd: 12.5, maxRuntimeS: 3600, deadline: "2026-08-23T14:00:00.000Z" } }))
       .toEqual(expect.arrayContaining(["/resourceBounds/budgetUsd:unknown_field", "/resourceBounds/budgetMicrousd:invalid_budget"]));
+    // -0: toPlainRecord (every validator's first step) normalises it to +0
+    // before this validator runs, so a validator-side Object.is(-0) guard
+    // would be unreachable — an inert guard. Pin the behaviour that IS real:
+    // the validated record carries +0 and canonicalizes to "0".
+    {
+      const r = validateExecutionSpec({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: -0 } });
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(Object.is(r.value.resourceBounds.budgetMicrousd, 0)).toBe(true);
+        expect(Object.is(r.value.resourceBounds.budgetMicrousd, -0)).toBe(false);
+      }
+      expect(executionSpecDigest({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: -0 } }))
+        .toBe(executionSpecDigest({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: 0 } }));
+    }
     // NaN is refused one layer down, by toPlainRecord; either way it never validates.
     expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: Number.NaN } }).length).toBeGreaterThan(0);
     expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, maxRuntimeS: 0 } })).toContain("/resourceBounds/maxRuntimeS:invalid_runtime");

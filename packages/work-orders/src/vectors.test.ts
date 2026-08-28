@@ -60,3 +60,24 @@ describe("golden vectors pin the canonical bytes and digests", () => {
     }
   });
 });
+
+describe("float cases are pinned for both languages", () => {
+  /**
+   * No fixture carries a float any more (money became an integer), so the
+   * Node/Python agreement on float formatting — the place two runtimes most
+   * plausibly diverge — is pinned here from a shared file that the Python
+   * test reads too. The JSON text is the input; each side parses it with its
+   * own JSON parser and must print the pinned bytes.
+   */
+  const cases: ReadonlyArray<{ input: number; canonical: string }> = JSON.parse(
+    readFileSync(join(VECTORS, "float-cases.json"), "utf8"),
+  );
+  it("has at least the three cases both sides must agree on", () => {
+    expect(cases.map((c) => c.canonical)).toEqual(expect.arrayContaining(["1e+21", "1e-7", "0.1"]));
+  });
+  for (const { input, canonical } of cases) {
+    it(`encodes ${canonical} to exactly the pinned bytes`, () => {
+      expect(canonicalize(input)).toBe(canonical);
+    });
+  }
+});

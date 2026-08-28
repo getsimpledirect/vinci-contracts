@@ -44,9 +44,17 @@ describe("checkExecutionSpecWithinOrder: execution authority ⊆ contract author
     const exact = withGrants(["tool:read", "tool:edit", "tool:bash", "repo:github.com/getsimpledirect/vinci-contracts", "branch:release", "promotion:pull_request"]);
     expect(codes({ ...validSpec(), targetBranch: "release" }, exact)).toEqual([]);
     expect(codes({ ...validSpec(), targetBranch: "release/1" }, exact)).toEqual(["/targetBranch:branch_not_granted"]);
-    // "branch:*" alone is not a wildcard grammar this check understands.
+  });
+
+  it("a bare branch:* (or branch:/*) grant is an error on the order side, not a grant that silently covers nothing", () => {
     const star = withGrants(["tool:read", "tool:edit", "tool:bash", "repo:github.com/getsimpledirect/vinci-contracts", "branch:*", "promotion:pull_request"]);
-    expect(codes(validSpec(), star)).toEqual(["/targetBranch:branch_not_granted"]);
+    expect(codes(validSpec(), star)).toEqual(["/order/grantedAuthority/4:grant_wildcard_unbounded", "/targetBranch:branch_not_granted"]);
+    const slashStar = withGrants(["tool:read", "tool:edit", "tool:bash", "repo:github.com/getsimpledirect/vinci-contracts", "branch:/*", "branch:feat/*", "promotion:pull_request"]);
+    expect(codes(validSpec(), slashStar)).toEqual(["/order/grantedAuthority/4:grant_wildcard_unbounded"]);
+    // bindExecutionSpec refuses it too, under execution_exceeds_contract.
+    const bound = bindExecutionSpec(validSpec(star), star);
+    expect(bound.ok).toBe(false);
+    if (!bound.ok) expect(bound.issues.map((i) => i.code)).toContain("grant_wildcard_unbounded");
   });
 
   it("rejects a pull-request promotion the order does not grant", () => {

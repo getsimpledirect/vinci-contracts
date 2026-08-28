@@ -73,10 +73,28 @@ export function checkExecutionSpecWithinOrder(spec: ExecutionSpec, order: WorkOr
   if (!validSpec.ok) return validSpec;
   const validOrder = validateWorkOrder(order);
   if (!validOrder.ok) return fail(validOrder.issues.map((i) => issue(`/order${i.path}`, i.code, i.message)));
-  const s = validSpec.value;
-  const o = validOrder.value;
-  const grants = new Set(o.grantedAuthority);
+  return checkValidatedExecutionSpecWithinOrder(validSpec.value, validOrder.value);
+}
+
+/**
+ * The comparison alone, for callers that have ALREADY validated both records
+ * through validateExecutionSpec / validateWorkOrder (bindExecutionSpec has).
+ * Not exported from the package: a caller outside it cannot prove it validated.
+ */
+export function checkValidatedExecutionSpecWithinOrder(s: ExecutionSpec, o: WorkOrder): ValidationResult<WithinOrder> {
   const issues: ValidationIssue[] = [];
+
+  // A wildcard grant with nothing before the "/*" is not a scope, it is the
+  // absence of one: "branch:*" would cover every branch, which is exactly
+  // what the positive-list rule exists to make impossible to say by accident.
+  // It is an ERROR on the order side, not a grant that silently covers nothing.
+  o.grantedAuthority.forEach((grant, i) => {
+    if (grant === "branch:*" || grant === "branch:/*") {
+      issues.push(issue(`/order/grantedAuthority/${i}`, "grant_wildcard_unbounded",
+        `"${grant}" grants every branch; a branch wildcard needs a non-empty prefix, e.g. branch:feat/*`));
+    }
+  });
+  const grants = new Set(o.grantedAuthority);
 
   if (isStrictlyAfter(s.resourceBounds.deadline, o.expiresAt)) {
     issues.push(issue("/resourceBounds/deadline", "deadline_exceeds_contract",

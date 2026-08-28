@@ -39,6 +39,22 @@ class GoldenVectors(unittest.TestCase):
                 self.assertEqual(digest(value), expected_digest)
 
 
+class SharedFloatCases(unittest.TestCase):
+    """vectors/float-cases.json, read by src/vectors.test.ts too: byte equality on floats."""
+
+    def test_float_cases_match_pinned_bytes(self):
+        with open(os.path.join(VECTORS, "float-cases.json"), encoding="utf-8") as f:
+            cases = json.load(f)
+        pinned = [c["canonical"] for c in cases]
+        for required in ("1e+21", "1e-7", "0.1"):
+            self.assertIn(required, pinned)
+        self.assertGreaterEqual(len(cases), 3)
+        for case in cases:
+            with self.subTest(canonical=case["canonical"]):
+                self.assertIsInstance(case["input"], float)
+                self.assertEqual(canonicalize(case["input"]).encode("utf-8"), case["canonical"].encode("utf-8"))
+
+
 class Rfc8785Numbers(unittest.TestCase):
     """The RFC's Section 3.2.2.3 table: this is where a Python port goes wrong."""
 

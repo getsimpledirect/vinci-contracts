@@ -4,4 +4,6 @@ export * from "./decision-packet.ts";
 export * from "./digest.ts";
 export * from "./execution-spec.ts";
 export * from "./work-order.ts";
-export * from "./within-order.ts";
+// Named, not `export *`: checkValidatedExecutionSpecWithinOrder trusts its
+// inputs and stays package-private.
+export { GRANT_PREFIXES, checkExecutionSpecWithinOrder, type WithinOrder } from "./within-order.ts";
