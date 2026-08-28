@@ -25,7 +25,10 @@
   "grantedAuthority": [
     "edit files under src/billing/webhooks",
     "run the replay harness",
-    "trigger the staging and production deploy pipelines"
+    "trigger the staging and production deploy pipelines",
+    "tool:bash",
+    "repo:github.com/getsimpledirect/vinci-chat",
+    "branch:feat/vector-2"
   ],
   "attentionBudget": {
     "interruptions": 5,

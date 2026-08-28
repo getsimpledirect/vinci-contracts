@@ -15,6 +15,7 @@ import {
 } from "@getsimpledirect/vinci-contracts";
 import { sha256Hex, workOrderDigest } from "./digest.ts";
 import { validateWorkOrder, type WorkOrder } from "./work-order.ts";
+import { checkExecutionSpecWithinOrder } from "./within-order.ts";
 
 /**
  * Everything a worker needs to START that a work order deliberately does not say.
@@ -337,6 +338,16 @@ export function bindExecutionSpec(spec: ExecutionSpec, order: WorkOrder): Valida
     issues.push(issue("/workOrderDigest", "work_order_digest_mismatch", "spec was compiled from a different version of this order"));
   }
   if (issues.length > 0) return fail(issues);
+  // Identity proven; now containment. A spec bound to the right order may
+  // still ask for more than it grants, and that is refused with its own reason.
+  const within = checkExecutionSpecWithinOrder(validSpec.value, validOrder.value);
+  if (!within.ok) {
+    return fail([
+      issue("", "execution_exceeds_contract",
+        `the execution spec asks for what the order does not grant: ${within.issues.map((i) => `${i.path} ${i.code}`).join("; ")}`),
+      ...within.issues,
+    ]);
+  }
   return ok({
     work_order_id: validOrder.value.id,
     contract_digest: contractDigest,

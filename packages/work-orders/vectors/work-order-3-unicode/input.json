@@ -19,7 +19,9 @@
   "grantedAuthority": [
     "edit files under apps/web/i18n",
     "פתח בקשת משיכה",
-    "дּ€דּ"
+    "дּ€דּ",
+    "repo:github.com/getsimpledirect/vinci-contracts",
+    "branch:i18n/*"
   ],
   "attentionBudget": {
     "interruptions": 0,

@@ -25,6 +25,22 @@ A worker is handed exactly
 
 `bindExecutionSpec(spec, order)` produces it, after proving that `spec.workOrderId === order.id` **and** `spec.workOrderDigest === workOrderDigest(order)`. An id match with a digest mismatch is the dangerous pairing — the same line of contract at a different version — and is reported as `work_order_digest_mismatch`. Because the spec digest covers `workOrderDigest`, the triple transitively pins every term the worker runs under; none can be swapped without one of the three values changing.
 
+### Monotonicity: execution authority ⊆ contract authority
+
+Identity is not containment. `checkExecutionSpecWithinOrder(spec, order)` is a **pure** predicate (no I/O; the Governor or whatever compiles specs calls it) that returns `{ within: true }` or one issue per violated dimension, and `bindExecutionSpec` calls it after the id/digest check, refusing with `execution_exceeds_contract` followed by the specific violations. Positive-list semantics: anything the spec asks for that the order does not grant is a violation; absence is not permission.
+
+Because `grantedAuthority` is free text and `scope` is prose, grants are matched by an explicit token grammar rather than a substring search. A grant is machine-readable only with one of these prefixes; every other grant is prose for humans and covers nothing:
+
+| grant | covers |
+|---|---|
+| `tool:<name>` | `spec.tools` entry `<name>`, exact and case-sensitive |
+| `repo:<host>/<owner>/<name>` | `spec.repository`, exact |
+| `branch:<name>` | `spec.targetBranch`, exact |
+| `branch:<prefix>/*` | any `targetBranch` beginning with `<prefix>/` (one trailing `/*`; no other wildcard) |
+| `promotion:pull_request` | a spec that opens a pull request |
+
+Time: `resourceBounds.deadline` may not be later than `order.expiresAt`. `scope` itself is not machine-checked — the `repo:`/`branch:` grants are its machine-readable projection.
+
 ### ExecutionSpec v1 fields
 
 `schemaVersion: 1`, `workOrderId`, `workOrderDigest`, `repository {host, owner, name}`, `baseRef`, `baseCommit` (exactly 40 **lowercase** hex characters — uppercase is rejected by policy so commits compare bytewise, the same rule `isDigest` applies to SHA-256), `targetBranch`, `modelClass`, optional `provider`, `resourceBounds {budgetUsd, maxRuntimeS, deadline}`, `tools[]`, `inputArtifacts [{id, digest}]`, `requiredCapabilities[]`, `evidencePolicy` (`pr` | `receipt` | `none`), `issuedAt`. Unknown fields are rejected; a spec is immutable once issued — a changed commit or bound is a new spec with a new digest.

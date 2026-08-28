@@ -3,7 +3,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canonicalize } from "@getsimpledirect/vinci-contracts";
-import { executionSpecDigest, workOrderDigest } from "./index.ts";
+import { bindExecutionSpec, executionSpecDigest, workOrderDigest } from "./index.ts";
 
 /**
  * Golden vectors, shared with the Python implementation.
@@ -45,15 +45,18 @@ describe("golden vectors pin the canonical bytes and digests", () => {
     });
   }
 
-  it("every execution-spec vector names the digest of the work-order vector it points at", () => {
-    const orders = new Map<string, string>();
+  it("every execution-spec vector binds to its work-order vector: right digest, and within its grants", () => {
+    const orders = new Map<string, unknown>();
     for (const dir of dirs.filter((d) => d.startsWith("work-order-"))) {
       const input = JSON.parse(readFileSync(join(VECTORS, dir, "input.json"), "utf8"));
-      orders.set(input.id, workOrderDigest(input));
+      orders.set(input.id, input);
     }
     for (const dir of dirs.filter((d) => d.startsWith("execution-spec-"))) {
       const spec = JSON.parse(readFileSync(join(VECTORS, dir, "input.json"), "utf8"));
-      expect(orders.get(spec.workOrderId), dir).toBe(spec.workOrderDigest);
+      const order = orders.get(spec.workOrderId);
+      expect(order, dir).toBeDefined();
+      const bound = bindExecutionSpec(spec, order as never);
+      expect(bound.ok ? "bound" : bound.issues.map((i) => `${i.path}:${i.code}`).join(","), dir).toBe("bound");
     }
   });
 });

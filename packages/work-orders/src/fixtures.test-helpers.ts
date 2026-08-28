@@ -10,7 +10,11 @@ export const validOrder = (): WorkOrder => ({
   acceptanceCriteria: [
     { id: "c.limits", statement: "Requests over 100/min receive 429.", verifiedBy: "Integration test against a live handler." },
   ],
-  grantedAuthority: ["edit files under src/api", "run the test suite"],
+  grantedAuthority: [
+    "edit files under src/api", "run the test suite",
+    "tool:read", "tool:edit", "tool:bash",
+    "repo:github.com/getsimpledirect/vinci-contracts", "branch:feat/*", "promotion:pull_request",
+  ],
   attentionBudget: { interruptions: 3, decisions: 2, onExhaustion: "block" },
   requestedBy: { kind: "user", userId: "u-1" },
   owner: { kind: "user", userId: "owner-1" },

@@ -4,3 +4,4 @@ export * from "./decision-packet.ts";
 export * from "./digest.ts";
 export * from "./execution-spec.ts";
 export * from "./work-order.ts";
+export * from "./within-order.ts";

@@ -552,6 +552,7 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-work-orders.workOrderDigest": "encoder over a record it validates first; throws on an invalid one",
   "@getsimpledirect/vinci-work-orders.executionSpecDigest": "encoder over a record it validates first; throws on an invalid one",
   "@getsimpledirect/vinci-work-orders.sha256Hex": "pure hash of a string",
+  "@getsimpledirect/vinci-work-orders.checkExecutionSpecWithinOrder": "returns a ValidationResult, not a boolean; validates both inputs through the probed validators before comparing grants",
   "@getsimpledirect/vinci-work-orders.bindExecutionSpec": "returns a ValidationResult, not a boolean; both inputs go through the probed validators (validateExecutionSpec, validateWorkOrder) before any comparison",
   "@getsimpledirect/vinci-contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
   // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.

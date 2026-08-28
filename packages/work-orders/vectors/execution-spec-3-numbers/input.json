@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "workOrderId": "wo-vec-3",
-  "workOrderDigest": "8d31ff27dea56b0029003a6fcf2dd16f20c0e04122dd9579f8462a110cff7dc9",
+  "workOrderDigest": "3e554be131446d9ce6625d16f8e89b081c4def1305712d6a4ec624a63fe7f3f6",
   "repository": {
     "host": "github.com",
     "owner": "getsimpledirect",
@@ -12,7 +12,7 @@
   "targetBranch": "i18n/😀-דּ",
   "modelClass": "forte",
   "resourceBounds": {
-    "budgetUsd": 1e-07,
+    "budgetUsd": 1e-7,
     "maxRuntimeS": 9007199254740991,
     "deadline": "2026-12-31T23:59:59.999Z"
   },
