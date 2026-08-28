@@ -34,7 +34,11 @@
     "nativeReceipts",
     "abort"
   ],
-  "evidencePolicy": "receipt",
+  "output": "branch",
+  "evidence": {
+    "required": true
+  },
+  "promotion": "none",
   "issuedAt": "2026-08-25T09:31:00.000Z",
   "provider": "deepinfra"
 }

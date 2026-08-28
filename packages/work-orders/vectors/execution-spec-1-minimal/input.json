@@ -31,6 +31,10 @@
     "structuredEvidence",
     "safeResume"
   ],
-  "evidencePolicy": "pr",
+  "output": "branch",
+  "evidence": {
+    "required": true
+  },
+  "promotion": "pull_request",
   "issuedAt": "2026-08-23T12:05:00.000Z"
 }

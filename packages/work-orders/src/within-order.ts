@@ -95,7 +95,7 @@ export function checkExecutionSpecWithinOrder(spec: ExecutionSpec, order: WorkOr
     issues.push(issue("/targetBranch", "branch_not_granted",
       `the order grants neither "branch:${s.targetBranch}" nor a "branch:<prefix>/*" covering it`));
   }
-  if (s.evidencePolicy === "pr" && !grants.has("promotion:pull_request")) {
+  if (s.promotion === "pull_request" && !grants.has("promotion:pull_request")) {
     issues.push(issue("/promotion", "promotion_not_granted", 'the order does not grant "promotion:pull_request"'));
   }
 

@@ -75,7 +75,12 @@ export type ExecutionSpec = {
    * names against it; this validator checks only their shape.
    */
   readonly requiredCapabilities: readonly string[];
-  readonly evidencePolicy: EvidencePolicy;
+  /** What the run produces. */
+  readonly output: ExecutionOutput;
+  /** Whether an evidence bundle is required. When it is, one is always attempted. */
+  readonly evidence: EvidenceRequirement;
+  /** How the output is put forward for review. A pull request is promotion, not evidence. */
+  readonly promotion: ExecutionPromotion;
   readonly issuedAt: string;
 };
 
@@ -102,23 +107,41 @@ export type InputArtifact = {
 };
 
 /**
- * How the run's evidence is delivered.
+ * What the run produces.
  *
- *   pr      — as a pull request onto `targetBranch`, carrying the evidence.
- *   receipt — as a receipt only; no pull request is opened.
- *   none    — the run produces no evidence deliverable (measurement, dry run).
- *
- * No existing worker envelope in this repository names an evidence policy, so
- * this vocabulary is introduced here rather than mirrored from one. It is
- * closed; extending it is a schema change.
+ *   branch   — commits pushed to `targetBranch`
+ *   patch    — a patch file, nothing pushed
+ *   artifact — a non-code deliverable (a report, a dataset)
+ *   none     — nothing durable (measurement, dry run)
  */
-export const EVIDENCE_POLICIES = ["pr", "receipt", "none"] as const;
-export type EvidencePolicy = (typeof EVIDENCE_POLICIES)[number];
+export const EXECUTION_OUTPUTS = ["branch", "patch", "artifact", "none"] as const;
+export type ExecutionOutput = (typeof EXECUTION_OUTPUTS)[number];
+
+/**
+ * Whether the run must produce an evidence bundle. When `required` is true the
+ * bundle is always attempted; a run that cannot produce one has failed, not
+ * "delivered without evidence". HOW evidence is verified is not repeated
+ * here: that is the work order's `verifier` and `acceptanceCriteria`, and a
+ * spec restating it would be a second place for the policy to drift.
+ */
+export type EvidenceRequirement = { readonly required: boolean };
+
+/**
+ * How the output is put forward. A PULL REQUEST IS A PROMOTION MECHANISM, NOT
+ * EVIDENCE: it is where a branch goes to be looked at, and says nothing about
+ * whether the acceptance criteria hold. The first draft of this schema had a
+ * single `evidencePolicy: "pr"` that conflated the two.
+ *
+ *   pull_request — open a pull request from `targetBranch`; requires `output: "branch"`
+ *   none         — the output is left where it lands
+ */
+export const EXECUTION_PROMOTIONS = ["pull_request", "none"] as const;
+export type ExecutionPromotion = (typeof EXECUTION_PROMOTIONS)[number];
 
 const SPEC_FIELDS = [
   "schemaVersion", "workOrderId", "workOrderDigest", "repository", "baseRef", "baseCommit",
   "targetBranch", "modelClass", "provider", "resourceBounds", "tools", "inputArtifacts",
-  "requiredCapabilities", "evidencePolicy", "issuedAt",
+  "requiredCapabilities", "output", "evidence", "promotion", "issuedAt",
 ] as const;
 const MAX_LIST = 100;
 const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
@@ -279,8 +302,23 @@ export function validateExecutionSpec(input: unknown): ValidationResult<Executio
     });
   }
 
-  if (typeof record.evidencePolicy !== "string" || !(EVIDENCE_POLICIES as readonly string[]).includes(record.evidencePolicy)) {
-    issues.push(issue("/evidencePolicy", "unknown_evidence_policy", `evidencePolicy must be one of ${EVIDENCE_POLICIES.join(", ")}`));
+  const validOutput = typeof record.output === "string" && (EXECUTION_OUTPUTS as readonly string[]).includes(record.output);
+  if (!validOutput) {
+    issues.push(issue("/output", "unknown_output", `output must be one of ${EXECUTION_OUTPUTS.join(", ")}`));
+  }
+  if (!isObjectRecord(record.evidence)) {
+    issues.push(issue("/evidence", "invalid_type", "evidence is an object"));
+  } else {
+    rejectUnknownFields(record.evidence, ["required"], "/evidence", "evidence", issues);
+    if (typeof record.evidence.required !== "boolean") {
+      issues.push(issue("/evidence/required", "invalid_type", "evidence.required is boolean"));
+    }
+  }
+  const validPromotion = typeof record.promotion === "string" && (EXECUTION_PROMOTIONS as readonly string[]).includes(record.promotion);
+  if (!validPromotion) {
+    issues.push(issue("/promotion", "unknown_promotion", `promotion must be one of ${EXECUTION_PROMOTIONS.join(", ")}`));
+  } else if (validOutput && record.promotion === "pull_request" && record.output !== "branch") {
+    issues.push(issue("/promotion", "promotion_needs_branch", "a pull request promotes a branch; output must be \"branch\""));
   }
   if (!isCanonicalTimestamp(record.issuedAt)) {
     issues.push(issue("/issuedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));

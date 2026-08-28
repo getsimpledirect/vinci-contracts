@@ -46,7 +46,9 @@ export const validSpec = (order: WorkOrder = validOrder()): ExecutionSpec => ({
   tools: ["read", "edit", "bash"],
   inputArtifacts: [{ id: "design-note", digest: "a".repeat(64) }],
   requiredCapabilities: ["structuredEvidence", "safeResume"],
-  evidencePolicy: "pr",
+  output: "branch",
+  evidence: { required: true },
+  promotion: "pull_request",
   issuedAt: "2026-08-23T12:05:00.000Z",
 });
 

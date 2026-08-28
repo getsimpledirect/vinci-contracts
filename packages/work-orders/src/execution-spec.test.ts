@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  EVIDENCE_POLICIES,
+  EXECUTION_OUTPUTS,
+  EXECUTION_PROMOTIONS,
   bindExecutionSpec,
   executionSpecDigest,
   validateExecutionSpec,
@@ -47,13 +48,21 @@ describe("validateExecutionSpec fails closed", () => {
     expect(codes({ ...validSpec(), requiredCapabilities: ["Structured Evidence"] })).toContain("/requiredCapabilities/0:invalid_capability");
     expect(codes({ ...validSpec(), inputArtifacts: [{ id: "a", digest: "a".repeat(64) }, { id: "a", digest: "b".repeat(64) }] })).toContain("/inputArtifacts/1/id:duplicate_artifact");
     expect(codes({ ...validSpec(), inputArtifacts: [{ id: "a", digest: "nope" }] })).toContain("/inputArtifacts/0/digest:invalid_digest");
-    expect(codes({ ...validSpec(), evidencePolicy: "pull_request" })).toContain("/evidencePolicy:unknown_evidence_policy");
+    expect(codes({ ...validSpec(), output: "pr" })).toContain("/output:unknown_output");
+    expect(codes({ ...validSpec(), evidence: { required: "yes" } })).toContain("/evidence/required:invalid_type");
+    expect(codes({ ...validSpec(), evidence: { required: true, kinds: [] } })).toContain("/evidence/kinds:unknown_field");
+    expect(codes({ ...validSpec(), promotion: "merge" })).toContain("/promotion:unknown_promotion");
+    expect(codes({ ...validSpec(), output: "patch", promotion: "pull_request" })).toContain("/promotion:promotion_needs_branch");
+    expect(codes({ ...validSpec(), output: "patch", promotion: "none" })).toEqual([]);
+    expect(codes({ ...validSpec(), output: "none", evidence: { required: false }, promotion: "none" })).toEqual([]);
     expect(codes({ ...validSpec(), issuedAt: "2026-08-23T12:05:00Z" })).toContain("/issuedAt:invalid_timestamp");
     expect(codes(null).length).toBeGreaterThan(0);
   });
 
-  it("the evidence-policy vocabulary is closed and small", () => {
-    expect([...EVIDENCE_POLICIES]).toEqual(["pr", "receipt", "none"]);
+  it("output and promotion vocabularies are closed; a pull request is promotion, not evidence", () => {
+    expect([...EXECUTION_OUTPUTS]).toEqual(["branch", "patch", "artifact", "none"]);
+    expect([...EXECUTION_PROMOTIONS]).toEqual(["pull_request", "none"]);
+    expect(codes({ ...validSpec(), evidencePolicy: "pr" })).toContain("/evidencePolicy:unknown_field");
   });
 });
 
