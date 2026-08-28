@@ -1,14 +1,21 @@
-import { createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { canonicalize } from "@getsimpledirect/vinci-contracts";
 import { workOrderDigest, type WorkOrder } from "./index.ts";
 import { reversed, validOrder } from "./fixtures.test-helpers.ts";
 
+const VECTOR = join(dirname(fileURLToPath(import.meta.url)), "..", "vectors", "work-order-1-minimal");
+
 describe("workOrderDigest identifies the exact contract", () => {
-  it("is a lowercase hex SHA-256 of the canonical encoding", () => {
-    const expected = createHash("sha256").update(canonicalize(validOrder()), "utf8").digest("hex");
-    expect(workOrderDigest(validOrder())).toBe(expected);
-    expect(workOrderDigest(validOrder())).toMatch(/^[0-9a-f]{64}$/);
+  it("matches the committed golden vector, not merely its own construction", () => {
+    // Expected value comes from vectors/work-order-1-minimal/digest.txt, a
+    // file the Python port also asserts against. Computing it here with the
+    // same canonicalize + sha256 would only prove the function equals itself.
+    const input = JSON.parse(readFileSync(join(VECTOR, "input.json"), "utf8"));
+    const expected = readFileSync(join(VECTOR, "digest.txt"), "utf8").trim();
+    expect(expected).toMatch(/^[0-9a-f]{64}$/);
+    expect(workOrderDigest(input)).toBe(expected);
   });
 
   it("does not depend on key insertion order, at any depth", () => {

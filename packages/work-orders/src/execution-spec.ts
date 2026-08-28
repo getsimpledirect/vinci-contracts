@@ -5,6 +5,7 @@ import {
   isDigest,
   isIdentifier,
   isNonBlankText,
+  isStrictlyAfter,
   ok,
   safeLabel,
   toPlainRecord,
@@ -282,7 +283,7 @@ export function validateExecutionSpec(input: unknown): ValidationResult<Executio
   }
   if (!isCanonicalTimestamp(record.issuedAt)) {
     issues.push(issue("/issuedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
-  } else if (deadline !== null && Date.parse(deadline) <= Date.parse(record.issuedAt)) {
+  } else if (deadline !== null && !isStrictlyAfter(deadline, record.issuedAt)) {
     issues.push(issue("/resourceBounds/deadline", "deadline_not_after_issuance", "deadline must be strictly later than issuedAt"));
   }
 

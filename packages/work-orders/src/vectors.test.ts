@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { canonicalize } from "@getsimpledirect/vinci-contracts";
 import { executionSpecDigest, workOrderDigest } from "./index.ts";
@@ -15,7 +16,9 @@ import { executionSpecDigest, workOrderDigest } from "./index.ts";
  * vectors are the contract, and neither implementation gets to redefine it
  * alone. Regenerate with vectors/generate.mjs only as a deliberate act.
  */
-const VECTORS = join(import.meta.dirname, "..", "vectors");
+// fileURLToPath rather than import.meta.dirname: engines says node >=20 and
+// import.meta.dirname arrived in 20.11.
+const VECTORS = join(dirname(fileURLToPath(import.meta.url)), "..", "vectors");
 
 const dirs = readdirSync(VECTORS, { withFileTypes: true })
   .filter((d) => d.isDirectory())
