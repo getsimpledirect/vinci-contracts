@@ -42,7 +42,7 @@ export const validSpec = (order: WorkOrder = validOrder()): ExecutionSpec => ({
   baseCommit: "60bd211a3f4c5d6e7f8091a2b3c4d5e6f7a8b9c0",
   targetBranch: "feat/rate-limit",
   modelClass: "forte",
-  resourceBounds: { budgetUsd: 12.5, maxRuntimeS: 3600, deadline: "2026-08-23T14:00:00.000Z" },
+  resourceBounds: { budgetMicrousd: 12_500_000, maxRuntimeS: 3600, deadline: "2026-08-23T14:00:00.000Z" },
   tools: ["read", "edit", "bash"],
   inputArtifacts: [{ id: "design-note", digest: "a".repeat(64) }],
   requiredCapabilities: ["structuredEvidence", "safeResume"],

@@ -12,7 +12,7 @@
   "targetBranch": "i18n/vector-3.unicode",
   "modelClass": "forte",
   "resourceBounds": {
-    "budgetUsd": 1e-07,
+    "budgetMicrousd": 0,
     "maxRuntimeS": 9007199254740991,
     "deadline": "2026-12-31T23:59:59.999Z"
   },

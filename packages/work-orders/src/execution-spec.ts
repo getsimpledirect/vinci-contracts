@@ -92,8 +92,16 @@ export type ExecutionRepository = {
 };
 
 export type ResourceBounds = {
-  /** Non-negative. Finite. */
-  readonly budgetUsd: number;
+  /**
+   * Budget in micro-USD (1 USD = 1_000_000), a non-negative safe integer.
+   *
+   * Not a float. Money as a binary double is the wrong type in general, and
+   * here it is also a wire hazard: the digest is computed from canonical
+   * bytes that a Node and a Python implementation must agree on, and a
+   * float's shortest round-trip representation is exactly the place two
+   * runtimes' formatting rules differ. An integer prints one way everywhere.
+   */
+  readonly budgetMicrousd: number;
   /** Positive integer seconds. */
   readonly maxRuntimeS: number;
   /** Canonical timestamp, strictly after `issuedAt`. */
@@ -276,9 +284,9 @@ export function validateExecutionSpec(input: unknown): ValidationResult<Executio
     issues.push(issue("/resourceBounds", "invalid_type", "resourceBounds is an object"));
   } else {
     const bounds = record.resourceBounds;
-    rejectUnknownFields(bounds, ["budgetUsd", "maxRuntimeS", "deadline"], "/resourceBounds", "resourceBounds", issues);
-    if (typeof bounds.budgetUsd !== "number" || !Number.isFinite(bounds.budgetUsd) || bounds.budgetUsd < 0) {
-      issues.push(issue("/resourceBounds/budgetUsd", "invalid_budget", "budgetUsd is a finite non-negative number"));
+    rejectUnknownFields(bounds, ["budgetMicrousd", "maxRuntimeS", "deadline"], "/resourceBounds", "resourceBounds", issues);
+    if (!Number.isSafeInteger(bounds.budgetMicrousd) || (bounds.budgetMicrousd as number) < 0) {
+      issues.push(issue("/resourceBounds/budgetMicrousd", "invalid_budget", "budgetMicrousd is a non-negative safe integer number of micro-USD; floats and USD are rejected"));
     }
     if (!Number.isSafeInteger(bounds.maxRuntimeS) || (bounds.maxRuntimeS as number) <= 0) {
       issues.push(issue("/resourceBounds/maxRuntimeS", "invalid_runtime", "maxRuntimeS is a positive integer number of seconds"));

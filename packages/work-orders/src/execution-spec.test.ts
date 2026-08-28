@@ -41,9 +41,17 @@ describe("validateExecutionSpec fails closed", () => {
     expect(codes({ ...validSpec(), repository: { host: "GitHub.com", owner: "o", name: "n" } })).toContain("/repository/host:invalid_host");
     expect(codes({ ...validSpec(), modelClass: "" })).toContain("/modelClass:invalid_model_class");
     expect(codes({ ...validSpec(), provider: "" })).toContain("/provider:invalid_provider");
-    expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetUsd: -1 } })).toContain("/resourceBounds/budgetUsd:invalid_budget");
+    for (const bad of [-1, 12.5, 1e-7, 0.1 + 0.2, 2 ** 53, -0.5, "12500000", null]) {
+      expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: bad } }), String(bad))
+        .toContain("/resourceBounds/budgetMicrousd:invalid_budget");
+    }
+    for (const good of [0, 1, 12_500_000, Number.MAX_SAFE_INTEGER]) {
+      expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: good } }), String(good)).toEqual([]);
+    }
+    expect(codes({ ...validSpec(), resourceBounds: { budgetUsd: 12.5, maxRuntimeS: 3600, deadline: "2026-08-23T14:00:00.000Z" } }))
+      .toEqual(expect.arrayContaining(["/resourceBounds/budgetUsd:unknown_field", "/resourceBounds/budgetMicrousd:invalid_budget"]));
     // NaN is refused one layer down, by toPlainRecord; either way it never validates.
-    expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetUsd: Number.NaN } }).length).toBeGreaterThan(0);
+    expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: Number.NaN } }).length).toBeGreaterThan(0);
     expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, maxRuntimeS: 0 } })).toContain("/resourceBounds/maxRuntimeS:invalid_runtime");
     expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, deadline: "2026-08-23T12:05:00.000Z" } })).toContain("/resourceBounds/deadline:deadline_not_after_issuance");
     expect(codes({ ...validSpec(), tools: ["read", "read"] })).toContain("/tools/1:duplicate_entry");
