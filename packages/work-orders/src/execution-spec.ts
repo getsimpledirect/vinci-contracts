@@ -1,0 +1,359 @@
+import {
+  canonicalize,
+  fail,
+  isCanonicalTimestamp,
+  isDigest,
+  isIdentifier,
+  isNonBlankText,
+  ok,
+  safeLabel,
+  toPlainRecord,
+  type SchemaMeta,
+  type ValidationIssue,
+  type ValidationResult,
+} from "@getsimpledirect/vinci-contracts";
+import { sha256Hex, workOrderDigest } from "./digest.ts";
+import { validateWorkOrder, type WorkOrder } from "./work-order.ts";
+
+/**
+ * Everything a worker needs to START that a work order deliberately does not say.
+ *
+ * A work order is durable intent: what was asked, what "done" means, how much
+ * authority and attention it carries. It survives the repository moving, the
+ * model being swapped, the base commit advancing. None of those change what
+ * was agreed, so none of them belong in the contract — and putting them there
+ * would force a new contract version every time the world moved under it.
+ *
+ * An execution spec is the opposite: it is compiled FROM a work order for one
+ * run, fixes every one of those moving parts, and is immutable once issued.
+ * Re-running against a new base commit is a new spec with a new digest; the
+ * order underneath is untouched.
+ *
+ * The spec references its order by id AND by digest. The id says which line of
+ * contract this is; the digest says exactly which version of it, byte for
+ * byte. A spec that names an id alone could be paired with any later amendment
+ * of that order, which is how a worker ends up executing under terms nobody
+ * agreed to. `bindExecutionSpec` is the check that the pairing is honest.
+ *
+ * Handoff to a worker is therefore the triple
+ *   { work_order_id, contract_digest, execution_spec_digest }
+ * and nothing else: every term the worker runs under is reachable from those
+ * three values and cannot be swapped without one of them changing.
+ */
+export type ExecutionSpec = {
+  readonly schemaVersion: 1;
+  readonly workOrderId: string;
+  /** `workOrderDigest` of the exact order this was compiled from. */
+  readonly workOrderDigest: string;
+  readonly repository: ExecutionRepository;
+  /** The ref the run starts from, e.g. "refs/heads/main" or "main". */
+  readonly baseRef: string;
+  /** The commit `baseRef` resolved to when the spec was compiled. 40 lowercase hex. */
+  readonly baseCommit: string;
+  /** Where the work lands. */
+  readonly targetBranch: string;
+  /**
+   * A model-class name. Held as a string on purpose: the vocabulary lives in
+   * @getsimpledirect/vinci-model-classes and is the consumer's to resolve; the
+   * spec records which name was chosen, it does not re-validate the catalogue.
+   */
+  readonly modelClass: string;
+  /** Provider pin, when the run must not be routed elsewhere. */
+  readonly provider?: string;
+  readonly resourceBounds: ResourceBounds;
+  /** Tool names the worker may use. Anything absent is not granted. */
+  readonly tools: readonly string[];
+  /** Inputs the worker is given, each pinned by content digest. */
+  readonly inputArtifacts: readonly InputArtifact[];
+  /**
+   * Names of `CapabilityMatrix` keys from @getsimpledirect/vinci-worker-capabilities
+   * (for example "structuredEvidence", "safeResume"). Strings, NOT that type:
+   * worker-capabilities sits two layers above this package and the dependency
+   * graph forbids the import. The consumer that holds a matrix checks these
+   * names against it; this validator checks only their shape.
+   */
+  readonly requiredCapabilities: readonly string[];
+  readonly evidencePolicy: EvidencePolicy;
+  readonly issuedAt: string;
+};
+
+export type ExecutionRepository = {
+  /** Hostname, e.g. "github.com". */
+  readonly host: string;
+  readonly owner: string;
+  readonly name: string;
+};
+
+export type ResourceBounds = {
+  /** Non-negative. Finite. */
+  readonly budgetUsd: number;
+  /** Positive integer seconds. */
+  readonly maxRuntimeS: number;
+  /** Canonical timestamp, strictly after `issuedAt`. */
+  readonly deadline: string;
+};
+
+export type InputArtifact = {
+  readonly id: string;
+  /** Lowercase hex SHA-256 of the artifact's bytes. */
+  readonly digest: string;
+};
+
+/**
+ * How the run's evidence is delivered.
+ *
+ *   pr      — as a pull request onto `targetBranch`, carrying the evidence.
+ *   receipt — as a receipt only; no pull request is opened.
+ *   none    — the run produces no evidence deliverable (measurement, dry run).
+ *
+ * No existing worker envelope in this repository names an evidence policy, so
+ * this vocabulary is introduced here rather than mirrored from one. It is
+ * closed; extending it is a schema change.
+ */
+export const EVIDENCE_POLICIES = ["pr", "receipt", "none"] as const;
+export type EvidencePolicy = (typeof EVIDENCE_POLICIES)[number];
+
+const SPEC_FIELDS = [
+  "schemaVersion", "workOrderId", "workOrderDigest", "repository", "baseRef", "baseCommit",
+  "targetBranch", "modelClass", "provider", "resourceBounds", "tools", "inputArtifacts",
+  "requiredCapabilities", "evidencePolicy", "issuedAt",
+] as const;
+const MAX_LIST = 100;
+const COMMIT_PATTERN = /^[0-9a-f]{40}$/;
+const HOST_PATTERN = /^[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,62}[a-z0-9])?)*$/;
+/** A git ref or branch: no whitespace, no control characters, bounded. */
+const REF_PATTERN = /^[^\s\x00-\x1f\x7f]{1,255}$/;
+/** A CapabilityMatrix key is a camelCase identifier. */
+const CAPABILITY_PATTERN = /^[a-z][A-Za-z0-9]{0,63}$/;
+
+function issue(path: string, code: string, message: string): ValidationIssue {
+  return { path, code, message };
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function rejectUnknownFields(
+  record: Record<string, unknown>,
+  allowed: readonly string[],
+  path: string,
+  noun: string,
+  issues: ValidationIssue[],
+): void {
+  for (const key of Object.keys(record)) {
+    if (!allowed.includes(key)) {
+      issues.push(issue(`${path}/${key}`, "unknown_field", `${noun} carries only its declared fields`));
+    }
+  }
+}
+
+function validateStringList(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  accept: (item: unknown) => boolean,
+  code: string,
+  message: string,
+): void {
+  if (!Array.isArray(value)) {
+    issues.push(issue(path, "invalid_type", `${path.slice(1)} is an array`));
+    return;
+  }
+  if (value.length > MAX_LIST) {
+    issues.push(issue(path, "too_many", `at most ${MAX_LIST} entries`));
+    return;
+  }
+  const seen = new Set<string>();
+  value.forEach((item, i) => {
+    if (!accept(item)) {
+      issues.push(issue(`${path}/${i}`, code, message));
+      return;
+    }
+    if (seen.has(item as string)) {
+      issues.push(issue(`${path}/${i}`, "duplicate_entry", "an entry is listed twice"));
+    }
+    seen.add(item as string);
+  });
+}
+
+/** Validate an execution spec from untrusted input. Fail-closed; unknown fields rejected. */
+export function validateExecutionSpec(input: unknown): ValidationResult<ExecutionSpec> {
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  const record = plain.value;
+  const issues: ValidationIssue[] = [];
+
+  rejectUnknownFields(record, SPEC_FIELDS, "", "an execution spec", issues);
+  if (record.schemaVersion !== 1) {
+    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 1"));
+  }
+  if (!isIdentifier(record.workOrderId)) {
+    issues.push(issue("/workOrderId", "invalid_id", "workOrderId is an identifier"));
+  }
+  if (!isDigest(record.workOrderDigest)) {
+    issues.push(issue("/workOrderDigest", "invalid_digest", "workOrderDigest is a lowercase hex SHA-256"));
+  }
+
+  if (!isObjectRecord(record.repository)) {
+    issues.push(issue("/repository", "invalid_type", "repository is an object"));
+  } else {
+    const repo = record.repository;
+    rejectUnknownFields(repo, ["host", "owner", "name"], "/repository", "repository", issues);
+    if (typeof repo.host !== "string" || !HOST_PATTERN.test(repo.host)) {
+      issues.push(issue("/repository/host", "invalid_host", "host is a lowercase hostname, e.g. github.com"));
+    }
+    for (const field of ["owner", "name"] as const) {
+      if (!isIdentifier(repo[field])) {
+        issues.push(issue(`/repository/${field}`, "invalid_id", `repository ${field} is an identifier`));
+      }
+    }
+  }
+
+  for (const field of ["baseRef", "targetBranch"] as const) {
+    if (typeof record[field] !== "string" || !REF_PATTERN.test(record[field] as string)) {
+      issues.push(issue(`/${field}`, "invalid_ref", `${field} is a git ref: no whitespace or control characters`));
+    }
+  }
+  if (typeof record.baseCommit !== "string" || !COMMIT_PATTERN.test(record.baseCommit)) {
+    issues.push(issue("/baseCommit", "invalid_commit", "baseCommit is a full 40-character lowercase hex SHA-1"));
+  }
+  if (!isIdentifier(record.modelClass)) {
+    issues.push(issue("/modelClass", "invalid_model_class", "modelClass is an identifier"));
+  }
+  if (Object.hasOwn(record, "provider") && !isIdentifier(record.provider)) {
+    issues.push(issue("/provider", "invalid_provider", "provider, when present, is an identifier"));
+  }
+
+  let deadline: string | null = null;
+  if (!isObjectRecord(record.resourceBounds)) {
+    issues.push(issue("/resourceBounds", "invalid_type", "resourceBounds is an object"));
+  } else {
+    const bounds = record.resourceBounds;
+    rejectUnknownFields(bounds, ["budgetUsd", "maxRuntimeS", "deadline"], "/resourceBounds", "resourceBounds", issues);
+    if (typeof bounds.budgetUsd !== "number" || !Number.isFinite(bounds.budgetUsd) || bounds.budgetUsd < 0) {
+      issues.push(issue("/resourceBounds/budgetUsd", "invalid_budget", "budgetUsd is a finite non-negative number"));
+    }
+    if (!Number.isSafeInteger(bounds.maxRuntimeS) || (bounds.maxRuntimeS as number) <= 0) {
+      issues.push(issue("/resourceBounds/maxRuntimeS", "invalid_runtime", "maxRuntimeS is a positive integer number of seconds"));
+    }
+    if (!isCanonicalTimestamp(bounds.deadline)) {
+      issues.push(issue("/resourceBounds/deadline", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
+    } else {
+      deadline = bounds.deadline;
+    }
+  }
+
+  validateStringList(record.tools, "/tools", issues, isNonBlankText, "invalid_tool", "a tool name is non-blank text");
+  validateStringList(
+    record.requiredCapabilities, "/requiredCapabilities", issues,
+    (v) => typeof v === "string" && CAPABILITY_PATTERN.test(v),
+    "invalid_capability", "a required capability is a CapabilityMatrix key name, e.g. structuredEvidence",
+  );
+
+  if (!Array.isArray(record.inputArtifacts)) {
+    issues.push(issue("/inputArtifacts", "invalid_type", "inputArtifacts is an array"));
+  } else if (record.inputArtifacts.length > MAX_LIST) {
+    issues.push(issue("/inputArtifacts", "too_many", `at most ${MAX_LIST} artifacts`));
+  } else {
+    const seen = new Set<string>();
+    record.inputArtifacts.forEach((raw, i) => {
+      const path = `/inputArtifacts/${i}`;
+      if (!isObjectRecord(raw)) {
+        issues.push(issue(path, "invalid_type", `an input artifact is an object, got ${safeLabel(raw)}`));
+        return;
+      }
+      rejectUnknownFields(raw, ["id", "digest"], path, "an input artifact", issues);
+      if (!isIdentifier(raw.id)) {
+        issues.push(issue(`${path}/id`, "invalid_id", "an artifact id is an identifier"));
+      } else if (seen.has(raw.id)) {
+        issues.push(issue(`${path}/id`, "duplicate_artifact", "two artifacts share an id"));
+      } else {
+        seen.add(raw.id);
+      }
+      if (!isDigest(raw.digest)) {
+        issues.push(issue(`${path}/digest`, "invalid_digest", "an artifact digest is a lowercase hex SHA-256"));
+      }
+    });
+  }
+
+  if (typeof record.evidencePolicy !== "string" || !(EVIDENCE_POLICIES as readonly string[]).includes(record.evidencePolicy)) {
+    issues.push(issue("/evidencePolicy", "unknown_evidence_policy", `evidencePolicy must be one of ${EVIDENCE_POLICIES.join(", ")}`));
+  }
+  if (!isCanonicalTimestamp(record.issuedAt)) {
+    issues.push(issue("/issuedAt", "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision"));
+  } else if (deadline !== null && Date.parse(deadline) <= Date.parse(record.issuedAt)) {
+    issues.push(issue("/resourceBounds/deadline", "deadline_not_after_issuance", "deadline must be strictly later than issuedAt"));
+  }
+
+  if (issues.length > 0) return fail(issues);
+  return ok(record as unknown as ExecutionSpec, {});
+}
+
+/**
+ * SHA-256 hex over the canonical encoding of the validated spec. Every field
+ * is covered, `workOrderDigest` included, so the spec digest transitively pins
+ * the exact contract it was compiled from. Throws on an invalid spec.
+ */
+export function executionSpecDigest(spec: ExecutionSpec): string {
+  const validated = validateExecutionSpec(spec);
+  if (!validated.ok) {
+    const first = validated.issues[0];
+    throw new Error(
+      `cannot digest an invalid execution spec: ${first?.path ?? "/"} ${first?.code ?? "invalid"}`,
+    );
+  }
+  return sha256Hex(canonicalize(validated.value));
+}
+
+/** The three values a worker is handed. Nothing it runs under is outside them. */
+export type WorkHandoff = {
+  readonly work_order_id: string;
+  readonly contract_digest: string;
+  readonly execution_spec_digest: string;
+};
+
+/**
+ * Prove that `spec` was compiled from exactly `order`, and produce the handoff.
+ *
+ * Both the id and the digest must match. An id match with a digest mismatch is
+ * the dangerous case — the same line of contract at a different version — and
+ * it is reported as its own issue so it is not mistaken for a typo in the id.
+ * Both records are validated on the way through; a digest of an invalid record
+ * is not computed, so an invalid pair fails here rather than throwing.
+ */
+export function bindExecutionSpec(spec: ExecutionSpec, order: WorkOrder): ValidationResult<WorkHandoff> {
+  const validSpec = validateExecutionSpec(spec);
+  if (!validSpec.ok) return validSpec;
+  const validOrder = validateWorkOrderForBinding(order);
+  if (!validOrder.ok) return validOrder;
+  const issues: ValidationIssue[] = [];
+  const contractDigest = workOrderDigest(validOrder.value);
+  if (validSpec.value.workOrderId !== validOrder.value.id) {
+    issues.push(issue("/workOrderId", "work_order_id_mismatch", `spec names ${validSpec.value.workOrderId}; order is ${validOrder.value.id}`));
+  }
+  if (validSpec.value.workOrderDigest !== contractDigest) {
+    issues.push(issue("/workOrderDigest", "work_order_digest_mismatch", "spec was compiled from a different version of this order"));
+  }
+  if (issues.length > 0) return fail(issues);
+  return ok({
+    work_order_id: validOrder.value.id,
+    contract_digest: contractDigest,
+    execution_spec_digest: executionSpecDigest(validSpec.value),
+  });
+}
+
+function validateWorkOrderForBinding(order: unknown): ValidationResult<WorkOrder> {
+  const result = validateWorkOrder(order);
+  if (result.ok) return result;
+  return fail(result.issues.map((i) => issue(`/order${i.path}`, i.code, i.message)));
+}
+
+export const EXECUTION_SPEC_SCHEMA_META: SchemaMeta = {
+  id: "vinci.execution-spec",
+  version: 1,
+  compatibility: "frozen",
+  unknownFields: "reject",
+  malformedData: "fail-closed",
+  migration: "First version; nothing precedes it. A spec is immutable once issued — a changed base commit, model, or bound is a new spec with a new digest, never an edit.",
+};

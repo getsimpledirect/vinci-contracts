@@ -1,4 +1,4 @@
-import type { WorkOrder } from "./index.ts";
+import { workOrderDigest, type ExecutionSpec, type WorkOrder } from "./index.ts";
 
 /** Shared test fixtures. Not exported from the package; tests only. */
 export const validOrder = (): WorkOrder => ({
@@ -27,6 +27,23 @@ export const validOrder = (): WorkOrder => ({
   ],
   issuedAt: "2026-08-23T12:00:00.000Z",
   expiresAt: "2026-08-24T12:00:00.000Z",
+});
+
+export const validSpec = (order: WorkOrder = validOrder()): ExecutionSpec => ({
+  schemaVersion: 1,
+  workOrderId: order.id,
+  workOrderDigest: workOrderDigest(order),
+  repository: { host: "github.com", owner: "getsimpledirect", name: "vinci-contracts" },
+  baseRef: "refs/heads/main",
+  baseCommit: "60bd211a3f4c5d6e7f8091a2b3c4d5e6f7a8b9c0",
+  targetBranch: "feat/rate-limit",
+  modelClass: "forte",
+  resourceBounds: { budgetUsd: 12.5, maxRuntimeS: 3600, deadline: "2026-08-23T14:00:00.000Z" },
+  tools: ["read", "edit", "bash"],
+  inputArtifacts: [{ id: "design-note", digest: "a".repeat(64) }],
+  requiredCapabilities: ["structuredEvidence", "safeResume"],
+  evidencePolicy: "pr",
+  issuedAt: "2026-08-23T12:05:00.000Z",
 });
 
 /** Reverse every object's key order, recursively. Same content, different insertion order. */
