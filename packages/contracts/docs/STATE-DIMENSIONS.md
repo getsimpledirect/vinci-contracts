@@ -21,12 +21,58 @@ to the Worker's single-word vocabulary (`COMPLETED` `UNVERIFIED` `BLOCKED`
 execution = ARTIFACT_PRODUCED
 and assurance = VERIFIED_PASS
 and promotion in {ELIGIBLE, APPROVED, APPLIED}
-and evidence != MISMATCH
+and evidence = VERIFIED
 ```
 
 Everything else a produced artifact can be is `UNVERIFIED`, except a `BLOCKED`
-verdict, which is `BLOCKED`. `states.test.ts` enumerates all 875 triples to
-hold the property that no triple maps to `COMPLETED` without `VERIFIED_PASS`.
+verdict, which is `BLOCKED`. Evidence the server never verified — `NOT_ATTEMPTED`,
+`DECLARED`, `UNAVAILABLE` — does not yield the strongest word any more than a
+`MISMATCH` does: "nobody checked" is not a weaker form of "checked". Three of
+the 875 triples earn `COMPLETED`. `states.test.ts` enumerates every triple to
+hold two properties: no triple maps to `COMPLETED` without `VERIFIED_PASS`, and
+none without evidence `VERIFIED`.
+
+## The legality tables, as shipped
+
+`canTransition` refuses `from === to` and anything outside its dimension. The
+arcs that exist:
+
+| Dimension | From | To |
+| --- | --- | --- |
+| execution | `PENDING` | `LEASED`, `LOST` |
+| execution | `LEASED` | `RUNNING`, `PENDING`, `FAILED`, `LOST` |
+| execution | `RUNNING` | `ARTIFACT_PRODUCED`, `BLOCKED`, `FAILED`, `LOST` |
+| execution | `ARTIFACT_PRODUCED`, `BLOCKED`, `FAILED`, `LOST` | — (terminal for the attempt) |
+| assurance | `NOT_EVALUATED` | `SELF_CHECKED`, `VERIFIED_PASS`, `CONDITIONAL`, `BLOCKED` |
+| assurance | `SELF_CHECKED` | `VERIFIED_PASS`, `CONDITIONAL`, `BLOCKED` |
+| assurance | any verdict | `NOT_EVALUATED` (stale), either other verdict (re-verification) |
+| promotion | `NOT_ELIGIBLE` | `ELIGIBLE` |
+| promotion | `ELIGIBLE` | `APPROVED`, `NOT_ELIGIBLE` |
+| promotion | `APPROVED` | `APPLIED`, `REVOKED` |
+| promotion | `APPLIED` | `REVOKED` |
+| promotion | `REVOKED` | — (terminal) |
+| evidence | `NOT_ATTEMPTED` | `DECLARED`, `UNAVAILABLE` |
+| evidence | `DECLARED` | `VERIFIED`, `MISMATCH`, `UNAVAILABLE` |
+| evidence | `VERIFIED` | `MISMATCH`, `UNAVAILABLE` (a later re-check) |
+| evidence | `UNAVAILABLE` | `DECLARED` only |
+| evidence | `MISMATCH` | — (terminal) |
+
+Two invariants the tables pin, each with its own test:
+
+- **A verdict can be displaced by a self-check only through an explicit
+  stale.** No verdict state has an arc to `SELF_CHECKED`; the only path is
+  `VERIFIED_PASS → NOT_EVALUATED → SELF_CHECKED`, and the first step is
+  evidenced solely by `verdict.recorded` with `staled: true` — a verifier-side
+  fact, never a worker claim. The assurance axis has no `REVOKED` member: a
+  verdict stales, it is not revoked. If a revocation distinct from staling is
+  ever needed it is a new member and a new ruling, not a reuse of
+  `NOT_EVALUATED`.
+- **Unavailable evidence re-enters only at `DECLARED`.** A failed fetch says
+  nothing about content, so the sound next step is a re-fetch of the same
+  declaration, which lands `VERIFIED` or `MISMATCH` on its own merits. There is
+  no direct `UNAVAILABLE → VERIFIED` edge, no `REVOKED` on the evidence axis
+  (revocation is a promotion word), and `MISMATCH` is terminal — once the
+  declared content has been shown not to match, no later fetch un-shows it.
 
 ## Run events are not bumped. Here is why, and what maps where.
 
@@ -118,8 +164,10 @@ under a policy, the attempt describes a work-order execution under a lease —
 and because the receipt vocabulary is what `vinci-code` persists today.
 
 The one place they touch is the receipt's `verdict`, which from schema v3 may
-be `null` exactly when `finalState` is `BLOCKED`, `FAILED` or `CANCELLED`:
-execution ended with nothing for the assurance axis to assess. A `DONE` or
-`DONE_UNVERIFIED` receipt still cannot be written without a verdict, because an
-artifact exists and FR-6.4 requires a verifier to have spoken before "done" is
-shown.
+be `null` exactly when `finalState` is `BLOCKED`, `FAILED` or `CANCELLED` AND
+`artifactsProduced` is empty: execution ended with nothing for the assurance
+axis to assess. A null verdict beside a non-empty artifact list is refused
+(`artifacts_without_verdict`) — the record would be contradicting itself. A
+`DONE` or `DONE_UNVERIFIED` receipt still cannot be written without a verdict,
+because an artifact exists and FR-6.4 requires a verifier to have spoken before
+"done" is shown.

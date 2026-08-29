@@ -257,7 +257,7 @@ describe("canTransition — every cell", () => {
     DECLARED: ["VERIFIED", "MISMATCH", "UNAVAILABLE"],
     VERIFIED: ["MISMATCH", "UNAVAILABLE"],
     MISMATCH: [],
-    UNAVAILABLE: ["VERIFIED", "MISMATCH"],
+    UNAVAILABLE: ["DECLARED"],
   };
 
   const cases: Array<[StateDimension, readonly string[], Record<string, readonly string[]>]> = [
@@ -305,6 +305,30 @@ describe("canTransition — every cell", () => {
     for (const verdict of VERDICT_STATUSES) {
       expect(canTransition("assurance", verdict, "NOT_EVALUATED")).toBe(true);
     }
+  });
+
+  it("INVARIANT: a verdict reaches SELF_CHECKED only via an explicit stale to NOT_EVALUATED", () => {
+    // The two-step path is the ONLY path. Step one is taken by a staling
+    // event (verdict.recorded, staled: true), never by the worker; there is no
+    // revocation member on this axis, and the doc says so.
+    for (const verdict of VERDICT_STATUSES) {
+      expect(canTransition("assurance", verdict, "SELF_CHECKED"), `${verdict} -> SELF_CHECKED`).toBe(false);
+      expect(canTransition("assurance", verdict, "NOT_EVALUATED"), `${verdict} -> NOT_EVALUATED`).toBe(true);
+    }
+    expect(canTransition("assurance", "NOT_EVALUATED", "SELF_CHECKED")).toBe(true);
+    // No state other than NOT_EVALUATED leads to SELF_CHECKED.
+    const sources = ASSURANCE_STATES.filter((from) => canTransition("assurance", from, "SELF_CHECKED"));
+    expect(sources).toEqual(["NOT_EVALUATED"]);
+    expect(ASSURANCE_STATES).not.toContain("REVOKED");
+  });
+
+  it("re-enters unavailable evidence only through DECLARED, never straight to VERIFIED", () => {
+    expect(canTransition("evidence", "UNAVAILABLE", "VERIFIED")).toBe(false);
+    expect(canTransition("evidence", "UNAVAILABLE", "MISMATCH")).toBe(false);
+    expect(canTransition("evidence", "UNAVAILABLE", "DECLARED")).toBe(true);
+    expect(canTransition("evidence", "DECLARED", "VERIFIED")).toBe(true);
+    expect(legalTransitionsFrom("evidence", "UNAVAILABLE")).toEqual(["DECLARED"]);
+    expect(EVIDENCE_STATES).not.toContain("REVOKED");
   });
 
   it("makes the four execution ends, REVOKED and MISMATCH terminal", () => {
@@ -366,18 +390,29 @@ describe("deriveLegacyTerminal", () => {
     }
   });
 
+  it("PROPERTY: no triple maps to COMPLETED without evidence VERIFIED", () => {
+    // Evidence the server never verified must not yield the strongest word.
+    // NOT_ATTEMPTED, DECLARED and UNAVAILABLE are all "nobody checked", which
+    // is not a weaker form of checked.
+    const completed = all.filter((t) => deriveLegacyTerminal(t) === "COMPLETED");
+    expect(completed.length).toBeGreaterThan(0);
+    for (const triple of completed) {
+      expect(triple.evidence, JSON.stringify(triple)).toBe("VERIFIED");
+    }
+  });
+
   it("PROPERTY: COMPLETED is exactly the documented rule, on every triple", () => {
     // The rule, restated independently of the implementation.
     const rule = (t: OutcomeTriple): boolean =>
       t.execution === "ARTIFACT_PRODUCED"
       && t.assurance === "VERIFIED_PASS"
       && ["ELIGIBLE", "APPROVED", "APPLIED"].includes(t.promotion)
-      && t.evidence !== "MISMATCH";
+      && t.evidence === "VERIFIED";
     for (const triple of all) {
       expect(deriveLegacyTerminal(triple) === "COMPLETED", JSON.stringify(triple)).toBe(rule(triple));
     }
-    // 1 x 1 x 3 x 4 points earn the word.
-    expect(all.filter(rule).length).toBe(12);
+    // 1 x 1 x 3 x 1 points earn the word.
+    expect(all.filter(rule).length).toBe(3);
   });
 
   it("maps BLOCKED, FAILED and LOST execution 1:1 regardless of the other dimensions", () => {
@@ -424,12 +459,12 @@ describe("deriveLegacyTerminal", () => {
     expect(deriveLegacyTerminal({ ...base, promotion: "APPLIED" })).toBe("COMPLETED");
   });
 
-  it("denies COMPLETED to a VERIFIED_PASS whose declared evidence did not match", () => {
+  it("denies COMPLETED to a VERIFIED_PASS whose evidence the server did not itself verify", () => {
     const base = { execution: "ARTIFACT_PRODUCED", assurance: "VERIFIED_PASS", promotion: "APPLIED" } as const;
-    expect(deriveLegacyTerminal({ ...base, evidence: "MISMATCH" })).toBe("UNVERIFIED");
-    for (const evidence of ["NOT_ATTEMPTED", "DECLARED", "VERIFIED", "UNAVAILABLE"] as const) {
-      expect(deriveLegacyTerminal({ ...base, evidence })).toBe("COMPLETED");
+    for (const evidence of ["NOT_ATTEMPTED", "DECLARED", "MISMATCH", "UNAVAILABLE"] as const) {
+      expect(deriveLegacyTerminal({ ...base, evidence }), evidence).toBe("UNVERIFIED");
     }
+    expect(deriveLegacyTerminal({ ...base, evidence: "VERIFIED" })).toBe("COMPLETED");
   });
 
   it("reaches every legacy terminal state from some triple", () => {

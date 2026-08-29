@@ -358,6 +358,14 @@ const EXECUTION_TRANSITIONS: LegalityTable<ExecutionState> = {
  *  - every verdict state can fall back to NOT_EVALUATED, because a verdict
  *    stales when what it evaluated changes (FR-7.4), and a staled verdict is
  *    history, not current assurance.
+ *
+ * INVARIANT: the only path from a verdict to SELF_CHECKED is the two-step
+ * VERIFIED_PASS -> NOT_EVALUATED -> SELF_CHECKED, and the first step is taken
+ * only by an explicit staling event (`verdict.recorded` with `staled: true`
+ * on the run bus), never by the worker. This vocabulary has no REVOKED member
+ * on the assurance axis: a verdict is not revoked, it stales, and the staling
+ * is a verifier-side fact. If a revocation distinct from staling is ever
+ * needed it is a new member and a new ruling, not a reuse of NOT_EVALUATED.
  */
 const ASSURANCE_TRANSITIONS: LegalityTable<AssuranceState> = {
   NOT_EVALUATED: ["SELF_CHECKED", ...VERDICT_STATUSES],
@@ -381,16 +389,24 @@ const PROMOTION_TRANSITIONS: LegalityTable<PromotionState> = {
 };
 
 /**
- * The server may retry an unavailable fetch and may re-check verified
- * evidence later (and find it changed). MISMATCH is terminal: once the
- * declared content has been shown not to match, no later fetch can un-show it.
+ * The server may re-check verified evidence later (and find it changed or
+ * gone). MISMATCH is terminal: once the declared content has been shown not
+ * to match, no later fetch can un-show it. There is no REVOKED on this axis —
+ * revocation is a promotion word.
+ *
+ * UNAVAILABLE has exactly one way out: back to DECLARED. A fetch that failed
+ * says nothing about the content, so the only sound next step is a re-fetch
+ * of the same declaration, which re-enters at DECLARED and then lands VERIFIED
+ * or MISMATCH on its own merits. A direct UNAVAILABLE -> VERIFIED edge would
+ * let "could not fetch" become "verified" in one move, with no DECLARED entry
+ * recording what was fetched; that edge does not exist.
  */
 const EVIDENCE_TRANSITIONS: LegalityTable<EvidenceState> = {
   NOT_ATTEMPTED: ["DECLARED", "UNAVAILABLE"],
   DECLARED: ["VERIFIED", "MISMATCH", "UNAVAILABLE"],
   VERIFIED: ["MISMATCH", "UNAVAILABLE"],
   MISMATCH: [],
-  UNAVAILABLE: ["VERIFIED", "MISMATCH"],
+  UNAVAILABLE: ["DECLARED"],
 };
 
 const TRANSITIONS: Readonly<Record<StateDimension, Readonly<Record<string, readonly string[]>>>> = {
@@ -430,6 +446,10 @@ export function legalTransitionsFrom(dimension: StateDimension, from: string): r
  * Promotion states under which a VERIFIED_PASS artifact counts as COMPLETED in
  * the legacy vocabulary. NOT_ELIGIBLE and REVOKED are the two ways the
  * promotion side says no, and either denies the word.
+ *
+ * The evidence side has no such set: only VERIFIED will do. Evidence the
+ * server never verified (NOT_ATTEMPTED, DECLARED, UNAVAILABLE) is not
+ * evidence the strongest word may rest on.
  */
 const PROMOTION_STATES_NOT_DENYING: readonly PromotionState[] = ["ELIGIBLE", "APPROVED", "APPLIED"];
 
@@ -442,7 +462,7 @@ const PROMOTION_STATES_NOT_DENYING: readonly PromotionState[] = ["ELIGIBLE", "AP
  *   COMPLETED   iff execution = ARTIFACT_PRODUCED
  *               and assurance = VERIFIED_PASS
  *               and promotion in {ELIGIBLE, APPROVED, APPLIED}
- *               and evidence != MISMATCH
+ *               and evidence = VERIFIED
  *   BLOCKED     iff execution = BLOCKED,
  *               or execution = ARTIFACT_PRODUCED and assurance = BLOCKED
  *   FAILED      iff execution = FAILED
@@ -455,13 +475,15 @@ const PROMOTION_STATES_NOT_DENYING: readonly PromotionState[] = ["ELIGIBLE", "AP
  * obvious case, but so is CONDITIONAL (a conditional verdict is not a pass —
  * the same rule `terminalStateOfVerification` applies), a VERIFIED_PASS whose
  * promotion was denied or revoked, and a VERIFIED_PASS whose declared evidence
- * the server found to MISMATCH. The legacy vocabulary cannot say "verified but
- * not promotable" or "verified against evidence that did not hold"; when it
- * cannot say the precise thing, it says the weaker one.
+ * the server has not itself VERIFIED — never attempted, still only declared,
+ * unavailable, or found to MISMATCH. The legacy vocabulary cannot say
+ * "verified but not promotable" or "verified against evidence nobody checked";
+ * when it cannot say the precise thing, it says the weaker one.
  *
  * Note what is absent: there is no path to COMPLETED that does not pass
- * through VERIFIED_PASS. That is FR-6.4 restated for this vocabulary, and the
- * property test in states.test.ts enumerates every triple to hold it.
+ * through both VERIFIED_PASS and evidence VERIFIED. That is FR-6.4 restated
+ * for this vocabulary, and the property tests in states.test.ts enumerate
+ * every triple to hold each half.
  */
 export function deriveLegacyTerminal(triple: OutcomeTriple): WorkerTerminalState | null {
   const execution = ownData(triple, "execution");
@@ -490,8 +512,7 @@ export function deriveLegacyTerminal(triple: OutcomeTriple): WorkerTerminalState
     assurance === "VERIFIED_PASS"
     && isPromotionState(promotion)
     && PROMOTION_STATES_NOT_DENYING.includes(promotion)
-    && isEvidenceState(evidence)
-    && evidence !== "MISMATCH"
+    && evidence === "VERIFIED"
   ) {
     return "COMPLETED";
   }

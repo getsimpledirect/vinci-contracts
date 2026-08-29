@@ -196,6 +196,18 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
   }
 
   if (record.verdict === null) {
+    // A null verdict is the claim "there was nothing to assess". A receipt
+    // that lists artifacts is contradicting that claim in the same record:
+    // something was produced, so a verifier had something to say.
+    if (Array.isArray(record.artifactsProduced) && record.artifactsProduced.length > 0) {
+      issues.push(
+        issue(
+          "/verdict",
+          "artifacts_without_verdict",
+          "verdict is null but artifactsProduced is non-empty; an artifact exists, so a verifier must have spoken",
+        ),
+      );
+    }
     if (!permitsNullVerdict(record.finalState)) {
       issues.push(
         issue(

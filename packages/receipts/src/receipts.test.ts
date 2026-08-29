@@ -260,9 +260,9 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
   // Version 3 permits null exactly where execution ended with nothing to
   // assess, and nowhere else.
   it.each(["BLOCKED", "FAILED", "CANCELLED"] as const)(
-    "accepts verdict: null on a %s receipt",
+    "accepts verdict: null on a %s receipt that produced no artifacts",
     (finalState) => {
-      const candidate = unsignedReceipt({ finalState, verdict: null });
+      const candidate = unsignedReceipt({ finalState, verdict: null, artifactsProduced: [] });
       candidate.digest = receiptDigest(candidate as never);
       const result = validateReceipt(candidate);
       expect(result.ok, JSON.stringify(result)).toBe(true);
@@ -281,6 +281,17 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
     },
   );
 
+  it.each(["BLOCKED", "FAILED", "CANCELLED"] as const)(
+    "rejects verdict: null on a %s receipt that lists artifacts (artifacts_without_verdict)",
+    (finalState) => {
+      const candidate = unsignedReceipt({ finalState, verdict: null, artifactsProduced: ["artifact:partial"] });
+      candidate.digest = receiptDigest(candidate as never);
+      const result = validateReceipt(candidate);
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.issues.map((i) => i.code)).toContain("artifacts_without_verdict");
+    },
+  );
+
   it("still accepts a real verdict on every final state, so null is an option and not a requirement", () => {
     for (const finalState of ["DONE", "DONE_UNVERIFIED", "BLOCKED", "FAILED", "CANCELLED"] as const) {
       expect(receipt({ finalState, verdict: "BLOCKED" }).verdict).toBe("BLOCKED");
@@ -288,8 +299,8 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
   });
 
   it("covers the null in the digest: null and a status do not hash alike", () => {
-    const withNull = unsignedReceipt({ finalState: "FAILED", verdict: null });
-    const withStatus = unsignedReceipt({ finalState: "FAILED", verdict: "BLOCKED" });
+    const withNull = unsignedReceipt({ finalState: "FAILED", verdict: null, artifactsProduced: [] });
+    const withStatus = unsignedReceipt({ finalState: "FAILED", verdict: "BLOCKED", artifactsProduced: [] });
     expect(receiptDigest(withNull as never)).not.toBe(receiptDigest(withStatus as never));
     // And the null survives validation with its digest intact.
     withNull.digest = receiptDigest(withNull as never);
@@ -299,7 +310,7 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
   });
 
   it("cannot be forged into a pass by re-labelling: null with finalState rewritten to DONE fails the digest AND the rule", () => {
-    const candidate = unsignedReceipt({ finalState: "FAILED", verdict: null });
+    const candidate = unsignedReceipt({ finalState: "FAILED", verdict: null, artifactsProduced: [] });
     candidate.digest = receiptDigest(candidate as never);
     const result = validateReceipt({ ...candidate, finalState: "DONE" });
     expect(result.ok).toBe(false);
@@ -313,6 +324,7 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
       receiptId: "receipt-failed",
       finalState: "FAILED",
       verdict: null,
+      artifactsProduced: [],
       humanAttention: { seconds: 40, interruptions: 1, decisions: 1, escalations: 0 },
     });
     expect(attentionPerVerifiedOutcome([failed])).toEqual({
