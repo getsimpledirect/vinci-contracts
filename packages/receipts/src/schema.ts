@@ -28,6 +28,16 @@ function isTerminalState(value: unknown): value is string {
   return typeof value === "string" && ["DONE", "DONE_UNVERIFIED", "BLOCKED", "FAILED", "CANCELLED"].includes(value);
 }
 
+/**
+ * The final states on which `verdict: null` is permitted: execution ended
+ * without an artifact for a verifier to assess. On every other final state a
+ * null verdict is a receipt claiming an outcome while declining to say what a
+ * verifier concluded, and is refused (FR-6.4).
+ */
+function permitsNullVerdict(finalState: unknown): boolean {
+  return finalState === "BLOCKED" || finalState === "FAILED" || finalState === "CANCELLED";
+}
+
 function validateActor(raw: unknown, path: string, issues: ValidationIssue[]): void {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     issues.push(issue(path, "invalid_actor", "an actor is an object"));
@@ -118,8 +128,8 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
     }
   }
 
-  if (record.receiptVersion !== 2) {
-    issues.push(issue("/receiptVersion", "invalid_schema_version", "receipt schema is version 2"));
+  if (record.receiptVersion !== 3) {
+    issues.push(issue("/receiptVersion", "invalid_schema_version", "receipt schema is version 3"));
   }
 
   for (const field of ["receiptId", "runId"] as const) {
@@ -185,8 +195,18 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
     }
   }
 
-  if (!isVerdictStatus(record.verdict)) {
-    issues.push(issue("/verdict", "invalid_verdict", "verdict must be a valid verdict status"));
+  if (record.verdict === null) {
+    if (!permitsNullVerdict(record.finalState)) {
+      issues.push(
+        issue(
+          "/verdict",
+          "verdict_required",
+          "a receipt whose run produced an artifact must say what a verifier concluded; null is permitted only on BLOCKED, FAILED or CANCELLED",
+        ),
+      );
+    }
+  } else if (!isVerdictStatus(record.verdict)) {
+    issues.push(issue("/verdict", "invalid_verdict", "verdict must be a valid verdict status or null"));
   }
 
   if (typeof record.spend !== "number" || !Number.isSafeInteger(record.spend) || record.spend < 0) {
@@ -327,12 +347,19 @@ export function validateCorrection(input: unknown): ValidationResult<Correction>
 
 export const RECEIPT_SCHEMA_META: SchemaMeta = {
   id: "vinci.receipt",
-  version: 2,
+  /**
+   * 3: `verdict` widened to `VerdictStatus | null`, null permitted only on
+   * BLOCKED, FAILED and CANCELLED final states. Widening a required field's
+   * type is not additive under a frozen policy — a version 2 reader given null
+   * would refuse a record a version 3 writer considers valid — so the version
+   * bumps rather than the change riding under the old number.
+   */
+  version: 3,
   compatibility: "frozen",
   unknownFields: "preserve",
   malformedData: "fail-closed",
   migration:
-    "version 1 receipts are rejected; missing historical attention measurements cannot be inferred",
+    "version 1 and 2 receipts are rejected. Every version 2 record is a valid version 3 record once receiptVersion reads 3 and the digest is recomputed (the digest covers receiptVersion); because re-digesting invalidates the signature, only the original signer can migrate a signed receipt, and an unsigned one migrates mechanically",
 };
 
 export const VERIFICATION_STATUS_SCHEMA_META: SchemaMeta = {

@@ -22,9 +22,20 @@ export type HumanAttention = {
  *
  * All identifier fields reference records by id only, never embedding them.
  * The digest covers every field except digest and signature.
+ *
+ * Version 3 (from 2): `verdict` may be `null`. Version 2 required one of the
+ * three verifier statuses on every receipt, including receipts whose
+ * `finalState` says the run never produced anything to assess — a FAILED run
+ * had to carry a verdict about work that does not exist. That is the latent
+ * contradiction the three outcome dimensions (contracts `OutcomeTriple`)
+ * make explicit: assurance is a separate axis from execution, and when
+ * execution ended in BLOCKED, FAILED or CANCELLED there is nothing for the
+ * assurance axis to say. `null` is that statement. It is permitted ONLY on
+ * those final states — see `validateReceipt` — so a DONE or DONE_UNVERIFIED
+ * receipt still cannot be written without saying what a verifier concluded.
  */
 export type Receipt = {
-  readonly receiptVersion: 2;
+  readonly receiptVersion: 3;
   readonly receiptId: ReceiptId;
   readonly runId: RunId;
   readonly objective: string;
@@ -53,7 +64,11 @@ export type Receipt = {
   readonly artifactsProduced: readonly string[];
   readonly approvalIds: readonly string[];
   readonly evidenceIds: readonly string[];
-  readonly verdict: VerdictStatus;
+  /**
+   * What a verifier concluded, or `null` when execution ended without an
+   * artifact to assess. Never `null` on a DONE or DONE_UNVERIFIED receipt.
+   */
+  readonly verdict: VerdictStatus | null;
   readonly spend: number;
   readonly unresolvedConditions: readonly string[];
   readonly resumeInstructions: string | null;
