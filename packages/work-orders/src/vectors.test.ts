@@ -26,10 +26,23 @@ const dirs = readdirSync(VECTORS, { withFileTypes: true })
   .sort();
 
 describe("golden vectors pin the canonical bytes and digests", () => {
-  it("has three work-order and three execution-spec vectors", () => {
-    expect(dirs.filter((d) => d.startsWith("work-order-"))).toHaveLength(3);
-    expect(dirs.filter((d) => d.startsWith("execution-spec-"))).toHaveLength(3);
-    expect(dirs).toHaveLength(6);
+  it("has four work-order and four execution-spec vectors", () => {
+    expect(dirs.filter((d) => d.startsWith("work-order-"))).toHaveLength(4);
+    expect(dirs.filter((d) => d.startsWith("execution-spec-"))).toHaveLength(4);
+    expect(dirs).toHaveLength(8);
+  });
+
+  it("vector 4 carries path: grants on the order and a narrower paths list on the spec, both inside the digest", () => {
+    // The path: token is not special-cased anywhere in canonicalization: it
+    // is a string in grantedAuthority, in array order, like every other grant.
+    const order = readFileSync(join(VECTORS, "work-order-4-path-grants", "canonical.txt"), "utf8");
+    expect(order).toContain('"path:packages/work-orders/src/","path:packages/work-orders/README.md"');
+    const spec = readFileSync(join(VECTORS, "execution-spec-4-path-grants", "canonical.txt"), "utf8");
+    expect(spec).toContain('"paths":["packages/work-orders/src/path-grant.test.ts","packages/work-orders/README.md"]');
+    expect(readFileSync(join(VECTORS, "execution-spec-4-path-grants", "digest.txt"), "utf8").trim())
+      .toBe("0f303947b88fdbb55bbba984d7f32a888110f59cc578963bf56ff1b5e6109d89");
+    expect(readFileSync(join(VECTORS, "work-order-4-path-grants", "digest.txt"), "utf8").trim())
+      .toBe("23c411493b683ce9061662903ef9fa7aa6b53f9ec36af049ece547d5f517e18f");
   });
 
   for (const dir of dirs) {

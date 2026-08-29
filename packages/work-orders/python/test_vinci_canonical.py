@@ -20,10 +20,10 @@ class GoldenVectors(unittest.TestCase):
     def _dirs(self):
         return sorted(d for d in os.listdir(VECTORS) if os.path.isdir(os.path.join(VECTORS, d)))
 
-    def test_there_are_six_vectors(self):
+    def test_there_are_eight_vectors(self):
         dirs = self._dirs()
-        self.assertEqual(len([d for d in dirs if d.startswith("work-order-")]), 3)
-        self.assertEqual(len([d for d in dirs if d.startswith("execution-spec-")]), 3)
+        self.assertEqual(len([d for d in dirs if d.startswith("work-order-")]), 4)
+        self.assertEqual(len([d for d in dirs if d.startswith("execution-spec-")]), 4)
 
     def test_canonical_bytes_and_digest_match_node(self):
         for d in self._dirs():
