@@ -2,12 +2,28 @@ import { isOrganizationWorkspace } from "./ids.ts";
 import { terminalStateOfVerification } from "./states.ts";
 import { describe, expect, it } from "vitest";
 import {
+  ASSURANCE_STATES,
+  EVIDENCE_STATES,
+  EXECUTION_STATES,
+  PROMOTION_STATES,
   RUN_STATES,
+  STATE_DIMENSIONS,
   TERMINAL_STATES,
   VERDICT_STATUSES,
+  WORKER_TERMINAL_STATES,
+  canTransition,
+  deriveLegacyTerminal,
+  isOutcomeTriple,
   isTerminal,
+  legalTransitionsFrom,
   terminalStateOf,
   terminalStateOfVerification,
+  type AssuranceState,
+  type EvidenceState,
+  type ExecutionState,
+  type OutcomeTriple,
+  type PromotionState,
+  type StateDimension,
   type TerminalState,
   type VerdictStatus,
   type VerificationOutcome,
@@ -150,5 +166,299 @@ describe("contracts predicates refuse hostile input instead of throwing", () => 
       kind: "issued", staled: false, status: "VERIFIED_PASS",
     } as never)).toBeDefined();
     expect(terminalStateOfVerification({ kind: "not-issued", reason: "FAILED" } as never)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The three outcome dimensions.
+// ---------------------------------------------------------------------------
+
+/** Every triple there is: 7 x 5 x 5 x 5 = 875. */
+function everyTriple(): OutcomeTriple[] {
+  const out: OutcomeTriple[] = [];
+  for (const execution of EXECUTION_STATES) {
+    for (const assurance of ASSURANCE_STATES) {
+      for (const promotion of PROMOTION_STATES) {
+        for (const evidence of EVIDENCE_STATES) {
+          out.push({ execution, assurance, promotion, evidence });
+        }
+      }
+    }
+  }
+  return out;
+}
+
+describe("the four vocabularies", () => {
+  it("are the rulings, member for member and in order", () => {
+    // The ruling is the spec. If a member is added, renamed or reordered this
+    // is where it is noticed, before any legality table silently widens.
+    expect([...EXECUTION_STATES]).toEqual([
+      "PENDING", "LEASED", "RUNNING", "ARTIFACT_PRODUCED", "BLOCKED", "FAILED", "LOST",
+    ]);
+    expect([...ASSURANCE_STATES]).toEqual([
+      "NOT_EVALUATED", "SELF_CHECKED", "VERIFIED_PASS", "CONDITIONAL", "BLOCKED",
+    ]);
+    expect([...PROMOTION_STATES]).toEqual([
+      "NOT_ELIGIBLE", "ELIGIBLE", "APPROVED", "APPLIED", "REVOKED",
+    ]);
+    expect([...EVIDENCE_STATES]).toEqual([
+      "NOT_ATTEMPTED", "DECLARED", "VERIFIED", "MISMATCH", "UNAVAILABLE",
+    ]);
+    expect([...WORKER_TERMINAL_STATES]).toEqual([
+      "COMPLETED", "UNVERIFIED", "BLOCKED", "FAILED", "LOST",
+    ]);
+    expect([...STATE_DIMENSIONS]).toEqual(["execution", "assurance", "promotion", "evidence"]);
+  });
+
+  it("embeds every verifier verdict as an assurance state, verbatim", () => {
+    // A verdict becomes an assurance state without translation. If Acceptance
+    // widens VerdictStatus this fails, and the legality table must be revisited.
+    for (const status of VERDICT_STATUSES) expect(ASSURANCE_STATES).toContain(status);
+  });
+
+  it("has no member named COMPLETED, DONE or WAITING in any dimension", () => {
+    // The whole ruling: no single global "completed". The only place the word
+    // appears is the legacy collapse, which has to earn it.
+    for (const vocabulary of [EXECUTION_STATES, ASSURANCE_STATES, PROMOTION_STATES, EVIDENCE_STATES]) {
+      for (const banned of ["COMPLETED", "DONE", "WAITING"]) expect(vocabulary).not.toContain(banned);
+    }
+  });
+});
+
+describe("canTransition — every cell", () => {
+  // These tables are written out here a second time, by hand, on purpose. A
+  // test that reads the production table and checks it against itself passes
+  // for any table. Each cell below is a decision; the test is the record of it.
+  const EXPECTED_EXECUTION: Record<ExecutionState, readonly ExecutionState[]> = {
+    PENDING: ["LEASED", "LOST"],
+    LEASED: ["RUNNING", "PENDING", "FAILED", "LOST"],
+    RUNNING: ["ARTIFACT_PRODUCED", "BLOCKED", "FAILED", "LOST"],
+    ARTIFACT_PRODUCED: [],
+    BLOCKED: [],
+    FAILED: [],
+    LOST: [],
+  };
+  const EXPECTED_ASSURANCE: Record<AssuranceState, readonly AssuranceState[]> = {
+    NOT_EVALUATED: ["SELF_CHECKED", "VERIFIED_PASS", "CONDITIONAL", "BLOCKED"],
+    SELF_CHECKED: ["VERIFIED_PASS", "CONDITIONAL", "BLOCKED"],
+    VERIFIED_PASS: ["NOT_EVALUATED", "CONDITIONAL", "BLOCKED"],
+    CONDITIONAL: ["NOT_EVALUATED", "VERIFIED_PASS", "BLOCKED"],
+    BLOCKED: ["NOT_EVALUATED", "VERIFIED_PASS", "CONDITIONAL"],
+  };
+  const EXPECTED_PROMOTION: Record<PromotionState, readonly PromotionState[]> = {
+    NOT_ELIGIBLE: ["ELIGIBLE"],
+    ELIGIBLE: ["APPROVED", "NOT_ELIGIBLE"],
+    APPROVED: ["APPLIED", "REVOKED"],
+    APPLIED: ["REVOKED"],
+    REVOKED: [],
+  };
+  const EXPECTED_EVIDENCE: Record<EvidenceState, readonly EvidenceState[]> = {
+    NOT_ATTEMPTED: ["DECLARED", "UNAVAILABLE"],
+    DECLARED: ["VERIFIED", "MISMATCH", "UNAVAILABLE"],
+    VERIFIED: ["MISMATCH", "UNAVAILABLE"],
+    MISMATCH: [],
+    UNAVAILABLE: ["VERIFIED", "MISMATCH"],
+  };
+
+  const cases: Array<[StateDimension, readonly string[], Record<string, readonly string[]>]> = [
+    ["execution", EXECUTION_STATES, EXPECTED_EXECUTION],
+    ["assurance", ASSURANCE_STATES, EXPECTED_ASSURANCE],
+    ["promotion", PROMOTION_STATES, EXPECTED_PROMOTION],
+    ["evidence", EVIDENCE_STATES, EXPECTED_EVIDENCE],
+  ];
+
+  it.each(cases)("%s: every from x to cell matches the recorded decision", (dimension, states, expected) => {
+    let cells = 0;
+    for (const from of states) {
+      for (const to of states) {
+        cells += 1;
+        const legal = from !== to && (expected[from] ?? []).includes(to);
+        expect(canTransition(dimension, from, to), `${dimension}: ${from} -> ${to}`).toBe(legal);
+      }
+      expect([...legalTransitionsFrom(dimension, from)].sort()).toEqual([...(expected[from] ?? [])].sort());
+    }
+    expect(cells).toBe(states.length * states.length);
+  });
+
+  it("never treats staying put as a transition", () => {
+    for (const [dimension, states] of cases) {
+      for (const state of states) expect(canTransition(dimension, state, state)).toBe(false);
+    }
+  });
+
+  it("has at least one legal arc per dimension (the table is not empty)", () => {
+    // Positive control. Returning false everywhere satisfies every "illegal"
+    // assertion above; this makes sure the function can say yes at all.
+    expect(canTransition("execution", "PENDING", "LEASED")).toBe(true);
+    expect(canTransition("assurance", "NOT_EVALUATED", "VERIFIED_PASS")).toBe(true);
+    expect(canTransition("promotion", "APPROVED", "APPLIED")).toBe(true);
+    expect(canTransition("evidence", "DECLARED", "VERIFIED")).toBe(true);
+  });
+
+  it("never lets a verifier verdict be displaced by a self-check", () => {
+    for (const verdict of VERDICT_STATUSES) {
+      expect(canTransition("assurance", verdict, "SELF_CHECKED")).toBe(false);
+    }
+  });
+
+  it("lets every verdict stale back to NOT_EVALUATED (FR-7.4)", () => {
+    for (const verdict of VERDICT_STATUSES) {
+      expect(canTransition("assurance", verdict, "NOT_EVALUATED")).toBe(true);
+    }
+  });
+
+  it("makes the four execution ends, REVOKED and MISMATCH terminal", () => {
+    for (const from of ["ARTIFACT_PRODUCED", "BLOCKED", "FAILED", "LOST"]) {
+      expect(legalTransitionsFrom("execution", from)).toEqual([]);
+    }
+    expect(legalTransitionsFrom("promotion", "REVOKED")).toEqual([]);
+    expect(legalTransitionsFrom("evidence", "MISMATCH")).toEqual([]);
+  });
+
+  it("answers false, never throws, for an unknown dimension, state or hostile value", () => {
+    const hostile: unknown[] = [
+      "toString", "constructor", "__proto__", "valueOf", "hasOwnProperty",
+      null, undefined, 7, [], Symbol("x"), {},
+    ];
+    for (const value of hostile) {
+      expect(() => canTransition(value as never, "PENDING", "LEASED")).not.toThrow();
+      expect(canTransition(value as never, "PENDING", "LEASED")).toBe(false);
+      expect(() => canTransition("execution", value as never, "LEASED")).not.toThrow();
+      expect(canTransition("execution", value as never, "LEASED")).toBe(false);
+      expect(() => canTransition("execution", "PENDING", value as never)).not.toThrow();
+      expect(canTransition("execution", "PENDING", value as never)).toBe(false);
+      expect(legalTransitionsFrom(value as never, "PENDING")).toEqual([]);
+      expect(legalTransitionsFrom("execution", value as never)).toEqual([]);
+    }
+    // A state from the wrong dimension is unknown to this one.
+    expect(canTransition("execution", "NOT_EVALUATED", "VERIFIED_PASS")).toBe(false);
+  });
+});
+
+describe("deriveLegacyTerminal", () => {
+  const live: readonly ExecutionState[] = ["PENDING", "LEASED", "RUNNING"];
+  const all = everyTriple();
+
+  it("enumerates every triple exactly once", () => {
+    expect(all.length).toBe(7 * 5 * 5 * 5);
+    expect(new Set(all.map((t) => JSON.stringify(t))).size).toBe(all.length);
+  });
+
+  it("is total: never undefined, and null exactly while execution is live", () => {
+    for (const triple of all) {
+      const result = deriveLegacyTerminal(triple);
+      expect(result, JSON.stringify(triple)).not.toBeUndefined();
+      if (live.includes(triple.execution)) {
+        expect(result, JSON.stringify(triple)).toBeNull();
+      } else {
+        expect(result !== null && WORKER_TERMINAL_STATES.includes(result), JSON.stringify(triple)).toBe(true);
+      }
+    }
+  });
+
+  it("PROPERTY: no triple maps to COMPLETED without VERIFIED_PASS", () => {
+    // FR-6.4 for this vocabulary. Every one of the 875 points, not a sample.
+    const completed = all.filter((t) => deriveLegacyTerminal(t) === "COMPLETED");
+    expect(completed.length).toBeGreaterThan(0);
+    for (const triple of completed) {
+      expect(triple.assurance, JSON.stringify(triple)).toBe("VERIFIED_PASS");
+      expect(triple.execution, JSON.stringify(triple)).toBe("ARTIFACT_PRODUCED");
+    }
+  });
+
+  it("PROPERTY: COMPLETED is exactly the documented rule, on every triple", () => {
+    // The rule, restated independently of the implementation.
+    const rule = (t: OutcomeTriple): boolean =>
+      t.execution === "ARTIFACT_PRODUCED"
+      && t.assurance === "VERIFIED_PASS"
+      && ["ELIGIBLE", "APPROVED", "APPLIED"].includes(t.promotion)
+      && t.evidence !== "MISMATCH";
+    for (const triple of all) {
+      expect(deriveLegacyTerminal(triple) === "COMPLETED", JSON.stringify(triple)).toBe(rule(triple));
+    }
+    // 1 x 1 x 3 x 4 points earn the word.
+    expect(all.filter(rule).length).toBe(12);
+  });
+
+  it("maps BLOCKED, FAILED and LOST execution 1:1 regardless of the other dimensions", () => {
+    for (const triple of all) {
+      if (triple.execution === "BLOCKED") expect(deriveLegacyTerminal(triple)).toBe("BLOCKED");
+      if (triple.execution === "FAILED") expect(deriveLegacyTerminal(triple)).toBe("FAILED");
+      if (triple.execution === "LOST") expect(deriveLegacyTerminal(triple)).toBe("LOST");
+    }
+  });
+
+  it("maps a produced artifact with NOT_EVALUATED or SELF_CHECKED assurance to UNVERIFIED", () => {
+    for (const triple of all) {
+      if (
+        triple.execution === "ARTIFACT_PRODUCED"
+        && (triple.assurance === "NOT_EVALUATED" || triple.assurance === "SELF_CHECKED")
+      ) {
+        expect(deriveLegacyTerminal(triple), JSON.stringify(triple)).toBe("UNVERIFIED");
+      }
+    }
+  });
+
+  it("maps a produced artifact with a BLOCKED verdict to BLOCKED, as terminalStateOfVerification does", () => {
+    for (const triple of all) {
+      if (triple.execution === "ARTIFACT_PRODUCED" && triple.assurance === "BLOCKED") {
+        expect(deriveLegacyTerminal(triple), JSON.stringify(triple)).toBe("BLOCKED");
+      }
+    }
+  });
+
+  it("treats CONDITIONAL as not a pass, as terminalStateOfVerification does", () => {
+    for (const triple of all) {
+      if (triple.execution === "ARTIFACT_PRODUCED" && triple.assurance === "CONDITIONAL") {
+        expect(deriveLegacyTerminal(triple), JSON.stringify(triple)).toBe("UNVERIFIED");
+      }
+    }
+  });
+
+  it("denies COMPLETED to a VERIFIED_PASS whose promotion was refused or revoked", () => {
+    const base = { execution: "ARTIFACT_PRODUCED", assurance: "VERIFIED_PASS", evidence: "VERIFIED" } as const;
+    expect(deriveLegacyTerminal({ ...base, promotion: "NOT_ELIGIBLE" })).toBe("UNVERIFIED");
+    expect(deriveLegacyTerminal({ ...base, promotion: "REVOKED" })).toBe("UNVERIFIED");
+    expect(deriveLegacyTerminal({ ...base, promotion: "ELIGIBLE" })).toBe("COMPLETED");
+    expect(deriveLegacyTerminal({ ...base, promotion: "APPROVED" })).toBe("COMPLETED");
+    expect(deriveLegacyTerminal({ ...base, promotion: "APPLIED" })).toBe("COMPLETED");
+  });
+
+  it("denies COMPLETED to a VERIFIED_PASS whose declared evidence did not match", () => {
+    const base = { execution: "ARTIFACT_PRODUCED", assurance: "VERIFIED_PASS", promotion: "APPLIED" } as const;
+    expect(deriveLegacyTerminal({ ...base, evidence: "MISMATCH" })).toBe("UNVERIFIED");
+    for (const evidence of ["NOT_ATTEMPTED", "DECLARED", "VERIFIED", "UNAVAILABLE"] as const) {
+      expect(deriveLegacyTerminal({ ...base, evidence })).toBe("COMPLETED");
+    }
+  });
+
+  it("reaches every legacy terminal state from some triple", () => {
+    const reachable = new Set(all.map(deriveLegacyTerminal).filter((s) => s !== null));
+    expect([...reachable].sort()).toEqual([...WORKER_TERMINAL_STATES].sort());
+  });
+
+  it("never throws and never invents a terminal state for hostile input", () => {
+    const hostile: unknown[] = [
+      null, undefined, 7, [], "ARTIFACT_PRODUCED",
+      { execution: "toString" }, { execution: "constructor" }, { execution: "__proto__" },
+      Object.create({ execution: "FAILED", assurance: "BLOCKED", promotion: "APPLIED", evidence: "VERIFIED" }),
+      new Proxy({}, { get() { throw new Error("trap"); } }),
+      { get execution(): never { throw new Error("g"); } },
+    ];
+    for (const value of hostile) {
+      expect(() => deriveLegacyTerminal(value as never)).not.toThrow();
+      expect(deriveLegacyTerminal(value as never)).toBeNull();
+      expect(isOutcomeTriple(value)).toBe(false);
+    }
+    // A produced artifact whose other members are hostile is UNVERIFIED, never COMPLETED.
+    expect(deriveLegacyTerminal({
+      execution: "ARTIFACT_PRODUCED", assurance: "VERIFIED_PASS", promotion: "toString", evidence: "constructor",
+    } as never)).toBe("UNVERIFIED");
+  });
+
+  it("isOutcomeTriple accepts every real triple and refuses any member from another dimension", () => {
+    for (const triple of all) expect(isOutcomeTriple(triple)).toBe(true);
+    expect(isOutcomeTriple({ execution: "VERIFIED_PASS", assurance: "VERIFIED_PASS", promotion: "APPLIED", evidence: "VERIFIED" })).toBe(false);
+    expect(isOutcomeTriple({ execution: "RUNNING", assurance: "RUNNING", promotion: "APPLIED", evidence: "VERIFIED" })).toBe(false);
   });
 });

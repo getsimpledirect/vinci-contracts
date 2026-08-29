@@ -338,6 +338,51 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "issued", staled: false, status: "VERIFIED_PASS" }) !== undefined,
   },
   {
+    // The only path to the Worker's COMPLETED. A hostile triple must reach
+    // null (still live / not a triple) or UNVERIFIED, never COMPLETED — and
+    // never throw. A yes here is any non-null return, which is deliberately
+    // strict: UNVERIFIED for a hostile object would also count as a yes, so
+    // the guard must return null for anything that is not a real triple.
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "deriveLegacyTerminal",
+    label: "deriveLegacyTerminal(triple)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) =>
+      fn({ execution: "ARTIFACT_PRODUCED", assurance: "VERIFIED_PASS", promotion: "APPLIED", evidence: "VERIFIED" }) === "COMPLETED"
+      && fn({ execution: "ARTIFACT_PRODUCED", assurance: "SELF_CHECKED", promotion: "APPLIED", evidence: "VERIFIED" }) === "UNVERIFIED"
+      && fn({ execution: "RUNNING", assurance: "NOT_EVALUATED", promotion: "NOT_ELIGIBLE", evidence: "NOT_ATTEMPTED" }) === null,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "isOutcomeTriple",
+    label: "isOutcomeTriple(value)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) =>
+      fn({ execution: "RUNNING", assurance: "NOT_EVALUATED", promotion: "NOT_ELIGIBLE", evidence: "NOT_ATTEMPTED" }) === true
+      && fn({ execution: "RUNNING", assurance: "RUNNING", promotion: "NOT_ELIGIBLE", evidence: "NOT_ATTEMPTED" }) === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "canTransition",
+    label: "canTransition(dimension, 'PENDING', 'LEASED')",
+    call: (fn, hostile) => fn(hostile, "PENDING", "LEASED"),
+    control: (fn) => fn("execution", "PENDING", "LEASED") === true && fn("execution", "PENDING", "RUNNING") === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "canTransition",
+    label: "canTransition('execution', from, 'LEASED')",
+    call: (fn, hostile) => fn("execution", hostile, "LEASED"),
+    control: (fn) => fn("execution", "PENDING", "LEASED") === true && fn("execution", "RUNNING", "LEASED") === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "canTransition",
+    label: "canTransition('execution', 'PENDING', to)",
+    call: (fn, hostile) => fn("execution", "PENDING", hostile),
+    control: (fn) => fn("execution", "PENDING", "LEASED") === true && fn("execution", "PENDING", "FAILED") === false,
+  },
+  {
     pkg: "@getsimpledirect/vinci-work-orders",
     export: "mayInterrupt",
     label: "mayInterrupt(budget, spend)",
@@ -488,6 +533,11 @@ const REQUIRED_GUARDS = [
   "isEffectiveDeliveryState(state)",
   "isOrganizationWorkspace(value)",
   "terminalStateOfVerification(value)",
+  "deriveLegacyTerminal(triple)",
+  "isOutcomeTriple(value)",
+  "canTransition(dimension, 'PENDING', 'LEASED')",
+  "canTransition('execution', from, 'LEASED')",
+  "canTransition('execution', 'PENDING', to)",
   "plainActor(actor)",
   "actorFieldsAreConsistent(actor)",
   "countsAgainstSubmittedWork(outcome)",
@@ -582,6 +632,13 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-contracts.isTerminal": "enum membership",
   "@getsimpledirect/vinci-contracts.isTerminalState": "enum membership",
   "@getsimpledirect/vinci-contracts.isVerdictStatus": "enum membership",
+  "@getsimpledirect/vinci-contracts.isExecutionState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isAssuranceState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isPromotionState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isEvidenceState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isWorkerTerminalState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isStateDimension": "enum membership",
+  "@getsimpledirect/vinci-contracts.legalTransitionsFrom": "enumeration helper: returns a (possibly empty) list of successor states, never a decision; canTransition is the probed guard over the same table",
   "@getsimpledirect/vinci-contracts.isConsequentialActionClass": "enum membership",
   "@getsimpledirect/vinci-policy.isAutonomyRung": "enum membership",
   "@getsimpledirect/vinci-policy.compareAutonomyRungs": "ordinal comparison over typed enum members; not a permission",
