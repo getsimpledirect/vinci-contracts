@@ -9,6 +9,7 @@ export type MatchReasonCode =
   | "capability_missing"
   | "context_too_small"
   | "external_provider_forbidden"
+  | "external_provider_undeclared"
   | "retention_forbidden"
   | "training_rights_required"
   | "endpoint_expired"
@@ -62,12 +63,21 @@ export function matchEndpointToRole(
     });
   }
 
-  if (!role.dataPolicy.externalProviderAllowed && endpoint.sourceClass === "frontier_api") {
-    classified.push({
-      code: "external_provider_forbidden",
-      detail: "role policy forbids an external inference provider",
-      hardNo: true,
-    });
+  if (!role.dataPolicy.externalProviderAllowed) {
+    const external = endpoint.inferenceIsExternal;
+    if (external.kind === "unknown") {
+      classified.push({
+        code: "external_provider_undeclared",
+        detail: "endpoint did not declare whether inference is external",
+        hardNo: false,
+      });
+    } else if (external.value) {
+      classified.push({
+        code: "external_provider_forbidden",
+        detail: "role policy forbids an external inference provider",
+        hardNo: true,
+      });
+    }
   }
 
   if (!role.dataPolicy.outputRetentionAllowed) {

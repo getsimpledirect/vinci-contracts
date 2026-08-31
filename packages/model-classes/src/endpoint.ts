@@ -32,6 +32,14 @@ type ModelEndpointCommon = {
   readonly credentials: {
     readonly source: CustomerEndpointAuthenticationSource;
   };
+  /**
+   * Whether inference leaves Vinci-controlled infrastructure. Independent of
+   * sourceClass — an open-weight model served through a third-party API is
+   * external, and a frontier-family model served on Vinci hardware is not.
+   * Deriving this from sourceClass would let an undeclared fact grant a
+   * permission.
+   */
+  readonly inferenceIsExternal: ExplicitValue<boolean>;
   readonly rights: EndpointRights;
   readonly validFrom: Timestamp;
   readonly expiresAt: Timestamp | null;

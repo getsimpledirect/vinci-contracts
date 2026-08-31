@@ -156,6 +156,7 @@ const endpointCommon = () => ({
   credentials: {
     source: { kind: "managed-credential", credentialId: "credential-1" },
   },
+  inferenceIsExternal: known(true),
   rights: {
     trainingAllowed: known(true),
     evaluationAllowed: known(true),
@@ -276,6 +277,81 @@ describe("model role endpoint matching", () => {
     expect(frontierResult.verdict).toBe("ineligible");
     expect(localResult.verdict).toBe("ineligible");
     expect(frontierResult.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
+    expect(localResult.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
+  });
+
+  it("fails unevaluable when external-ness is undeclared but role forbids external", () => {
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      inferenceIsExternal: { kind: "unknown" as const },
+    };
+    const role = {
+      ...validRole(),
+      dataPolicy: { ...validRole().dataPolicy, externalProviderAllowed: false },
+    };
+
+    const result = matchEndpointToRole(role, endpoint, now);
+    expect(result.verdict).toBe("unevaluable");
+    expect(result.reasons).toContainEqual({
+      code: "external_provider_undeclared",
+      detail: "endpoint did not declare whether inference is external",
+    });
+  });
+
+  it("rejects an open_weight endpoint when declared external but role forbids external providers", () => {
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      inferenceIsExternal: known(true),
+    };
+    const role = {
+      ...validRole(),
+      dataPolicy: { ...validRole().dataPolicy, externalProviderAllowed: false },
+    };
+
+    const result = matchEndpointToRole(role, endpoint, now);
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons).toEqual([
+      {
+        code: "external_provider_forbidden",
+        detail: "role policy forbids an external inference provider",
+      },
+    ]);
+  });
+
+  it("permits a frontier_api endpoint when declared non-external despite sourceClass", () => {
+    const endpoint = {
+      ...validFrontierEndpoint(),
+      inferenceIsExternal: known(false),
+    };
+    const role = {
+      ...validRole(),
+      dataPolicy: { ...validRole().dataPolicy, externalProviderAllowed: false },
+    };
+
+    const result = matchEndpointToRole(role, endpoint, now);
+    expect(result.verdict).toBe("eligible");
+    expect(result.reasons).toEqual([]);
+  });
+
+  it("still does not change verdict when sourceClass changes (with external forbidden)", () => {
+    const role = {
+      ...validRole(),
+      dataPolicy: { ...validRole().dataPolicy, externalProviderAllowed: false },
+      requiredCapabilities: ["vision"],
+    };
+    const frontier = { ...validFrontierEndpoint(), inferenceIsExternal: known(false) };
+    const local = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      inferenceIsExternal: known(false),
+    };
+
+    const frontierResult = matchEndpointToRole(role, frontier, now);
+    const localResult = matchEndpointToRole(role, local, now);
+    expect(frontierResult.verdict).toBe("ineligible");
+    expect(localResult.verdict).toBe("ineligible");
+    expect(frontierResult.reasons.map(({ code }) => code)).toEqual([
+      "capability_missing",
+    ]);
     expect(localResult.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
   });
 

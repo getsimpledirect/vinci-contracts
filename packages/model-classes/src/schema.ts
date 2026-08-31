@@ -1077,6 +1077,7 @@ function validateFrontierApiEndpoint(
       "capabilityProfile",
       "declaredCapabilities",
       "credentials",
+      "inferenceIsExternal",
       "rights",
       "validFrom",
       "expiresAt",
@@ -1100,6 +1101,9 @@ function validateFrontierApiEndpoint(
   );
   validateCredentialsObject(object.credentials, `${path}/credentials`, issues);
   validateEndpointRights(object.rights, `${path}/rights`, issues, unknownFields);
+  validateExplicitValue(object.inferenceIsExternal, `${path}/inferenceIsExternal`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
   timestamp(object.validFrom, `${path}/validFrom`, issues);
   if (object.expiresAt !== undefined && object.expiresAt !== null) {
     timestamp(object.expiresAt, `${path}/expiresAt`, issues);
@@ -1130,6 +1134,7 @@ function validateDigestIdentifiedEndpoint(
       "capabilityProfile",
       "declaredCapabilities",
       "credentials",
+      "inferenceIsExternal",
       "rights",
       "validFrom",
       "expiresAt",
@@ -1154,6 +1159,9 @@ function validateDigestIdentifiedEndpoint(
   );
   validateCredentialsObject(object.credentials, `${path}/credentials`, issues);
   validateEndpointRights(object.rights, `${path}/rights`, issues, unknownFields);
+  validateExplicitValue(object.inferenceIsExternal, `${path}/inferenceIsExternal`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
   timestamp(object.validFrom, `${path}/validFrom`, issues);
   if (object.expiresAt !== undefined && object.expiresAt !== null) {
     timestamp(object.expiresAt, `${path}/expiresAt`, issues);
@@ -1233,6 +1241,7 @@ export function validateModelEndpointSpec(input: unknown): ValidationResult<Mode
       "capabilityProfile",
       "declaredCapabilities",
       "credentials",
+      "inferenceIsExternal",
       "rights",
       "validFrom",
       "expiresAt",
