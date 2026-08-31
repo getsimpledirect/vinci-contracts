@@ -1411,6 +1411,32 @@ describe("role selection", () => {
 });
 
 describe("review independence", () => {
+  it("rejects same-model lanes across providers but accepts different models", () => {
+    const forteDeepinfra = endpointById("forte-deepinfra");
+    const forteFireworks = endpointById("forte-fireworks");
+    const visionDeepinfra = endpointById("vision-deepinfra");
+    const visionOpenrouter = endpointById("vision-openrouter");
+    const mezzoDeepinfra = endpointById("mezzo-deepinfra");
+
+    expect(forteDeepinfra).toBeDefined();
+    expect(forteFireworks).toBeDefined();
+    expect(visionDeepinfra).toBeDefined();
+    expect(visionOpenrouter).toBeDefined();
+    expect(mezzoDeepinfra).toBeDefined();
+
+    if (
+      forteDeepinfra &&
+      forteFireworks &&
+      visionDeepinfra &&
+      visionOpenrouter &&
+      mezzoDeepinfra
+    ) {
+      expect(violatesIndependence(forteDeepinfra, forteFireworks)).toBe(true);
+      expect(violatesIndependence(visionDeepinfra, visionOpenrouter)).toBe(true);
+      expect(violatesIndependence(forteDeepinfra, mezzoDeepinfra)).toBe(false);
+    }
+  });
+
   it("rejects the same endpoint id", () => {
     const endpoint = validLocalEndpoint("open_weight");
     expect(violatesIndependence(endpoint, endpoint)).toBe(true);
