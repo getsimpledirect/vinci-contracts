@@ -5,6 +5,7 @@ import type {
   ExplicitValue,
   ModelCapabilityProfile,
   ModelIdentifier,
+  ModelProvider,
   ProcessingLocation,
 } from "./vocabulary.ts";
 
@@ -13,7 +14,32 @@ export const ENDPOINT_SOURCE_CLASSES = [
   "open_weight",
   "vinci_pretrained",
 ] as const;
+/**
+ * EndpointSourceClass describes artifact provenance: what the weights are and where they come from.
+ * This is independent of who serves the endpoint (vinci-hosted vs third-party).
+ * - frontier_api: proprietary model weights from Anthropic or other frontier provider
+ * - open_weight: weights from open-source model release (e.g. GLM-5.2, DeepSeek)
+ * - vinci_pretrained: Vinci's own first-party trained weights
+ */
 export type EndpointSourceClass = (typeof ENDPOINT_SOURCE_CLASSES)[number];
+
+export const ENDPOINT_SERVING_KINDS = ["vinci_hosted", "third_party_api"] as const;
+export type EndpointServingKind = (typeof ENDPOINT_SERVING_KINDS)[number];
+
+/**
+ * ServingDescriptor specifies where and how inference runs.
+ * - vinci_hosted: served on Vinci-controlled infrastructure (inferenceIsExternal will be false)
+ * - third_party_api: served by external provider (inferenceIsExternal will be true unless overridden)
+ */
+export type ServingDescriptor =
+  | { readonly kind: "vinci_hosted" }
+  | {
+      readonly kind: "third_party_api";
+      readonly provider: ModelProvider;
+      readonly model: ModelIdentifier;
+      readonly modelRevision: ExplicitValue<string>;
+      readonly jurisdiction: ExplicitValue<ProcessingLocation>;
+    };
 
 export type EndpointRights = {
   readonly trainingAllowed: ExplicitValue<boolean>;
@@ -45,6 +71,7 @@ type ModelEndpointCommon = {
   readonly rights: EndpointRights;
   readonly validFrom: Timestamp;
   readonly expiresAt: Timestamp | null;
+  readonly serving: ServingDescriptor;
 };
 
 /**
@@ -54,10 +81,6 @@ type ModelEndpointCommon = {
  */
 export type FrontierApiEndpoint = ModelEndpointCommon & {
   readonly sourceClass: "frontier_api";
-  readonly provider: string;
-  readonly model: ModelIdentifier;
-  readonly modelRevision: ExplicitValue<string>;
-  readonly jurisdiction: ExplicitValue<ProcessingLocation>;
   readonly servedArtifact: ExplicitValue<
     | { readonly kind: "digest"; readonly value: string }
     | { readonly kind: "proprietary" }
@@ -65,9 +88,9 @@ export type FrontierApiEndpoint = ModelEndpointCommon & {
 };
 
 type DigestIdentifiedEndpoint = ModelEndpointCommon & {
-  readonly weightsDigest: string;
-  readonly tokenizerDigest: string;
-  readonly architectureDigest: string;
+  readonly weightsDigest: ExplicitValue<string>;
+  readonly tokenizerDigest: ExplicitValue<string>;
+  readonly architectureDigest: ExplicitValue<string>;
   readonly servingImageDigest: ExplicitValue<string>;
   readonly quantizationDigest: ExplicitValue<string>;
 };

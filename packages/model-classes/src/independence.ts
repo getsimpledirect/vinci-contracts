@@ -1,5 +1,9 @@
 import { isIdentifier } from "@getsimpledirect/vinci-contracts";
-import type { EndpointSourceClass, ModelEndpointSpec } from "./endpoint.ts";
+import type {
+  EndpointServingKind,
+  EndpointSourceClass,
+  ModelEndpointSpec,
+} from "./endpoint.ts";
 
 /**
  * Report whether a reviewer shares an endpoint identity with the producer.
@@ -9,7 +13,12 @@ import type { EndpointSourceClass, ModelEndpointSpec } from "./endpoint.ts";
  * match, even across those two source classes. Frontier API identity uses the
  * observable provider/model pair. That pair is only a lower bound on sameness:
  * different labels or providers can still conceal shared underlying weights.
+ *
+ * Independence requires checking BOTH axes:
+ * - Two endpoints with the same weightsDigest are NOT independent, regardless of serving.
+ * - Two endpoints on the same provider+model are NOT independent, regardless of provenance.
  */
+
 /**
  * Every field identity depends on, read EXACTLY ONCE, into a plain record no
  * accessor can reach again.
@@ -25,8 +34,9 @@ import type { EndpointSourceClass, ModelEndpointSpec } from "./endpoint.ts";
 type EndpointIdentity = {
   readonly endpointId: unknown;
   readonly sourceClass: EndpointSourceClass;
-  readonly provider: unknown;
-  readonly model: unknown;
+  readonly servingKind: EndpointServingKind;
+  readonly servingProvider: unknown;
+  readonly servingModel: unknown;
   readonly weightsDigest: unknown;
   readonly servedArtifact: ServedArtifactIdentity;
 };
@@ -43,8 +53,16 @@ function isEndpointSourceClass(value: unknown): value is EndpointSourceClass {
   return value === "frontier_api" || value === "open_weight" || value === "vinci_pretrained";
 }
 
+function isEndpointServingKind(value: unknown): value is EndpointServingKind {
+  return value === "vinci_hosted" || value === "third_party_api";
+}
+
 function unreachableSourceClass(value: never): never {
   throw new Error(`unclassified endpoint source: ${String(value)}`);
+}
+
+function unreachableServingKind(value: never): never {
+  throw new Error(`unclassified endpoint serving kind: ${String(value)}`);
 }
 
 /** Adding a source class must make an explicit, compile-checked identity decision. */
@@ -97,27 +115,63 @@ function snapshotServedArtifact(value: unknown): ServedArtifactIdentity {
   };
 }
 
+/** Snapshot serving descriptor fields exactly once. */
+function snapshotServing(
+  value: unknown,
+): { kind: EndpointServingKind; provider: unknown; model: unknown } | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const servingKind = record["kind"];
+  if (!isEndpointServingKind(servingKind)) return undefined;
+
+  if (servingKind === "vinci_hosted") {
+    return { kind: "vinci_hosted", provider: undefined, model: undefined };
+  } else {
+    return {
+      kind: "third_party_api",
+      provider: record["provider"],
+      model: record["model"],
+    };
+  }
+}
+
+/** Extract the actual identifier value from an ExplicitValue. */
+function snapshotExplicitIdentifier(value: unknown): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const kind = record["kind"];
+  if (kind === "unknown") return undefined;
+  if (kind !== "known") return undefined;
+  return record["value"];
+}
+
 function snapshotIdentity(value: unknown): EndpointIdentity | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   const sourceClass = record["sourceClass"];
   if (!isEndpointSourceClass(sourceClass)) return undefined;
+
+  const serving = snapshotServing(record["serving"]);
+  if (serving === undefined) return undefined;
+
   const endpointId = record["endpointId"];
   const snapshot: EndpointIdentity = sourceClass === "frontier_api"
     ? {
         endpointId,
         sourceClass,
-        provider: record["provider"],
-        model: record["model"],
+        servingKind: serving.kind,
+        servingProvider: serving.provider,
+        servingModel: serving.model,
         weightsDigest: undefined,
         servedArtifact: snapshotServedArtifact(record["servedArtifact"]),
       }
     : {
         endpointId,
         sourceClass,
-        provider: undefined,
-        model: undefined,
-        weightsDigest: record["weightsDigest"],
+        servingKind: serving.kind,
+        servingProvider: serving.provider,
+        servingModel: serving.model,
+        weightsDigest: snapshotExplicitIdentifier(record["weightsDigest"]),
         servedArtifact: { kind: "malformed" },
       };
   if (!isIdentifier(snapshot.endpointId)) return undefined;
@@ -126,10 +180,26 @@ function snapshotIdentity(value: unknown): EndpointIdentity | undefined {
 
 function hasLegibleArtifactIdentity(identity: EndpointIdentity): boolean {
   if (identityScheme(identity.sourceClass) === "frontier") {
-    return typeof identity.provider === "string" && identity.provider.length > 0 &&
-      typeof identity.model === "string" && identity.model.length > 0;
+    const artifact = identity.servedArtifact;
+    if (artifact.kind === "unknown" || artifact.kind === "malformed") return false;
+    if (artifact.artifactKind === "proprietary") return true;
+    return typeof artifact.value === "string" && artifact.value.length > 0;
   }
-  return isIdentifier(identity.weightsDigest);
+
+  // For digest-identified endpoints, we need the weightsDigest
+  if (!isIdentifier(identity.weightsDigest)) return false;
+
+  // For third-party served endpoints, we also need provider and model
+  if (identity.servingKind === "third_party_api") {
+    return (
+      typeof identity.servingProvider === "string" &&
+      identity.servingProvider.length > 0 &&
+      typeof identity.servingModel === "string" &&
+      identity.servingModel.length > 0
+    );
+  }
+
+  return true;
 }
 
 function crossSchemeViolation(
@@ -178,6 +248,17 @@ export function violatesIndependence(
     }
 
     if (identityScheme(p.sourceClass) === "frontier") {
+      // For frontier endpoints, check if both are on the same provider+model
+      // (for third-party API serving). If so, they're not independent.
+      if (
+        p.servingKind === "third_party_api" &&
+        r.servingKind === "third_party_api" &&
+        p.servingProvider === r.servingProvider &&
+        p.servingModel === r.servingModel
+      ) {
+        return true;
+      }
+
       // Weaker than a digest by construction: a provider may serve changed
       // weights behind an unchanged model name, so equality is a LOWER BOUND on
       // sameness and inequality does not prove independence. Until the contract

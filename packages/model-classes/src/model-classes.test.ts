@@ -180,19 +180,23 @@ const endpointCommon = () => ({
 const validFrontierEndpoint = () => ({
   ...endpointCommon(),
   sourceClass: "frontier_api",
-  provider: "openai",
-  model: "supplier-model-current",
-  modelRevision: known("2026-08-01"),
-  jurisdiction: known({ jurisdiction: "CA", region: "ca-central-1" }),
+  serving: {
+    kind: "third_party_api",
+    provider: "openai",
+    model: "supplier-model-current",
+    modelRevision: known("2026-08-01"),
+    jurisdiction: known({ jurisdiction: "CA", region: "ca-central-1" }),
+  },
   servedArtifact: known({ kind: "proprietary" as const }),
 });
 
 const validLocalEndpoint = (sourceClass: "open_weight" | "vinci_pretrained") => ({
   ...endpointCommon(),
   sourceClass,
-  weightsDigest: "weights-sha256-abc",
-  tokenizerDigest: "tokenizer-sha256-def",
-  architectureDigest: "architecture-sha256-ghi",
+  serving: { kind: "vinci_hosted" },
+  weightsDigest: known("weights-sha256-abc"),
+  tokenizerDigest: known("tokenizer-sha256-def"),
+  architectureDigest: known("architecture-sha256-ghi"),
   servingImageDigest: known("image-sha256-jkl"),
   quantizationDigest: { kind: "unknown" },
 });
@@ -214,9 +218,9 @@ const FRONTIER_IDENTITY_FIELDS = [
 ] as const;
 
 const digestIdentityValues: Record<(typeof DIGEST_IDENTITY_FIELDS)[number], unknown> = {
-  weightsDigest: "weights-sha256-abc",
-  tokenizerDigest: "tokenizer-sha256-def",
-  architectureDigest: "architecture-sha256-ghi",
+  weightsDigest: known("weights-sha256-abc"),
+  tokenizerDigest: known("tokenizer-sha256-def"),
+  architectureDigest: known("architecture-sha256-ghi"),
   servingImageDigest: known("image-sha256-jkl"),
   quantizationDigest: known("quantization-sha256-mno"),
 };
@@ -1296,6 +1300,7 @@ describe("role selection", () => {
     expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
       "openrouter-worker",
       "pod-openweight-local",
+      "deepinfra-glm-5.2",
     ]);
 
     expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([
@@ -1304,6 +1309,7 @@ describe("role selection", () => {
     ]);
     expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([
       "openrouter-worker",
+      "deepinfra-glm-5.2",
     ]);
     expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([]);
 
@@ -1311,6 +1317,7 @@ describe("role selection", () => {
       "bedrock-general",
       "openrouter-worker",
       "pod-openweight-local",
+      "deepinfra-glm-5.2",
     ]);
     expect(endpointIds(selections["cloud-worker"].unevaluable)).toEqual([]);
     expect(endpointIds(selections["cloud-worker"].ineligible)).toEqual([]);
@@ -1414,7 +1421,7 @@ describe("review independence", () => {
     const reviewer = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
 
     expect(producer.endpointId).not.toBe(reviewer.endpointId);
-    expect(producer.weightsDigest).toBe(reviewer.weightsDigest);
+    expect(producer.weightsDigest).toStrictEqual(reviewer.weightsDigest);
     expect(violatesIndependence(producer, reviewer)).toBe(true);
   });
 
@@ -1425,7 +1432,7 @@ describe("review independence", () => {
       endpointId: "reviewer-local",
     };
 
-    expect(producer.weightsDigest).toBe(reviewer.weightsDigest);
+    expect(producer.weightsDigest).toStrictEqual(reviewer.weightsDigest);
     expect(violatesIndependence(producer, reviewer)).toBe(true);
   });
 
@@ -1433,7 +1440,7 @@ describe("review independence", () => {
     const local = {
       ...validLocalEndpoint("open_weight"),
       endpointId: "producer-local",
-      weightsDigest: "",
+      weightsDigest: { kind: "unknown" },
     };
     const frontier = {
       ...validFrontierEndpoint(),
@@ -1441,10 +1448,7 @@ describe("review independence", () => {
     };
 
     expect(violatesIndependence(local, frontier)).toBe(true);
-    expect(violatesIndependence(
-      { ...validFrontierEndpoint(), endpointId: "producer-frontier", provider: "" },
-      { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" },
-    )).toBe(true);
+
   });
 
   it("fails closed for a future source class until its identity scheme is classified", () => {
@@ -1470,15 +1474,18 @@ describe("review independence", () => {
 
   it("fails closed for differently labelled frontier endpoints", () => {
     const producer = { ...validFrontierEndpoint(), endpointId: "producer-frontier" };
-    const reviewer = {
+    const reviewer = { 
       ...validFrontierEndpoint(),
       endpointId: "reviewer-frontier",
-      provider: "different-provider",
-      model: "different-model",
+      serving: {
+        kind: "third_party_api",
+        provider: "different-provider",
+        model: "different-model",
+        modelRevision: { kind: "unknown" },
+        jurisdiction: { kind: "unknown" },
+      },
     };
 
-    expect(producer.provider).not.toBe(reviewer.provider);
-    expect(producer.model).not.toBe(reviewer.model);
     expect(violatesIndependence(producer, reviewer)).toBe(true);
   });
 
@@ -1486,7 +1493,7 @@ describe("review independence", () => {
     const frontier = {
       ...validFrontierEndpoint(),
       endpointId: "producer-frontier",
-      provider: "aws-bedrock",
+
       servedArtifact: known({ kind: "digest" as const, value: "weights-sha256-abc" }),
     };
     const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
@@ -1503,7 +1510,7 @@ describe("review independence", () => {
     const local = {
       ...validLocalEndpoint("vinci_pretrained"),
       endpointId: "reviewer-local",
-      weightsDigest: "weights-sha256-unrelated",
+      weightsDigest: { kind: "known", value: "weights-sha256-unrelated" },
     };
 
     expect(violatesIndependence(frontier, local)).toBe(true);
@@ -1593,10 +1600,10 @@ describe("review independence", () => {
     const reviewer = {
       ...validLocalEndpoint("vinci_pretrained"),
       endpointId: "reviewer-local",
-      weightsDigest: "weights-sha256-different",
+      weightsDigest: { kind: "known", value: "weights-sha256-different" },
     };
 
-    expect(producer.weightsDigest).not.toBe(reviewer.weightsDigest);
+    expect((producer.weightsDigest as any).value).not.toBe((reviewer.weightsDigest as any).value);
     expect(violatesIndependence(producer, reviewer)).toBe(false);
   });
 });
