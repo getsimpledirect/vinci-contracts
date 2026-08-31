@@ -148,7 +148,7 @@ test("consumer scanning requires a Vinci import and follows named-import aliases
     importingConsumerRoot,
     "src/imported.ts",
     [
-      'import type { SharedExport as ImportedSharedExport } from "@getsimpledirect/vinci-contracts";',
+      'import type { SharedExport as ImportedSharedExport } from "@getsimpledirect/vinci-shared";',
       "const value: ImportedSharedExport = { id: \"imported\" };",
       "",
     ].join("\n"),
@@ -161,6 +161,35 @@ test("consumer scanning requires a Vinci import and follows named-import aliases
   const imported = run(packageRoot, "--consumers", importingConsumerRoot);
   assert.equal(imported.status, 0);
   assert.doesNotMatch(imported.stdout, /- SharedExport \(src\/shared\.ts\)/);
+});
+
+test("consumer imports are matched by package as well as export name", (t) => {
+  const packageRoot = mkdtempSync(join(tmpdir(), "vinci-unconsumed-package-"));
+  const consumerRoot = mkdtempSync(join(tmpdir(), "vinci-unconsumed-consumer-"));
+  t.after(() => rmSync(packageRoot, { recursive: true, force: true }));
+  t.after(() => rmSync(consumerRoot, { recursive: true, force: true }));
+
+  for (const packageName of ["alpha", "beta"]) {
+    write(packageRoot, `packages/${packageName}/src/index.ts`, 'export * from "./shared.ts";\n');
+    write(
+      packageRoot,
+      `packages/${packageName}/src/shared.ts`,
+      "export const SharedName = 42;\n",
+    );
+  }
+  write(
+    consumerRoot,
+    "src/consume.ts",
+    'import { SharedName } from "@getsimpledirect/vinci-alpha";\nconsole.log(SharedName);\n',
+  );
+
+  const result = run(packageRoot, "--consumers", consumerRoot);
+
+  assert.equal(result.status, 0);
+  const alphaSection = result.stdout.match(/Package: alpha[\s\S]*?(?=\nPackage: beta)/)?.[0] ?? "";
+  const betaSection = result.stdout.match(/Package: beta[\s\S]*$/)?.[0] ?? "";
+  assert.doesNotMatch(alphaSection, /- SharedName \(src\/shared\.ts\)/);
+  assert.match(betaSection, /- SharedName \(src\/shared\.ts\)/);
 });
 
 test("reports a nonexistent consumer directory without crashing", (t) => {

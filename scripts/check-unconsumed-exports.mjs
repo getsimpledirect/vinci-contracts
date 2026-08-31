@@ -169,6 +169,14 @@ function stripCommentsAndStrings(source) {
 
 const vinciModuleLiteral = String.raw`["']@getsimpledirect\/vinci-[^"'\s]+["']`;
 
+function importKey(moduleSpecifier, exportName) {
+  return `${moduleSpecifier}\0${exportName}`;
+}
+
+function vinciModuleFrom(matchText) {
+  return matchText.match(/["'](@getsimpledirect\/vinci-[^"'\s]+)["']/)?.[1] ?? null;
+}
+
 function extractVinciImports(source) {
   // Preserve Vinci module literals while masking comments and all other
   // strings, so import-like text in either cannot create false references.
@@ -180,15 +188,19 @@ function extractVinciImports(source) {
         : token.replace(/[^\r\n]/g, " ")
     ),
   );
+  // Package identity is part of every key. Flattening this to an export name
+  // makes an import from one Vinci package consume a same-named export from
+  // every other package.
   const bindings = new Map();
-  const namespaces = new Set();
+  const namespaces = new Map();
   const directImports = new Set();
-  let importsEverything = false;
+  const importsEverything = new Set();
 
-  function addBinding(importedName, localName) {
+  function addBinding(moduleSpecifier, importedName, localName) {
     if (!/^\w+$/.test(importedName) || !/^\w+$/.test(localName)) return;
-    if (!bindings.has(importedName)) bindings.set(importedName, new Set());
-    bindings.get(importedName).add(localName);
+    const key = importKey(moduleSpecifier, importedName);
+    if (!bindings.has(key)) bindings.set(key, new Set());
+    bindings.get(key).add(localName);
   }
 
   function parseNamedImports(list, aliasPattern, addName) {
@@ -205,10 +217,16 @@ function extractVinciImports(source) {
     "g",
   );
   for (const match of importSource.matchAll(staticImportPattern)) {
+    const moduleSpecifier = vinciModuleFrom(match[0]);
+    if (!moduleSpecifier) continue;
     const named = match[1].match(/\{([^}]*)\}/s);
-    if (named) parseNamedImports(named[1], /\s+as\s+/, addBinding);
+    if (named) {
+      parseNamedImports(named[1], /\s+as\s+/, (importedName, localName) => {
+        addBinding(moduleSpecifier, importedName, localName);
+      });
+    }
     const namespace = match[1].match(/\*\s+as\s+(\w+)/);
-    if (namespace) namespaces.add(namespace[1]);
+    if (namespace) namespaces.set(namespace[1], moduleSpecifier);
   }
 
   const reexportPattern = new RegExp(
@@ -216,11 +234,15 @@ function extractVinciImports(source) {
     "g",
   );
   for (const match of importSource.matchAll(reexportPattern)) {
+    const moduleSpecifier = vinciModuleFrom(match[0]);
+    if (!moduleSpecifier) continue;
     if (match[1].trim().startsWith("*")) {
-      importsEverything = true;
+      importsEverything.add(moduleSpecifier);
     } else {
       parseNamedImports(match[1].slice(1, -1), /\s+as\s+/, (importedName) => {
-        if (/^\w+$/.test(importedName)) directImports.add(importedName);
+        if (/^\w+$/.test(importedName)) {
+          directImports.add(importKey(moduleSpecifier, importedName));
+        }
       });
     }
   }
@@ -232,32 +254,43 @@ function extractVinciImports(source) {
     String.raw`\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*${requireCall}`,
     "g",
   ))) {
-    parseNamedImports(match[1], /\s*:\s*/, addBinding);
+    const moduleSpecifier = vinciModuleFrom(match[0]);
+    if (!moduleSpecifier) continue;
+    parseNamedImports(match[1], /\s*:\s*/, (importedName, localName) => {
+      addBinding(moduleSpecifier, importedName, localName);
+    });
   }
   for (const match of importSource.matchAll(new RegExp(
     String.raw`\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*await\s+${dynamicImportCall}`,
     "g",
   ))) {
-    parseNamedImports(match[1], /\s*:\s*/, addBinding);
+    const moduleSpecifier = vinciModuleFrom(match[0]);
+    if (!moduleSpecifier) continue;
+    parseNamedImports(match[1], /\s*:\s*/, (importedName, localName) => {
+      addBinding(moduleSpecifier, importedName, localName);
+    });
   }
 
   for (const match of importSource.matchAll(new RegExp(
     String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${requireCall}`,
     "g",
   ))) {
-    namespaces.add(match[1]);
+    const moduleSpecifier = vinciModuleFrom(match[0]);
+    if (moduleSpecifier) namespaces.set(match[1], moduleSpecifier);
   }
   for (const match of importSource.matchAll(new RegExp(
     String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+${dynamicImportCall}`,
     "g",
   ))) {
-    namespaces.add(match[1]);
+    const moduleSpecifier = vinciModuleFrom(match[0]);
+    if (moduleSpecifier) namespaces.set(match[1], moduleSpecifier);
   }
   for (const match of importSource.matchAll(new RegExp(
     String.raw`\bimport\s+(\w+)\s*=\s*${requireCall}`,
     "g",
   ))) {
-    namespaces.add(match[1]);
+    const moduleSpecifier = vinciModuleFrom(match[0]);
+    if (moduleSpecifier) namespaces.set(match[1], moduleSpecifier);
   }
 
   const propertyPatterns = [
@@ -265,10 +298,56 @@ function extractVinciImports(source) {
     new RegExp(String.raw`\(\s*await\s+${dynamicImportCall}\s*\)\s*(?:\?\.|\.)\s*(\w+)`, "g"),
   ];
   for (const pattern of propertyPatterns) {
-    for (const match of importSource.matchAll(pattern)) directImports.add(match[1]);
+    for (const match of importSource.matchAll(pattern)) {
+      const moduleSpecifier = vinciModuleFrom(match[0]);
+      if (moduleSpecifier) directImports.add(importKey(moduleSpecifier, match[1]));
+    }
   }
 
   return { bindings, namespaces, directImports, importsEverything };
+}
+
+function vinciImportsReference(imports, moduleSpecifier, exportName, source) {
+  const key = importKey(moduleSpecifier, exportName);
+  if (
+    imports.directImports.has(key)
+    || imports.bindings.has(key)
+    || imports.importsEverything.has(moduleSpecifier)
+  ) {
+    return true;
+  }
+
+  for (const [namespace, importedModule] of imports.namespaces) {
+    if (importedModule !== moduleSpecifier) continue;
+    const namespacePattern = new RegExp(
+      `\\b${namespace}\\s*(?:\\?\\.|\\.)\\s*${exportName}\\b`,
+    );
+    if (namespacePattern.test(source)) return true;
+  }
+  return false;
+}
+
+function relativeImportReferencesPackage(source, sourcePath, packageDir, exportName) {
+  const importSource = source.replace(
+    /\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g,
+    (token) => (
+      /^["']\.[^"'\s]+["']$/.test(token)
+        ? token
+        : token.replace(/[^\r\n]/g, " ")
+    ),
+  );
+  const statementPattern = /\b(?:import|export)\s+(?:type\s+)?([\s\S]*?)\s+from\s+["']([^"']+)["']/g;
+  for (const match of importSource.matchAll(statementPattern)) {
+    if (!match[2].startsWith(".")) continue;
+    const importedPath = resolve(dirname(sourcePath), match[2]);
+    const relativeToPackage = relativePath(packageDir, importedPath);
+    if (relativeToPackage === ".." || relativeToPackage.startsWith(`..${process.platform === "win32" ? "\\\\" : "/"}`)) {
+      continue;
+    }
+    if (match[1].trim().startsWith("*")) return true;
+    if (new RegExp(`\\b${exportName}\\b`).test(match[1])) return true;
+  }
+  return false;
 }
 
 const consumerSourceExtension = /\.(?:[cm]?[jt]sx?)$/;
@@ -300,13 +379,13 @@ const MAX_CONSUMER_FILE_BYTES = 2 * 1024 * 1024;
  * references for one export name (exportName given), and from the reporting
  * loop to confirm files were scanned (exportName undefined, returns null).
  */
-function getConsumerSourceFiles(consumer, exportName, exportNames) {
+function getConsumerSourceFiles(consumer, exportKey, exportRecords) {
   if (consumer.matches !== null) {
-    return exportName === undefined ? null : (consumer.matches.get(exportName) ?? []);
+    return exportKey === undefined ? null : (consumer.matches.get(exportKey) ?? []);
   }
 
   const matches = new Map();
-  for (const name of exportNames) matches.set(name, []);
+  for (const { key } of exportRecords) matches.set(key, []);
   const patternCache = new Map();
 
   function patternFor(name) {
@@ -358,24 +437,26 @@ function getConsumerSourceFiles(consumer, exportName, exportNames) {
       }
 
       const referencedImports = new Set(imports.directImports);
-      for (const [importedName, localNames] of imports.bindings) {
+      for (const [key, localNames] of imports.bindings) {
         if ([...localNames].some((localName) => patternFor(localName).test(source))) {
-          referencedImports.add(importedName);
+          referencedImports.add(key);
         }
       }
-      for (const namespace of imports.namespaces) {
+      for (const [namespace, moduleSpecifier] of imports.namespaces) {
         const namespacePattern = new RegExp(
           `\\b${namespace}\\s*(?:\\?\\.|\\.)\\s*(\\w+)`,
           "g",
         );
-        for (const match of source.matchAll(namespacePattern)) referencedImports.add(match[1]);
+        for (const match of source.matchAll(namespacePattern)) {
+          referencedImports.add(importKey(moduleSpecifier, match[1]));
+        }
       }
 
-      // Test every export name immediately against this one file, then let
+      // Test every package-qualified export immediately against this one file, then let
       // `source` go out of scope so its memory is freed right away.
-      for (const name of exportNames) {
-        if (imports.importsEverything || referencedImports.has(name)) {
-          matches.get(name).push(`${consumer.displayPath}:${relativePath(consumer.path, fullPath)}`);
+      for (const { key, moduleSpecifier } of exportRecords) {
+        if (imports.importsEverything.has(moduleSpecifier) || referencedImports.has(key)) {
+          matches.get(key).push(`${consumer.displayPath}:${relativePath(consumer.path, fullPath)}`);
         }
       }
     }
@@ -384,10 +465,19 @@ function getConsumerSourceFiles(consumer, exportName, exportNames) {
   if (consumer.exists) walkDir(consumer.path);
   consumer.matches = matches;
 
-  return exportName === undefined ? null : (matches.get(exportName) ?? []);
+  return exportKey === undefined ? null : (matches.get(exportKey) ?? []);
 }
 
-function findReferences(exportName, packageDir, definingModule, rootDir, consumersArray = [], exportNames = []) {
+function findReferences(
+  exportName,
+  exportKey,
+  moduleSpecifier,
+  packageDir,
+  definingModule,
+  rootDir,
+  consumersArray = [],
+  exportRecords = [],
+) {
   const refs = { external: [], samePackage: [], testOnly: [], self: [] };
 
   function walkDir(dir) {
@@ -403,10 +493,10 @@ function findReferences(exportName, packageDir, definingModule, rootDir, consume
       }
 
       try {
-        const source = readFileSync(fullPath, "utf8");
-        const cleaned = stripCommentsAndStrings(source);
+        const rawSource = readFileSync(fullPath, "utf8");
+        const source = stripCommentsAndStrings(rawSource);
         const pattern = new RegExp(`\\b${exportName}\\b`);
-        if (!pattern.test(cleaned)) continue;
+        if (!pattern.test(source)) continue;
 
         const rel = relativePath(rootDir, fullPath);
         if (!rel.startsWith("packages/")) continue;
@@ -419,6 +509,13 @@ function findReferences(exportName, packageDir, definingModule, rootDir, consume
         const moduleOfRef = pkgMatch[2];
 
         if (pkgOfRef !== pkgOfDef) {
+          const imports = extractVinciImports(rawSource);
+          if (
+            !vinciImportsReference(imports, moduleSpecifier, exportName, source)
+            && !relativeImportReferencesPackage(rawSource, fullPath, packageDir, exportName)
+          ) {
+            continue;
+          }
           refs.external.push(rel);
         } else if (moduleOfRef === definingModule) {
           refs.self.push(rel);
@@ -436,7 +533,7 @@ function findReferences(exportName, packageDir, definingModule, rootDir, consume
   walkDir(rootDir);
 
   for (const consumer of consumersArray) {
-    for (const ref of getConsumerSourceFiles(consumer, exportName, exportNames)) {
+    for (const ref of getConsumerSourceFiles(consumer, exportKey, exportRecords)) {
       refs.external.push(ref);
     }
   }
@@ -481,16 +578,41 @@ for (const pkgName of packages) {
 
   const exports = tracePackageExports(pkgPath);
   if (exports.size === 0) continue;
-  traced.push({ pkgName, pkgPath, exports });
+  let moduleSpecifier = `@getsimpledirect/vinci-${pkgName}`;
+  try {
+    const manifestName = JSON.parse(readFileSync(join(pkgPath, "package.json"), "utf8")).name;
+    if (typeof manifestName === "string" && manifestName.startsWith("@getsimpledirect/vinci-")) {
+      moduleSpecifier = manifestName;
+    }
+  } catch {
+    // Synthetic fixtures need no package.json when the directory name maps to
+    // the standard @getsimpledirect/vinci-<directory> package name.
+  }
+  traced.push({ pkgName, pkgPath, moduleSpecifier, exports });
 }
-const allExportNames = [...new Set(traced.flatMap((t) => [...t.exports.keys()]))];
+const allExportRecords = traced.flatMap(({ moduleSpecifier, exports }) =>
+  [...exports.keys()].map((name) => ({
+    key: importKey(moduleSpecifier, name),
+    moduleSpecifier,
+    name,
+  })),
+);
 
-for (const { pkgName, pkgPath, exports } of traced) {
+for (const { pkgName, pkgPath, moduleSpecifier, exports } of traced) {
   const nowhere = [];
   const testOnly = [];
 
   for (const [exportName, defModule] of exports) {
-    const refs = findReferences(exportName, pkgPath, defModule, rootDir, consumers, allExportNames);
+    const refs = findReferences(
+      exportName,
+      importKey(moduleSpecifier, exportName),
+      moduleSpecifier,
+      pkgPath,
+      defModule,
+      rootDir,
+      consumers,
+      allExportRecords,
+    );
     const isConsumed = refs.external.length > 0 || refs.samePackage.length > 0;
 
     if (!isConsumed) {
@@ -508,7 +630,7 @@ for (const { pkgName, pkgPath, exports } of traced) {
 }
 
 for (const consumer of consumers) {
-  getConsumerSourceFiles(consumer, undefined, allExportNames);
+  getConsumerSourceFiles(consumer, undefined, allExportRecords);
   console.log(
     `[Consumer] ${consumer.displayPath}: exists=${consumer.exists ? "yes" : "no"} files_scanned=${consumer.filesScanned}`,
   );
