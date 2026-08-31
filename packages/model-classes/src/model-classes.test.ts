@@ -489,6 +489,128 @@ describe("model role endpoint matching", () => {
   });
 });
 
+describe("matchEndpointToRole defensive validation", () => {
+  const now = "2026-08-30T12:00:00.000Z";
+
+  function matchUnknown(role: unknown, endpoint: unknown) {
+    let result: ReturnType<typeof matchEndpointToRole> | undefined;
+    expect(() => {
+      result = matchEndpointToRole(role as never, endpoint as never, now);
+    }).not.toThrow();
+    expect(result).toBeDefined();
+    return result as ReturnType<typeof matchEndpointToRole>;
+  }
+
+  function expectInputNotEvaluable(result: ReturnType<typeof matchEndpointToRole>) {
+    expect(result.verdict).toBe("unevaluable");
+    expect(result.reasons.map(({ code }) => code)).toEqual(["input_not_evaluable"]);
+  }
+
+  it("rejects a null role", () => {
+    const result = matchUnknown(null, validLocalEndpoint("open_weight"));
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects non-object roles", () => {
+    for (const role of [7, "role", undefined]) {
+      const result = matchUnknown(role, validLocalEndpoint("open_weight"));
+      expectInputNotEvaluable(result);
+    }
+  });
+
+  it("rejects a role with non-array requiredCapabilities", () => {
+    const result = matchUnknown(
+      { ...validRole(), requiredCapabilities: "repository_editing" },
+      validLocalEndpoint("open_weight"),
+    );
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects a null endpoint", () => {
+    const result = matchUnknown(validRole(), null);
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects non-object endpoints", () => {
+    for (const endpoint of [7, "endpoint", undefined]) {
+      const result = matchUnknown(validRole(), endpoint);
+      expectInputNotEvaluable(result);
+    }
+  });
+
+  it("rejects an endpoint with non-array declaredCapabilities", () => {
+    const result = matchUnknown(validRole(), {
+      ...validLocalEndpoint("open_weight"),
+      declaredCapabilities: "repository_editing",
+    });
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects a role with non-object dataPolicy", () => {
+    const result = matchUnknown(
+      { ...validRole(), dataPolicy: null },
+      validLocalEndpoint("open_weight"),
+    );
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects an endpoint with a missing or non-object capabilityProfile", () => {
+    const { capabilityProfile: _missing, ...missingProfile } =
+      validLocalEndpoint("open_weight");
+    for (const endpoint of [missingProfile, { ...missingProfile, capabilityProfile: 7 }]) {
+      const result = matchUnknown(validRole(), endpoint);
+      expectInputNotEvaluable(result);
+    }
+  });
+
+  it("rejects an endpoint with a non-string endpointId without coercing it", () => {
+    const hostileId = Object.create(null) as { toString?: () => string };
+    hostileId.toString = () => {
+      throw new Error("must not coerce endpointId");
+    };
+    const result = matchUnknown(validRole(), {
+      ...validLocalEndpoint("open_weight"),
+      endpointId: hostileId,
+    });
+    expectInputNotEvaluable(result);
+  });
+
+  it("does not throw on any hostile input", () => {
+    const hostileInputs: unknown[] = [
+      Symbol("hostile"),
+      Object.create(null),
+      new Proxy({}, { get() { throw new Error("trap"); } }),
+      { get requiredCapabilities() { throw new Error("getter"); } },
+      new Array(5),
+    ];
+
+    for (const hostile of hostileInputs) {
+      expectInputNotEvaluable(matchUnknown(hostile, validLocalEndpoint("open_weight")));
+      expectInputNotEvaluable(matchUnknown(validRole(), hostile));
+    }
+  });
+
+  it("rejects own __proto__ keys without throwing or polluting Object.prototype", () => {
+    const pollutedRole = JSON.parse(JSON.stringify(validRole())) as Record<string, unknown>;
+    Object.defineProperty(pollutedRole, "__proto__", {
+      value: { testMarker: true },
+      enumerable: true,
+    });
+    const pollutedEndpoint = JSON.parse(
+      JSON.stringify(validLocalEndpoint("open_weight")),
+    ) as Record<string, unknown>;
+    Object.defineProperty(pollutedEndpoint, "__proto__", {
+      value: { testMarker: true },
+      enumerable: true,
+    });
+
+    expect(({} as { testMarker?: boolean }).testMarker).toBeUndefined();
+    expectInputNotEvaluable(matchUnknown(pollutedRole, validLocalEndpoint("open_weight")));
+    expectInputNotEvaluable(matchUnknown(validRole(), pollutedEndpoint));
+    expect(({} as { testMarker?: boolean }).testMarker).toBeUndefined();
+  });
+});
+
 describe("explicit unknown values", () => {
   it("accepts an explicit unknown but rejects an absent declaration", () => {
     const explicit = validateCustomerEndpointConfig({
