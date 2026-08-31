@@ -1103,4 +1103,42 @@ describe("role-match guards", () => {
       expect(outcomes[0], `${key} does not affect matching`).not.toEqual(outcomes[1]);
     }
   });
+
+  it("uses the data-policy value it validated when a getter changes its answer", () => {
+    let reads = 0;
+    const policy = {
+      ...validRole().dataPolicy,
+      get externalProviderAllowed(): boolean {
+        reads += 1;
+        return reads === 1 ? false : true;
+      },
+    };
+    const role = { ...validRole(), dataPolicy: policy };
+    const endpoint = { ...validLocalEndpoint("open_weight"), inferenceIsExternal: known(true) };
+
+    const result = matchEndpointToRole(role, endpoint, "2026-08-30T12:00:00.000Z");
+
+    expect(reads).toBe(1);
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons.map(({ code }) => code)).toContain("external_provider_forbidden");
+  });
+
+  it("uses the endpoint-rights value it validated when a getter changes its answer", () => {
+    let reads = 0;
+    const rights = {
+      ...endpointCommon().rights,
+      get trainingAllowed() {
+        reads += 1;
+        return reads === 1 ? { kind: "unknown" as const } : known(true);
+      },
+    };
+    const role = { ...validRole(), riskClass: "high" as const };
+    const endpoint = { ...validLocalEndpoint("open_weight"), rights };
+
+    const result = matchEndpointToRole(role, endpoint, "2026-08-30T12:00:00.000Z");
+
+    expect(reads).toBe(1);
+    expect(result.verdict).toBe("unevaluable");
+    expect(result.reasons.map(({ code }) => code)).toContain("rights_undeclared");
+  });
 });

@@ -35,6 +35,30 @@ export type MatchResult = {
 
 type ClassifiedReason = MatchReason & { readonly hardNo: boolean };
 
+type ExplicitBooleanSnapshot = {
+  readonly kind: unknown;
+  readonly value: unknown;
+};
+
+type ValidExplicitBooleanSnapshot =
+  | { readonly kind: "unknown"; readonly value: unknown }
+  | { readonly kind: "known"; readonly value: boolean };
+
+/** Snapshot a hostile-reachable ExplicitValue exactly once. */
+function snapshotExplicitBoolean(value: unknown): ExplicitBooleanSnapshot | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  return { kind: record.kind, value: record.value };
+}
+
+function isExplicitBoolean(
+  snapshot: ExplicitBooleanSnapshot | null,
+): snapshot is ValidExplicitBooleanSnapshot {
+  return snapshot !== null &&
+    (snapshot.kind === "unknown" ||
+      (snapshot.kind === "known" && typeof snapshot.value === "boolean"));
+}
+
 function missingCapability(capability: RequiredCapability): ClassifiedReason {
   return {
     code: "capability_missing",
@@ -171,10 +195,13 @@ export function matchEndpointToRole(
     }
 
     const dataPolicyObj = dataPolicy as Record<string, unknown>;
+    const externalProviderAllowed = dataPolicyObj.externalProviderAllowed;
+    const outputRetentionAllowed = dataPolicyObj.outputRetentionAllowed;
+    const processesProtectedData = dataPolicyObj.processesProtectedData;
     if (
-      typeof dataPolicyObj.externalProviderAllowed !== "boolean" ||
-      typeof dataPolicyObj.outputRetentionAllowed !== "boolean" ||
-      typeof dataPolicyObj.processesProtectedData !== "boolean"
+      typeof externalProviderAllowed !== "boolean" ||
+      typeof outputRetentionAllowed !== "boolean" ||
+      typeof processesProtectedData !== "boolean"
     ) {
       return {
         verdict: "unevaluable",
@@ -219,9 +246,10 @@ export function matchEndpointToRole(
     }
 
     const capProfileObj = capabilityProfile as Record<string, unknown>;
+    const contextLimit = capProfileObj.contextLimit;
     if (
-      typeof capProfileObj.contextLimit !== "number" ||
-      !Number.isFinite(capProfileObj.contextLimit)
+      typeof contextLimit !== "number" ||
+      !Number.isFinite(contextLimit)
     ) {
       return {
         verdict: "unevaluable",
@@ -237,11 +265,8 @@ export function matchEndpointToRole(
     }
 
     // Validate ExplicitValue structures
-    if (
-      typeof inferenceIsExternal !== "object" ||
-      inferenceIsExternal === null ||
-      (!(inferenceIsExternal as Record<string, unknown>).kind)
-    ) {
+    const external = snapshotExplicitBoolean(inferenceIsExternal);
+    if (!isExplicitBoolean(external)) {
       return {
         verdict: "unevaluable",
         roleId,
@@ -255,11 +280,8 @@ export function matchEndpointToRole(
       };
     }
 
-    if (
-      typeof approvedForProtectedData !== "object" ||
-      approvedForProtectedData === null ||
-      (!(approvedForProtectedData as Record<string, unknown>).kind)
-    ) {
+    const approval = snapshotExplicitBoolean(approvedForProtectedData);
+    if (!isExplicitBoolean(approval)) {
       return {
         verdict: "unevaluable",
         roleId,
@@ -284,18 +306,13 @@ export function matchEndpointToRole(
     }
 
     const rightsObj = endpointRights as Record<string, unknown>;
-    const requiredRights = [
-      "trainingAllowed",
-      "evaluationAllowed",
-      "outputRetainedByProvider",
-    ];
-    for (const rightName of requiredRights) {
-      const right = rightsObj[rightName];
-      if (
-        typeof right !== "object" ||
-        right === null ||
-        (!(right as Record<string, unknown>).kind)
-      ) {
+    const rights = {
+      trainingAllowed: snapshotExplicitBoolean(rightsObj.trainingAllowed),
+      evaluationAllowed: snapshotExplicitBoolean(rightsObj.evaluationAllowed),
+      outputRetainedByProvider: snapshotExplicitBoolean(rightsObj.outputRetainedByProvider),
+    } as const;
+    for (const [rightName, right] of Object.entries(rights)) {
+      if (!isExplicitBoolean(right)) {
         return {
           verdict: "unevaluable",
           roleId,
@@ -309,6 +326,11 @@ export function matchEndpointToRole(
         };
       }
     }
+    // The loop above validates every entry in this fixed record. These aliases
+    // keep the captured values, rather than re-reading the caller's getters.
+    const trainingAllowed = rights.trainingAllowed as ValidExplicitBooleanSnapshot;
+    const evaluationAllowed = rights.evaluationAllowed as ValidExplicitBooleanSnapshot;
+    const outputRetainedByProvider = rights.outputRetainedByProvider as ValidExplicitBooleanSnapshot;
 
     // Validate timestamps
     if (typeof validFrom !== "string") {
@@ -345,18 +367,17 @@ export function matchEndpointToRole(
     }
 
     if (
-      (capProfileObj.contextLimit as number) <
+      contextLimit <
       (minimumContextTokens as number)
     ) {
       classified.push({
         code: "context_too_small",
-        detail: `endpoint context limit ${capProfileObj.contextLimit} is below required ${minimumContextTokens}`,
+        detail: `endpoint context limit ${contextLimit} is below required ${minimumContextTokens}`,
         hardNo: true,
       });
     }
 
-    if (!(dataPolicyObj.externalProviderAllowed as boolean)) {
-      const external = inferenceIsExternal as Record<string, unknown>;
+    if (!externalProviderAllowed) {
       if (external.kind === "unknown") {
         classified.push({
           code: "external_provider_undeclared",
@@ -372,8 +393,8 @@ export function matchEndpointToRole(
       }
     }
 
-    if (!(dataPolicyObj.outputRetentionAllowed as boolean)) {
-      const retention = (rightsObj.outputRetainedByProvider as Record<string, unknown>);
+    if (!outputRetentionAllowed) {
+      const retention = outputRetainedByProvider;
       if (retention.kind === "unknown") {
         classified.push({
           code: "retention_undeclared",
@@ -389,8 +410,7 @@ export function matchEndpointToRole(
       }
     }
 
-    if (dataPolicyObj.processesProtectedData) {
-      const approval = approvedForProtectedData as Record<string, unknown>;
+    if (processesProtectedData) {
       if (approval.kind === "unknown") {
         classified.push({
           code: "protected_data_approval_undeclared",
@@ -408,17 +428,16 @@ export function matchEndpointToRole(
 
     if (riskClass === "high") {
       for (const [rightName, right] of [
-        ["trainingAllowed", rightsObj.trainingAllowed],
-        ["evaluationAllowed", rightsObj.evaluationAllowed],
+        ["trainingAllowed", trainingAllowed],
+        ["evaluationAllowed", evaluationAllowed],
       ] as const) {
-        const rightVal = right as Record<string, unknown>;
-        if (rightVal.kind === "unknown") {
+        if (right.kind === "unknown") {
           classified.push({
             code: "rights_undeclared",
             detail: `high-risk role requires ${rightName} to be declared`,
             hardNo: false,
           });
-        } else if (!rightVal.value) {
+        } else if (!right.value) {
           classified.push({
             code:
               rightName === "evaluationAllowed"
