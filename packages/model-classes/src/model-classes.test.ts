@@ -184,6 +184,7 @@ const validFrontierEndpoint = () => ({
   model: "supplier-model-current",
   modelRevision: known("2026-08-01"),
   jurisdiction: known({ jurisdiction: "CA", region: "ca-central-1" }),
+  servedArtifact: known({ kind: "proprietary" as const }),
 });
 
 const validLocalEndpoint = (sourceClass: "open_weight" | "vinci_pretrained") => ({
@@ -209,6 +210,7 @@ const FRONTIER_IDENTITY_FIELDS = [
   "model",
   "modelRevision",
   "jurisdiction",
+  "servedArtifact",
 ] as const;
 
 const digestIdentityValues: Record<(typeof DIGEST_IDENTITY_FIELDS)[number], unknown> = {
@@ -224,6 +226,7 @@ const frontierIdentityValues: Record<(typeof FRONTIER_IDENTITY_FIELDS)[number], 
   model: "supplier-model-current",
   modelRevision: known("2026-08-01"),
   jurisdiction: known({ jurisdiction: "CA", region: "ca-central-1" }),
+  servedArtifact: known({ kind: "proprietary" }),
 };
 
 describe("model role and endpoint ABI validation", () => {
@@ -286,6 +289,23 @@ describe("model role and endpoint ABI validation", () => {
   it("requires expiresAt on every validated endpoint", () => {
     const { expiresAt: _missing, ...endpoint } = validFrontierEndpoint();
     expectIssue(validateModelEndpointSpec(endpoint), "/expiresAt", "required_field");
+  });
+
+  it("requires a well-formed servedArtifact on frontier endpoints", () => {
+    const { servedArtifact: _missing, ...missing } = validFrontierEndpoint();
+    expectIssue(
+      validateModelEndpointSpec(missing),
+      "/servedArtifact",
+      "required_field",
+    );
+    expectIssue(
+      validateModelEndpointSpec({
+        ...validFrontierEndpoint(),
+        servedArtifact: known({ kind: "digest" }),
+      }),
+      "/servedArtifact/value/value",
+      "required_field",
+    );
   });
 
   it.each(DIGEST_IDENTITY_FIELDS)(
@@ -1462,11 +1482,110 @@ describe("review independence", () => {
     expect(violatesIndependence(producer, reviewer)).toBe(true);
   });
 
-  it("accepts a legible frontier endpoint and digest-identified endpoint as distinct", () => {
+  it("rejects a frontier endpoint serving the same digest as an open-weight endpoint", () => {
+    const frontier = {
+      ...validFrontierEndpoint(),
+      endpointId: "producer-frontier",
+      provider: "aws-bedrock",
+      servedArtifact: known({ kind: "digest" as const, value: "weights-sha256-abc" }),
+    };
+    const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
+
+    expect(violatesIndependence(frontier, local)).toBe(true);
+  });
+
+  it("rejects an unknown frontier artifact against any digest endpoint", () => {
+    const frontier = {
+      ...validFrontierEndpoint(),
+      endpointId: "producer-frontier",
+      servedArtifact: { kind: "unknown" as const },
+    };
+    const local = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      endpointId: "reviewer-local",
+      weightsDigest: "weights-sha256-unrelated",
+    };
+
+    expect(violatesIndependence(frontier, local)).toBe(true);
+  });
+
+  it("accepts a proprietary frontier artifact against a digest endpoint", () => {
     const frontier = { ...validFrontierEndpoint(), endpointId: "producer-frontier" };
     const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
 
     expect(violatesIndependence(frontier, local)).toBe(false);
+  });
+
+  it("accepts a frontier artifact whose digest differs from the digest endpoint", () => {
+    const frontier = {
+      ...validFrontierEndpoint(),
+      endpointId: "producer-frontier",
+      servedArtifact: known({ kind: "digest" as const, value: "weights-sha256-different" }),
+    };
+    const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
+
+    expect(violatesIndependence(frontier, local)).toBe(false);
+  });
+
+  it("snapshots servedArtifact and its inner value exactly once", () => {
+    let servedArtifactReads = 0;
+    let innerValueReads = 0;
+    const frontier = {
+      ...validFrontierEndpoint(),
+      endpointId: "producer-frontier",
+      get servedArtifact() {
+        servedArtifactReads += 1;
+        return {
+          kind: "known" as const,
+          value: {
+            kind: "digest" as const,
+            get value() {
+              innerValueReads += 1;
+              return innerValueReads === 1
+                ? "weights-sha256-abc"
+                : "weights-sha256-different";
+            },
+          },
+        };
+      },
+    };
+    const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
+
+    expect(violatesIndependence(frontier, local)).toBe(true);
+    expect(servedArtifactReads).toBe(1);
+    expect(innerValueReads).toBe(1);
+  });
+
+  it("fails closed when a servedArtifact getter changes its answer", () => {
+    let reads = 0;
+    const frontier = {
+      ...validFrontierEndpoint(),
+      endpointId: "producer-frontier",
+      get servedArtifact() {
+        reads += 1;
+        return reads === 1
+          ? { kind: "unknown" as const }
+          : known({ kind: "proprietary" as const });
+      },
+    };
+    const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
+
+    expect(violatesIndependence(frontier, local)).toBe(true);
+    expect(reads).toBe(1);
+  });
+
+  it("rejects both unknown registry frontiers against the pod endpoint", () => {
+    const pod = endpointById("pod-openweight-local");
+    const bedrock = endpointById("bedrock-general");
+    const openrouter = endpointById("openrouter-worker");
+
+    expect(pod).toBeDefined();
+    expect(bedrock).toBeDefined();
+    expect(openrouter).toBeDefined();
+    if (pod && bedrock && openrouter) {
+      expect(violatesIndependence(bedrock, pod)).toBe(true);
+      expect(violatesIndependence(openrouter, pod)).toBe(true);
+    }
   });
 
   it("accepts endpoints with genuinely different identities", () => {

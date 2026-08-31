@@ -28,7 +28,14 @@ type EndpointIdentity = {
   readonly provider: unknown;
   readonly model: unknown;
   readonly weightsDigest: unknown;
+  readonly servedArtifact: ServedArtifactIdentity;
 };
+
+type ServedArtifactIdentity =
+  | { readonly kind: "unknown" }
+  | { readonly kind: "known"; readonly artifactKind: "proprietary" }
+  | { readonly kind: "known"; readonly artifactKind: "digest"; readonly value: unknown }
+  | { readonly kind: "malformed" };
 
 type IdentityScheme = "frontier" | "digest";
 
@@ -53,18 +60,66 @@ function identityScheme(sourceClass: EndpointSourceClass): IdentityScheme {
   }
 }
 
+/** Copy every artifact discriminator and payload; retain no caller-owned object. */
+function snapshotServedArtifact(value: unknown): ServedArtifactIdentity {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return { kind: "malformed" };
+  }
+  const explicit = value as Record<string, unknown>;
+  const explicitKind = explicit["kind"];
+  const explicitHasValue = Object.hasOwn(explicit, "value");
+  if (explicitKind === "unknown") {
+    return explicitHasValue ? { kind: "malformed" } : { kind: "unknown" };
+  }
+  if (explicitKind !== "known" || !explicitHasValue) return { kind: "malformed" };
+
+  const artifactValue = explicit["value"];
+  if (
+    typeof artifactValue !== "object" ||
+    artifactValue === null ||
+    Array.isArray(artifactValue)
+  ) {
+    return { kind: "malformed" };
+  }
+  const artifact = artifactValue as Record<string, unknown>;
+  const artifactKind = artifact["kind"];
+  const artifactHasValue = Object.hasOwn(artifact, "value");
+  if (artifactKind === "proprietary") {
+    return artifactHasValue
+      ? { kind: "malformed" }
+      : { kind: "known", artifactKind: "proprietary" };
+  }
+  if (artifactKind !== "digest" || !artifactHasValue) return { kind: "malformed" };
+  return {
+    kind: "known",
+    artifactKind: "digest",
+    value: artifact["value"],
+  };
+}
+
 function snapshotIdentity(value: unknown): EndpointIdentity | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
   const sourceClass = record["sourceClass"];
   if (!isEndpointSourceClass(sourceClass)) return undefined;
-  const snapshot: EndpointIdentity = {
-    endpointId: record["endpointId"],
-    sourceClass,
-    provider: record["provider"],
-    model: record["model"],
-    weightsDigest: record["weightsDigest"],
-  };
+  const endpointId = record["endpointId"];
+  const snapshot: EndpointIdentity = sourceClass === "frontier_api"
+    ? {
+        endpointId,
+        sourceClass,
+        provider: record["provider"],
+        model: record["model"],
+        weightsDigest: undefined,
+        servedArtifact: snapshotServedArtifact(record["servedArtifact"]),
+      }
+    : {
+        endpointId,
+        sourceClass,
+        provider: undefined,
+        model: undefined,
+        weightsDigest: record["weightsDigest"],
+        servedArtifact: { kind: "malformed" },
+      };
   if (!isIdentifier(snapshot.endpointId)) return undefined;
   return snapshot;
 }
@@ -75,6 +130,17 @@ function hasLegibleArtifactIdentity(identity: EndpointIdentity): boolean {
       typeof identity.model === "string" && identity.model.length > 0;
   }
   return isIdentifier(identity.weightsDigest);
+}
+
+function crossSchemeViolation(
+  frontier: EndpointIdentity,
+  digest: EndpointIdentity,
+): boolean {
+  const artifact = frontier.servedArtifact;
+  if (artifact.kind === "unknown" || artifact.kind === "malformed") return true;
+  if (artifact.artifactKind === "proprietary") return false;
+  if (typeof artifact.value !== "string" || artifact.value.length === 0) return true;
+  return artifact.value === digest.weightsDigest;
 }
 
 export function violatesIndependence(
@@ -102,10 +168,14 @@ export function violatesIndependence(
       return p.weightsDigest === r.weightsDigest;
     }
 
-    // A frontier API identity and a digest-identified local artifact use
-    // disjoint identity schemes. Both class values were snapshotted and proven
-    // legible above, so the comparison cannot be changed by a hostile getter.
-    if (p.sourceClass !== r.sourceClass) return false;
+    // An absent identity is not a different identity. Across schemes, the
+    // frontier's snapshotted artifact declaration must prove either that it is
+    // proprietary or that its digest differs from the local artifact.
+    if (pIsDigestIdentified !== rIsDigestIdentified) {
+      return pIsDigestIdentified
+        ? crossSchemeViolation(r, p)
+        : crossSchemeViolation(p, r);
+    }
 
     if (identityScheme(p.sourceClass) === "frontier") {
       // Weaker than a digest by construction: a provider may serve changed

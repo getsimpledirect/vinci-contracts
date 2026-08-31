@@ -25,6 +25,8 @@ const bedrockEndpoint: FrontierApiEndpoint = {
   provider: "aws-bedrock",
   model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
   modelRevision: { kind: "unknown" },
+  // Bedrock is a multi-model gateway, so the served artifact is unknown.
+  servedArtifact: { kind: "unknown" },
   capabilityProfile: {
     capabilities: ["text", "tool_use"],
     contextLimit: 200_000,
@@ -70,6 +72,8 @@ const openrouterEndpoint: FrontierApiEndpoint = {
   provider: "openrouter",
   model: "openai/gpt-4o",
   modelRevision: { kind: "unknown" },
+  // OpenRouter is a multi-model gateway, so the served artifact is unknown.
+  servedArtifact: { kind: "unknown" },
   capabilityProfile: {
     capabilities: ["text", "tool_use", "vision"],
     contextLimit: 128_000,
