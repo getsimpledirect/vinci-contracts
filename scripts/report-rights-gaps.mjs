@@ -13,6 +13,7 @@
 import { existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { pathToFileURL, fileURLToPath } from "node:url";
+import { mapUnevaluableReason } from "./rights-gap-mapping.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const modelClassesEntry = join(root, "packages", "model-classes", "dist", "index.js");
@@ -46,56 +47,12 @@ for (const endpoint of VINCI_ENDPOINTS) {
       }
       unknownFacts.get(key).push(role.roleId);
 
-      // Map the reason code to the actual unknown field and its resolver document
-      let field = "";
-      let document = "";
-
-      if (reason.code === "rights_undeclared") {
-        // Extract which right from the detail: "high-risk role requires {rightName} to be declared"
-        const match = reason.detail.match(/requires (\w+) to be declared/);
-        const rightName = match?.[1] || "unknown";
-        field = rightName;
-
-        // Determine which provider's terms to read
-        if (endpoint.provider) {
-          if (endpoint.provider === "aws-bedrock") {
-            document = "AWS Bedrock service terms";
-          } else if (endpoint.provider === "openrouter") {
-            document = "OpenRouter terms of service";
-          } else {
-            document = `${endpoint.provider} terms of service`;
-          }
-        } else {
-          document = "provider terms of service";
-        }
-      } else if (reason.code === "retention_undeclared") {
-        field = "outputRetainedByProvider";
-        if (endpoint.provider) {
-          if (endpoint.provider === "aws-bedrock") {
-            document = "AWS Bedrock service terms";
-          } else if (endpoint.provider === "openrouter") {
-            document = "OpenRouter terms of service";
-          } else {
-            document = `${endpoint.provider} terms of service`;
-          }
-        } else {
-          document = "provider terms of service";
-        }
-      } else if (reason.code === "external_provider_undeclared") {
-        field = "inferenceIsExternal";
-        document = "endpoint infrastructure audit";
-      } else if (reason.code === "protected_data_approval_undeclared") {
-        field = "approvedForProtectedData";
-        document = "internal protected-data approval record";
+      const { field, document } = mapUnevaluableReason(reason, endpoint);
+      const factKey = `${endpoint.endpointId}:${field}`;
+      if (!docToUnknowns.has(document)) {
+        docToUnknowns.set(document, new Set());
       }
-
-      if (field && document) {
-        const factKey = `${endpoint.endpointId}:${field}`;
-        if (!docToUnknowns.has(document)) {
-          docToUnknowns.set(document, new Set());
-        }
-        docToUnknowns.get(document).add(factKey);
-      }
+      docToUnknowns.get(document).add(factKey);
     }
   }
 }
@@ -136,19 +93,7 @@ for (const doc of docs) {
         if (result.verdict !== "unevaluable") continue;
 
         for (const reason of result.reasons) {
-          // Check if this reason relates to our field
-          let reasonField = "";
-          if (reason.code === "rights_undeclared") {
-            const match = reason.detail.match(/requires (\w+) to be declared/);
-            reasonField = match?.[1] || "";
-          } else if (reason.code === "retention_undeclared") {
-            reasonField = "outputRetainedByProvider";
-          } else if (reason.code === "external_provider_undeclared") {
-            reasonField = "inferenceIsExternal";
-          } else if (reason.code === "protected_data_approval_undeclared") {
-            reasonField = "approvedForProtectedData";
-          }
-
+          const { field: reasonField } = mapUnevaluableReason(reason, endpoint);
           if (reasonField === field) {
             affected.add(role.roleId);
           }
