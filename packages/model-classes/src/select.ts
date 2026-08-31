@@ -19,6 +19,15 @@ export type Selection = {
  * winner. Unevaluable results remain separate so unknown facts cannot grant or
  * deny eligibility.
  */
+function inputNotEvaluable(roleId: string): MatchResult {
+  return {
+    verdict: "unevaluable",
+    roleId,
+    endpointId: "",
+    reasons: [{ code: "input_not_evaluable", detail: "endpoint list could not be read as a bounded array" }],
+  };
+}
+
 export function selectForRole(
   role: ModelRoleSpec,
   endpoints: readonly ModelEndpointSpec[],
@@ -46,11 +55,19 @@ export function selectForRole(
     // check is not a style preference: it is the guard. MAX_ENDPOINTS is far
     // above any real supply population (the live registry declares three) and
     // far below the point where iteration costs anything.
-    if (!Array.isArray(endpoints) || endpoints.length > MAX_ENDPOINTS) {
+    // The length is snapshotted ONCE. A getter that reports a small length to
+    // the bound and a huge one to the iterator would otherwise pass the check
+    // and then run unbounded.
+    const declaredLength = Array.isArray(endpoints) ? endpoints.length : -1;
+    if (declaredLength < 0 || declaredLength > MAX_ENDPOINTS) {
+      // Not empty buckets. An empty partition is indistinguishable downstream
+      // from "no endpoint qualifies", which is a different and much more
+      // reassuring statement than "this input could not be read". Refusing
+      // input is unevaluable, exactly as it is for a single endpoint.
       return {
         roleId: typeof roleId === "string" ? roleId : "unknown",
         eligible: [],
-        unevaluable: [],
+        unevaluable: [inputNotEvaluable(typeof roleId === "string" ? roleId : "unknown")],
         ineligible: [],
       };
     }
@@ -59,7 +76,12 @@ export function selectForRole(
     const unevaluable: MatchResult[] = [];
     const ineligible: MatchResult[] = [];
 
-    for (const endpoint of endpoints) {
+    // Indexed, bounded by the snapshotted length. `for...of` goes through
+    // Symbol.iterator, which a Proxy over a real Array can override to yield
+    // forever -- Array.isArray stays true and the length bound is never
+    // consulted again. The bound must govern the loop, not merely precede it.
+    for (let i = 0; i < declaredLength && i < MAX_ENDPOINTS; i++) {
+      const endpoint = endpoints[i] as ModelEndpointSpec;
       const result = matchEndpointToRole(role, endpoint, now);
       if (result.verdict === "eligible") eligible.push(result);
       else if (result.verdict === "unevaluable") unevaluable.push(result);
