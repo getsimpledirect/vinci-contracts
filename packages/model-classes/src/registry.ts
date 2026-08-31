@@ -53,10 +53,23 @@ const forteDeepinfraEndpoint: OpenWeightEndpoint = {
   inferenceIsExternal: { kind: "known", value: true },
   approvedForProtectedData: { kind: "unknown" },
   rights: {
-    trainingAllowed: { kind: "unknown" },
-    evaluationAllowed: { kind: "unknown" },
+    // DECLARED BY GEORGE, 2026-08-31: he checked DeepInfra's, Fireworks' and
+    // OpenRouter's terms and states all three permit training and evaluation on
+    // their output. A declaration, not a proof -- recorded with its author and
+    // date so it is auditable, and void if the declaration is false.
+    trainingAllowed: { kind: "known", value: true },
+    evaluationAllowed: { kind: "known", value: true },
+    // NOT covered by that check. Redistribution is a separate permission and
+    // was not spoken to; inferring it from the other two is how a rights field
+    // gets fabricated.
     redistributionAllowed: { kind: "unknown" },
-    outputRetainedByProvider: { kind: "unknown" },
+    // EVIDENCE-BACKED, not declared. Every adapter in vinci-chat carries
+    // zdr = true, and FoundationProxy.selectAdapter REFUSES any provider not in
+    // APPROVED_ZDR -- so non-retention is an enforced invariant of the serving
+    // path, which is stronger than a terms reading.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // No document snapshot was taken. Writing a digest here would fabricate an
+    // audit trail for a reading nobody can re-check.
     policySnapshotDigest: { kind: "unknown" },
   },
   validFrom: "2026-01-01T00:00:00.000Z",
@@ -107,10 +120,23 @@ const forteFireworksEndpoint: OpenWeightEndpoint = {
   inferenceIsExternal: { kind: "known", value: true },
   approvedForProtectedData: { kind: "unknown" },
   rights: {
-    trainingAllowed: { kind: "unknown" },
-    evaluationAllowed: { kind: "unknown" },
+    // DECLARED BY GEORGE, 2026-08-31: he checked DeepInfra's, Fireworks' and
+    // OpenRouter's terms and states all three permit training and evaluation on
+    // their output. A declaration, not a proof -- recorded with its author and
+    // date so it is auditable, and void if the declaration is false.
+    trainingAllowed: { kind: "known", value: true },
+    evaluationAllowed: { kind: "known", value: true },
+    // NOT covered by that check. Redistribution is a separate permission and
+    // was not spoken to; inferring it from the other two is how a rights field
+    // gets fabricated.
     redistributionAllowed: { kind: "unknown" },
-    outputRetainedByProvider: { kind: "unknown" },
+    // EVIDENCE-BACKED, not declared. Every adapter in vinci-chat carries
+    // zdr = true, and FoundationProxy.selectAdapter REFUSES any provider not in
+    // APPROVED_ZDR -- so non-retention is an enforced invariant of the serving
+    // path, which is stronger than a terms reading.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // No document snapshot was taken. Writing a digest here would fabricate an
+    // audit trail for a reading nobody can re-check.
     policySnapshotDigest: { kind: "unknown" },
   },
   validFrom: "2026-01-01T00:00:00.000Z",
@@ -158,10 +184,23 @@ const visionDeepinfraEndpoint: OpenWeightEndpoint = {
   inferenceIsExternal: { kind: "known", value: true },
   approvedForProtectedData: { kind: "unknown" },
   rights: {
-    trainingAllowed: { kind: "unknown" },
-    evaluationAllowed: { kind: "unknown" },
+    // DECLARED BY GEORGE, 2026-08-31: he checked DeepInfra's, Fireworks' and
+    // OpenRouter's terms and states all three permit training and evaluation on
+    // their output. A declaration, not a proof -- recorded with its author and
+    // date so it is auditable, and void if the declaration is false.
+    trainingAllowed: { kind: "known", value: true },
+    evaluationAllowed: { kind: "known", value: true },
+    // NOT covered by that check. Redistribution is a separate permission and
+    // was not spoken to; inferring it from the other two is how a rights field
+    // gets fabricated.
     redistributionAllowed: { kind: "unknown" },
-    outputRetainedByProvider: { kind: "unknown" },
+    // EVIDENCE-BACKED, not declared. Every adapter in vinci-chat carries
+    // zdr = true, and FoundationProxy.selectAdapter REFUSES any provider not in
+    // APPROVED_ZDR -- so non-retention is an enforced invariant of the serving
+    // path, which is stronger than a terms reading.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // No document snapshot was taken. Writing a digest here would fabricate an
+    // audit trail for a reading nobody can re-check.
     policySnapshotDigest: { kind: "unknown" },
   },
   validFrom: "2026-01-01T00:00:00.000Z",
@@ -218,10 +257,23 @@ const visionOpenrouterEndpoint: OpenWeightEndpoint = {
   inferenceIsExternal: { kind: "known", value: true },
   approvedForProtectedData: { kind: "unknown" },
   rights: {
-    trainingAllowed: { kind: "unknown" },
-    evaluationAllowed: { kind: "unknown" },
+    // DECLARED BY GEORGE, 2026-08-31: he checked DeepInfra's, Fireworks' and
+    // OpenRouter's terms and states all three permit training and evaluation on
+    // their output. A declaration, not a proof -- recorded with its author and
+    // date so it is auditable, and void if the declaration is false.
+    trainingAllowed: { kind: "known", value: true },
+    evaluationAllowed: { kind: "known", value: true },
+    // NOT covered by that check. Redistribution is a separate permission and
+    // was not spoken to; inferring it from the other two is how a rights field
+    // gets fabricated.
     redistributionAllowed: { kind: "unknown" },
-    outputRetainedByProvider: { kind: "unknown" },
+    // EVIDENCE-BACKED, not declared. Every adapter in vinci-chat carries
+    // zdr = true, and FoundationProxy.selectAdapter REFUSES any provider not in
+    // APPROVED_ZDR -- so non-retention is an enforced invariant of the serving
+    // path, which is stronger than a terms reading.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // No document snapshot was taken. Writing a digest here would fabricate an
+    // audit trail for a reading nobody can re-check.
     policySnapshotDigest: { kind: "unknown" },
   },
   validFrom: "2026-01-01T00:00:00.000Z",
@@ -270,10 +322,23 @@ const mezzoDeepinfraEndpoint: OpenWeightEndpoint = {
   inferenceIsExternal: { kind: "known", value: true },
   approvedForProtectedData: { kind: "unknown" },
   rights: {
-    trainingAllowed: { kind: "unknown" },
-    evaluationAllowed: { kind: "unknown" },
+    // DECLARED BY GEORGE, 2026-08-31: he checked DeepInfra's, Fireworks' and
+    // OpenRouter's terms and states all three permit training and evaluation on
+    // their output. A declaration, not a proof -- recorded with its author and
+    // date so it is auditable, and void if the declaration is false.
+    trainingAllowed: { kind: "known", value: true },
+    evaluationAllowed: { kind: "known", value: true },
+    // NOT covered by that check. Redistribution is a separate permission and
+    // was not spoken to; inferring it from the other two is how a rights field
+    // gets fabricated.
     redistributionAllowed: { kind: "unknown" },
-    outputRetainedByProvider: { kind: "unknown" },
+    // EVIDENCE-BACKED, not declared. Every adapter in vinci-chat carries
+    // zdr = true, and FoundationProxy.selectAdapter REFUSES any provider not in
+    // APPROVED_ZDR -- so non-retention is an enforced invariant of the serving
+    // path, which is stronger than a terms reading.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // No document snapshot was taken. Writing a digest here would fabricate an
+    // audit trail for a reading nobody can re-check.
     policySnapshotDigest: { kind: "unknown" },
   },
   validFrom: "2026-01-01T00:00:00.000Z",
@@ -337,10 +402,23 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
   inferenceIsExternal: { kind: "known", value: true },
   approvedForProtectedData: { kind: "unknown" },
   rights: {
-    trainingAllowed: { kind: "unknown" },
-    evaluationAllowed: { kind: "unknown" },
+    // DECLARED BY GEORGE, 2026-08-31: he checked DeepInfra's, Fireworks' and
+    // OpenRouter's terms and states all three permit training and evaluation on
+    // their output. A declaration, not a proof -- recorded with its author and
+    // date so it is auditable, and void if the declaration is false.
+    trainingAllowed: { kind: "known", value: true },
+    evaluationAllowed: { kind: "known", value: true },
+    // NOT covered by that check. Redistribution is a separate permission and
+    // was not spoken to; inferring it from the other two is how a rights field
+    // gets fabricated.
     redistributionAllowed: { kind: "unknown" },
-    outputRetainedByProvider: { kind: "unknown" },
+    // EVIDENCE-BACKED, not declared. Every adapter in vinci-chat carries
+    // zdr = true, and FoundationProxy.selectAdapter REFUSES any provider not in
+    // APPROVED_ZDR -- so non-retention is an enforced invariant of the serving
+    // path, which is stronger than a terms reading.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // No document snapshot was taken. Writing a digest here would fabricate an
+    // audit trail for a reading nobody can re-check.
     policySnapshotDigest: { kind: "unknown" },
   },
   validFrom: "2026-01-01T00:00:00.000Z",

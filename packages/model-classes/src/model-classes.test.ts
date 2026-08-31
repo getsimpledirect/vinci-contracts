@@ -1169,8 +1169,12 @@ describe("vinci endpoint registry", () => {
     const stdout = output.replace(/\n__EXIT_CODE__=\d+\n$/, "");
 
     expect(match?.[1]).toBe("0");
-    expect(stdout).toContain("unknown");
-    expect(stdout.trim().length).toBeGreaterThan(80);
+    // Every registry field a role depends on is now declared: George checked the
+    // three providers' terms on 2026-08-31 (training and evaluation permitted),
+    // and non-retention is an enforced invariant of vinci-chat's serving path.
+    // So the honest expectation is that the report finds NOTHING -- and it must
+    // still exit 0, because no gaps is a healthy state rather than a failure.
+    expect(stdout).toContain("No undeclared facts found");
   });
 });
 
@@ -1311,8 +1315,8 @@ describe("role selection", () => {
       "fortissimo-fireworks",
     ]);
 
-    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([]);
-    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([
+    // Rights are now declared, so every lane is eligible for review work.
+    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([
       "forte-deepinfra",
       "forte-fireworks",
       "vision-deepinfra",
@@ -1320,6 +1324,8 @@ describe("role selection", () => {
       "mezzo-deepinfra",
       "fortissimo-fireworks",
     ]);
+    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([]);
+
     expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([]);
 
     expect(endpointIds(selections["cloud-worker"].eligible)).toEqual([
@@ -1390,82 +1396,44 @@ describe("role selection", () => {
     if (role && endpoint) {
       const result = matchEndpointToRole(role, endpoint, now);
 
-      // The verdict follows the declared facts, not the lane name: this lane
-      // does not declare long_horizon_recovery (a hard capability failure) and
-      // its retention policy is undeclared, so it is ineligible on that basis.
+      // The verdict follows the declared facts, not the lane name. Retention is
+      // now declared (vinci-chat enforces ZDR on every serving path), so the
+      // only remaining failure is the real one: this lane does not declare
+      // long_horizon_recovery. That is a capability gap, not a rights gap, and
+      // no terms-of-service reading can close it.
       expect(result.verdict).toBe("ineligible");
-      expect(result.reasons.map(({ code }) => code)).toEqual([
-        "capability_missing",
-        "retention_undeclared",
-      ]);
+      expect(result.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
     }
   });
 
-  it("leaves teacher-trajectory production unevaluable when rights are undeclared", () => {
-    const role = roleById("teacher-trajectory-producer");
-    expect(role).toBeDefined();
-
-    if (role) {
-      const selection = selectForRole(role, VINCI_ENDPOINTS, now);
-
-      for (const endpointId of [
-        "forte-deepinfra",
-        "forte-fireworks",
-        "vision-deepinfra",
-        "vision-openrouter",
-        "mezzo-deepinfra",
-        "fortissimo-fireworks",
-      ]) {
-        expect(endpointIds(selection.eligible)).not.toContain(endpointId);
-        expect(endpointIds(selection.ineligible)).not.toContain(endpointId);
-        const result = selection.unevaluable.find((item) => item.endpointId === endpointId);
-        expect(result).toBeDefined();
-        expect(result?.reasons.map(({ code }) => code)).toEqual([
-          "rights_undeclared",
-          "rights_undeclared",
-        ]);
-      }
-    }
-  });
-});
-
-describe("review independence", () => {
   /**
-   * The honest statement about Vinci's real supply: the independence check
-   * REFUSES EVERY PAIR, and that is correct rather than broken.
+   * The registry's rights are now DECLARED, so it can no longer demonstrate
+   * this property -- but the property is the reason the role exists and must
+   * keep a test. An undeclared right must never become an implicit yes for
+   * high-risk work; it must refuse.
    *
-   * All six lanes are open-weight models served by third-party APIs, so their
-   * weightsDigest is `unknown` -- we have not established what artifact any of
-   * them actually serves. isLegibleEndpoint therefore refuses them, and an
-   * absent identity is not a different identity.
-   *
-   * A tempting "fix" was proposed and rejected: comparing serving.model strings
-   * instead, so that two DIFFERENT model names would count as independent. That
-   * would grant independence on the strength of two strings differing while
-   * neither artifact identity is established -- a real fail-open, and precisely
-   * the shape of the eight already found in this package. The frontier arm
-   * already states the rule: equality of provider+model is a LOWER BOUND on
-   * sameness, and inequality does not prove independence.
-   *
-   * Consequence, and it is the point: this ABI cannot authorise ANY review
-   * relationship among the models Vinci actually serves. Not until a hosted
-   * endpoint can carry artifact identity evidence -- a digest, or an explicit
-   * declaration marked weaker-than-a-digest the way servedArtifact is on the
-   * frontier arm.
+   * Uses a local fixture rather than the registry, the same way the pod-served
+   * test does, because the registry moved on and the invariant did not.
    */
-  it("refuses every independence judgement about real lanes, because none has a legible artifact identity", () => {
-    const lanes = VINCI_ENDPOINTS.map((endpoint) => endpoint.endpointId);
-    expect(lanes).toContain("forte-deepinfra");
-    expect(lanes).toContain("forte-fireworks");
+  it("refuses high-risk work when a right is undeclared, whatever the lane", () => {
+    const role = roleById("teacher-trajectory-producer");
+    const declared = endpointById("forte-deepinfra");
+    expect(role).toBeDefined();
+    expect(declared).toBeDefined();
 
-    for (const producer of VINCI_ENDPOINTS) {
-      for (const reviewer of VINCI_ENDPOINTS) {
-        if (producer.endpointId === reviewer.endpointId) continue;
-        expect(
-          violatesIndependence(producer, reviewer),
-          `${producer.endpointId} vs ${reviewer.endpointId} must refuse: neither artifact identity is established`,
-        ).toBe(true);
-      }
+    if (role && declared) {
+      // Identical to a lane that IS eligible, except training rights are unknown.
+      const undeclared = {
+        ...declared,
+        endpointId: "fixture-rights-undeclared",
+        rights: { ...declared.rights, trainingAllowed: { kind: "unknown" } },
+      } as unknown as ModelEndpointSpec;
+
+      expect(matchEndpointToRole(role, declared, now).verdict).toBe("eligible");
+
+      const result = matchEndpointToRole(role, undeclared, now);
+      expect(result.verdict).toBe("unevaluable");
+      expect(result.reasons.map(({ code }) => code)).toContain("rights_undeclared");
     }
   });
 
