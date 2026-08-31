@@ -7,6 +7,8 @@ import {
   MODEL_PROVENANCE_SCHEMA_META,
   MODEL_ROLE_SPEC_SCHEMA_META,
   RESIDENCY_RECORD_SCHEMA_META,
+  VINCI_ENDPOINTS,
+  endpointById,
   matchEndpointToRole,
   validateCustomerEndpointConfig,
   validateModelEndpointSpec,
@@ -988,6 +990,82 @@ describe("branded identifiers use the constructor rule in model-class records", 
     }
     expect(validate(good).ok).toBe(true);
   });
+describe("vinci endpoint registry", () => {
+  it("declares every endpoint as a valid ModelEndpointSpec", () => {
+    for (const endpoint of VINCI_ENDPOINTS) {
+      const result = validateModelEndpointSpec(endpoint);
+      expect(result.ok).toBe(true);
+      if (result.ok) {
+        expect(result.value.endpointId).toBe(endpoint.endpointId);
+      }
+    }
+  });
+
+  it("maintains unique endpoint ids", () => {
+    const ids = VINCI_ENDPOINTS.map((ep) => ep.endpointId);
+    const uniqueIds = new Set(ids);
+    expect(uniqueIds.size).toBe(ids.length);
+  });
+
+  it("rejects OpenRouter endpoint when role forbids external providers", () => {
+    const openrouterEndpoint = VINCI_ENDPOINTS.find(
+      (ep) => ep.endpointId === "openrouter-worker",
+    );
+    expect(openrouterEndpoint).toBeDefined();
+
+    if (openrouterEndpoint) {
+      const roleWithoutExternal = {
+        ...validRole(),
+        dataPolicy: {
+          ...validRole().dataPolicy,
+          externalProviderAllowed: false,
+        },
+      };
+      const now = "2026-08-30T12:00:00.000Z";
+      const result = matchEndpointToRole(roleWithoutExternal, openrouterEndpoint, now);
+
+      expect(result.verdict).toBe("ineligible");
+      expect(result.reasons).toContainEqual({
+        code: "external_provider_forbidden",
+        detail: "role policy forbids an external inference provider",
+      });
+    }
+  });
+
+  it("permits pod-served endpoint when role forbids external providers", () => {
+    const podEndpoint = VINCI_ENDPOINTS.find((ep) => ep.endpointId === "pod-openweight-local");
+    expect(podEndpoint).toBeDefined();
+
+    if (podEndpoint) {
+      const roleWithoutExternal = {
+        ...validRole(),
+        dataPolicy: {
+          ...validRole().dataPolicy,
+          externalProviderAllowed: false,
+        },
+      };
+      const now = "2026-08-30T12:00:00.000Z";
+      const result = matchEndpointToRole(roleWithoutExternal, podEndpoint, now);
+
+      expect(result.verdict).toBe("eligible");
+      expect(result.reasons).toEqual([]);
+    }
+  });
+
+  it("looks up endpoints by id", () => {
+    expect(endpointById("bedrock-general")).toBeDefined();
+    expect(endpointById("bedrock-general")?.endpointId).toBe("bedrock-general");
+
+    expect(endpointById("openrouter-worker")).toBeDefined();
+    expect(endpointById("openrouter-worker")?.endpointId).toBe("openrouter-worker");
+
+    expect(endpointById("pod-openweight-local")).toBeDefined();
+    expect(endpointById("pod-openweight-local")?.endpointId).toBe("pod-openweight-local");
+
+    expect(endpointById("unknown-endpoint-id")).toBeUndefined();
+  });
+});
+
 });
 
 describe("role-match guards", () => {

@@ -652,6 +652,7 @@ const REQUIRED_GUARDS = [
  * the gate rather than silently going unexamined.
  */
 const NOT_AUTHORITY_GUARDS = {
+  "@getsimpledirect/vinci-model-classes.endpointById": "pure lookup: finds an entry by id in a frozen array and returns it or undefined. It grants nothing — the record it returns is itself subject to matchEndpointToRole, which IS probed, so a hostile id can at most retrieve a declaration that must still pass the guard",
   "@getsimpledirect/vinci-device-auth.decodeCanonicalBase64Url": "pure encoding predicate: returns the decoded bytes of canonical unpadded base64url or undefined; grants nothing",
   "@getsimpledirect/vinci-approvals.applyApprovalDecision": "state transition over an already-validated decision",
   "@getsimpledirect/vinci-approvals.createApprovalDecision": "constructor; its output is validated",
