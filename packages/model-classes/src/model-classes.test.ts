@@ -197,6 +197,36 @@ const validLocalEndpoint = (sourceClass: "open_weight" | "vinci_pretrained") => 
   quantizationDigest: { kind: "unknown" },
 });
 
+const DIGEST_IDENTITY_FIELDS = [
+  "weightsDigest",
+  "tokenizerDigest",
+  "architectureDigest",
+  "servingImageDigest",
+  "quantizationDigest",
+] as const;
+
+const FRONTIER_IDENTITY_FIELDS = [
+  "provider",
+  "model",
+  "modelRevision",
+  "jurisdiction",
+] as const;
+
+const digestIdentityValues: Record<(typeof DIGEST_IDENTITY_FIELDS)[number], unknown> = {
+  weightsDigest: "weights-sha256-abc",
+  tokenizerDigest: "tokenizer-sha256-def",
+  architectureDigest: "architecture-sha256-ghi",
+  servingImageDigest: known("image-sha256-jkl"),
+  quantizationDigest: known("quantization-sha256-mno"),
+};
+
+const frontierIdentityValues: Record<(typeof FRONTIER_IDENTITY_FIELDS)[number], unknown> = {
+  provider: "openai",
+  model: "supplier-model-current",
+  modelRevision: known("2026-08-01"),
+  jurisdiction: known({ jurisdiction: "CA", region: "ca-central-1" }),
+};
+
 describe("model role and endpoint ABI validation", () => {
   it("round-trips a valid role and all three endpoint source classes", () => {
     const role = validRole();
@@ -259,24 +289,33 @@ describe("model role and endpoint ABI validation", () => {
     expectIssue(validateModelEndpointSpec(endpoint), "/expiresAt", "required_field");
   });
 
-  it("rejects digest identity fields on a frontier_api endpoint", () => {
+  it.each(DIGEST_IDENTITY_FIELDS)(
+    "rejects digest identity field %s on a frontier_api endpoint",
+    (field) => {
     expectIssue(
       validateModelEndpointSpec({
         ...validFrontierEndpoint(),
-        weightsDigest: "weights-sha256-abc",
+          [field]: digestIdentityValues[field],
       }),
-      "/weightsDigest",
+        `/${field}`,
       "unexpected_field",
     );
-  });
+    },
+  );
 
-  it("rejects frontier provider fields on a digest-identified endpoint", () => {
-    expectIssue(
-      validateModelEndpointSpec({ ...validLocalEndpoint("open_weight"), provider: "openai" }),
-      "/provider",
-      "unexpected_field",
-    );
-  });
+  it.each(FRONTIER_IDENTITY_FIELDS)(
+    "rejects frontier identity field %s on a digest-identified endpoint",
+    (field) => {
+      expectIssue(
+        validateModelEndpointSpec({
+          ...validLocalEndpoint("open_weight"),
+          [field]: frontierIdentityValues[field],
+        }),
+        `/${field}`,
+        "unexpected_field",
+      );
+    },
+  );
 });
 
 describe("model role endpoint matching", () => {
@@ -494,6 +533,128 @@ describe("model role endpoint matching", () => {
     const codes = result.reasons.map(({ code }) => code);
     expect(codes).toContain("evaluation_rights_required");
     expect(codes).not.toContain("training_rights_required");
+  });
+});
+
+describe("matchEndpointToRole defensive validation", () => {
+  const now = "2026-08-30T12:00:00.000Z";
+
+  function matchUnknown(role: unknown, endpoint: unknown) {
+    let result: ReturnType<typeof matchEndpointToRole> | undefined;
+    expect(() => {
+      result = matchEndpointToRole(role as never, endpoint as never, now);
+    }).not.toThrow();
+    expect(result).toBeDefined();
+    return result as ReturnType<typeof matchEndpointToRole>;
+  }
+
+  function expectInputNotEvaluable(result: ReturnType<typeof matchEndpointToRole>) {
+    expect(result.verdict).toBe("unevaluable");
+    expect(result.reasons.map(({ code }) => code)).toEqual(["input_not_evaluable"]);
+  }
+
+  it("rejects a null role", () => {
+    const result = matchUnknown(null, validLocalEndpoint("open_weight"));
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects non-object roles", () => {
+    for (const role of [7, "role", undefined]) {
+      const result = matchUnknown(role, validLocalEndpoint("open_weight"));
+      expectInputNotEvaluable(result);
+    }
+  });
+
+  it("rejects a role with non-array requiredCapabilities", () => {
+    const result = matchUnknown(
+      { ...validRole(), requiredCapabilities: "repository_editing" },
+      validLocalEndpoint("open_weight"),
+    );
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects a null endpoint", () => {
+    const result = matchUnknown(validRole(), null);
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects non-object endpoints", () => {
+    for (const endpoint of [7, "endpoint", undefined]) {
+      const result = matchUnknown(validRole(), endpoint);
+      expectInputNotEvaluable(result);
+    }
+  });
+
+  it("rejects an endpoint with non-array declaredCapabilities", () => {
+    const result = matchUnknown(validRole(), {
+      ...validLocalEndpoint("open_weight"),
+      declaredCapabilities: "repository_editing",
+    });
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects a role with non-object dataPolicy", () => {
+    const result = matchUnknown(
+      { ...validRole(), dataPolicy: null },
+      validLocalEndpoint("open_weight"),
+    );
+    expectInputNotEvaluable(result);
+  });
+
+  it("rejects an endpoint with a missing or non-object capabilityProfile", () => {
+    const { capabilityProfile: _missing, ...missingProfile } =
+      validLocalEndpoint("open_weight");
+    for (const endpoint of [missingProfile, { ...missingProfile, capabilityProfile: 7 }]) {
+      const result = matchUnknown(validRole(), endpoint);
+      expectInputNotEvaluable(result);
+    }
+  });
+
+  it("rejects an endpoint with a non-string endpointId without coercing it", () => {
+    const hostileId = Object.create(null) as { toString?: () => string };
+    hostileId.toString = () => {
+      throw new Error("must not coerce endpointId");
+    };
+    const result = matchUnknown(validRole(), {
+      ...validLocalEndpoint("open_weight"),
+      endpointId: hostileId,
+    });
+    expectInputNotEvaluable(result);
+  });
+
+  it("does not throw on any hostile input", () => {
+    const hostileInputs: unknown[] = [
+      Symbol("hostile"),
+      Object.create(null),
+      new Proxy({}, { get() { throw new Error("trap"); } }),
+      { get requiredCapabilities() { throw new Error("getter"); } },
+      new Array(5),
+    ];
+
+    for (const hostile of hostileInputs) {
+      expectInputNotEvaluable(matchUnknown(hostile, validLocalEndpoint("open_weight")));
+      expectInputNotEvaluable(matchUnknown(validRole(), hostile));
+    }
+  });
+
+  it("rejects own __proto__ keys without throwing or polluting Object.prototype", () => {
+    const pollutedRole = JSON.parse(JSON.stringify(validRole())) as Record<string, unknown>;
+    Object.defineProperty(pollutedRole, "__proto__", {
+      value: { testMarker: true },
+      enumerable: true,
+    });
+    const pollutedEndpoint = JSON.parse(
+      JSON.stringify(validLocalEndpoint("open_weight")),
+    ) as Record<string, unknown>;
+    Object.defineProperty(pollutedEndpoint, "__proto__", {
+      value: { testMarker: true },
+      enumerable: true,
+    });
+
+    expect(({} as { testMarker?: boolean }).testMarker).toBeUndefined();
+    expectInputNotEvaluable(matchUnknown(pollutedRole, validLocalEndpoint("open_weight")));
+    expectInputNotEvaluable(matchUnknown(validRole(), pollutedEndpoint));
+    expect(({} as { testMarker?: boolean }).testMarker).toBeUndefined();
   });
 });
 
@@ -930,25 +1091,38 @@ describe("vinci endpoint registry", () => {
 
 describe("role-match guards", () => {
   /**
-   * Guards the CLASS, not three instances of it. A hard-coded list of key names
-   * would pass forever after someone adds a fourth dataPolicy field and forgets
-   * to enforce it — which is the defect this test exists to catch. The keys are
-   * therefore read off a real ModelRoleSpec at runtime.
-   *
-   * Comments are stripped before the search because a key named only in prose
-   * is a mention, not a use, and a mention must never grant a pass.
+   * Guards the class, not just today's three instances. Reading keys from a real
+   * role means a newly added policy field must behaviorally affect matching or
+   * this test fails.
    */
   it("enforces every dataPolicy key that a role can declare", () => {
-    const source = readFileSync(new URL("./role-match.ts", import.meta.url), "utf8");
-    const code = source
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/\/\/.*$/gm, "");
-
     const keys = Object.keys(validRole().dataPolicy);
     expect(keys.length).toBeGreaterThan(0);
 
-    const unenforced = keys.filter((key) => !code.includes(key));
-    expect(unenforced).toEqual([]);
+    const endpoint = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      approvedForProtectedData: known(false),
+      rights: {
+        ...endpointCommon().rights,
+        outputRetainedByProvider: known(true),
+      },
+    };
+
+    for (const key of keys) {
+      const outcomes = [true, false].map((value) => {
+        const role = {
+          ...validRole(),
+          dataPolicy: { ...validRole().dataPolicy, [key]: value },
+        };
+        const result = matchEndpointToRole(role, endpoint, "2026-08-30T12:00:00.000Z");
+        return {
+          verdict: result.verdict,
+          reasonCodes: result.reasons.map(({ code }) => code),
+        };
+      });
+
+      expect(outcomes[0], `${key} does not affect matching`).not.toEqual(outcomes[1]);
+    }
   });
 });
 

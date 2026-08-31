@@ -99,6 +99,41 @@ function strictObjectValue(
   }
   return result;
 }
+/**
+ * Policy/restriction subtrees are prohibitive lists: an unrecognized restriction
+ * must be rejected, not preserved. Unlike fields representing additional
+ * information (where unknown fields can forward-compatible), restrictions are
+ * active constraints. Silently dropping an unknown restriction is a security
+ * failure: it means the restriction was declared but never enforced.
+ */
+function strictPolicyValue(
+  value: unknown,
+  path: string,
+  knownFields: readonly string[],
+  issues: ValidationIssue[],
+): JsonObject | undefined {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    addIssue(issues, path, "invalid_type", "expected an object");
+    return undefined;
+  }
+  const result = value as JsonObject;
+  const known = new Set(knownFields);
+  for (const field of Object.keys(result)) {
+    if (known.has(field)) continue;
+    addIssue(
+      issues,
+      pointer(path, field),
+      "unexpected_field",
+      "unrecognised restriction field; restrictions are active constraints and an unknown restriction must not be silently dropped",
+    );
+  }
+  return result;
+}
+
 
 function requiredString(value: unknown, path: string, issues: ValidationIssue[]): value is string {
   if (value === undefined) {
@@ -880,14 +915,13 @@ function validateDataPolicy(
   value: unknown,
   path: string,
   issues: ValidationIssue[],
-  unknownFields: UnknownFields,
+  _unknownFields: UnknownFields,
 ): void {
-  const object = objectValue(
+  const object = strictPolicyValue(
     value,
     path,
     ["externalProviderAllowed", "outputRetentionAllowed", "processesProtectedData"],
     issues,
-    unknownFields,
   );
   if (!object) return;
   requiredBoolean(object.externalProviderAllowed, `${path}/externalProviderAllowed`, issues);
@@ -899,14 +933,13 @@ function validateQualityPolicy(
   value: unknown,
   path: string,
   issues: ValidationIssue[],
-  unknownFields: UnknownFields,
+  _unknownFields: UnknownFields,
 ): void {
-  const object = objectValue(
+  const object = strictPolicyValue(
     value,
     path,
     ["minimumVerifiedSuccessRate", "maximumFalseClaimRate"],
     issues,
-    unknownFields,
   );
   if (!object) return;
   validateNumberInRange(
@@ -929,14 +962,13 @@ function validateEconomicPolicy(
   value: unknown,
   path: string,
   issues: ValidationIssue[],
-  unknownFields: UnknownFields,
+  _unknownFields: UnknownFields,
 ): void {
-  const object = objectValue(
+  const object = strictPolicyValue(
     value,
     path,
     ["maximumCostPerVerifiedSuccessUsd", "maximumP95WallSeconds"],
     issues,
-    unknownFields,
   );
   if (!object) return;
   validatePositiveNumber(
@@ -945,6 +977,64 @@ function validateEconomicPolicy(
     issues,
   );
   validatePositiveNumber(object.maximumP95WallSeconds, `${path}/maximumP95WallSeconds`, issues);
+}
+
+/**
+ * RequiredCapability to ModelCapability mapping for validation.
+ * Ensures declaredCapabilities are representable in capabilityProfile.capabilities.
+ *
+ * Mapping:
+ * - structured_tool_use -> {tool_use, structured_output}
+ * - repository_editing -> {tool_use}
+ * - long_horizon_recovery -> {} (no direct model capability requirement)
+ * - evidence_citation -> {} (no direct model capability requirement)
+ * - vision -> {vision}
+ * - audio -> {audio}
+ *
+ * For RequiredCapabilities without direct ModelCapability mappings
+ * (long_horizon_recovery, evidence_citation), any capabilityProfile is acceptable
+ * as long as it's valid. These represent high-level role requirements orthogonal
+ * to the model's declared feature set.
+ */
+const REQUIRED_TO_MODEL_CAPABILITY_MAP: Record<string, readonly string[]> = {
+  structured_tool_use: ["tool_use", "structured_output"],
+  repository_editing: ["tool_use"],
+  long_horizon_recovery: [],
+  evidence_citation: [],
+  vision: ["vision"],
+  audio: ["audio"],
+};
+
+function validateDeclaredCapabilitiesAgainstProfile(
+  declaredCapabilities: unknown,
+  capabilityProfile: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (!Array.isArray(declaredCapabilities)) return; // already validated
+  if (typeof capabilityProfile !== "object" || capabilityProfile === null) return; // already validated
+
+  const profileObj = capabilityProfile as Record<string, unknown>;
+  if (!Array.isArray(profileObj.capabilities)) return; // already validated
+
+  const profileCapabilities = new Set(profileObj.capabilities as string[]);
+
+  for (const declaredCap of declaredCapabilities) {
+    if (typeof declaredCap !== "string") continue;
+    const requiredModelCaps = REQUIRED_TO_MODEL_CAPABILITY_MAP[declaredCap] || [];
+    
+    if (requiredModelCaps.length > 0) {
+      const hasAny = requiredModelCaps.some((modelCap) => profileCapabilities.has(modelCap));
+      if (!hasAny) {
+        addIssue(
+          issues,
+          `${path}/declaredCapabilities`,
+          "capability_missing",
+          `declared capability ${declaredCap} requires one of [${requiredModelCaps.join(", ")}] in capabilityProfile.capabilities`,
+        );
+      }
+    }
+  }
 }
 
 import type { ModelRoleSpec } from "./role.ts";
@@ -1100,6 +1190,18 @@ function validateFrontierApiEndpoint(
     `${path}/declaredCapabilities`,
     issues,
   );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
+    issues,
+  );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
+    issues,
+  );
   validateCredentialsObject(object.credentials, `${path}/credentials`, issues);
   validateEndpointRights(object.rights, `${path}/rights`, issues, unknownFields);
   validateExplicitValue(object.inferenceIsExternal, `${path}/inferenceIsExternal`, issues, unknownFields, (known, knownPath) => {
@@ -1160,6 +1262,18 @@ function validateDigestIdentifiedEndpoint(
     object.declaredCapabilities,
     REQUIRED_CAPABILITIES,
     `${path}/declaredCapabilities`,
+    issues,
+  );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
+    issues,
+  );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
     issues,
   );
   validateCredentialsObject(object.credentials, `${path}/credentials`, issues);
