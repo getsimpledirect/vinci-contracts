@@ -1603,7 +1603,9 @@ describe("review independence", () => {
       weightsDigest: { kind: "known", value: "weights-sha256-different" },
     };
 
-    expect((producer.weightsDigest as any).value).not.toBe((reviewer.weightsDigest as any).value);
+    const pVal = (producer.weightsDigest as Record<string, unknown>).value;
+    const rVal = (reviewer.weightsDigest as Record<string, unknown>).value;
+    expect(pVal).not.toBe(rVal);
     expect(violatesIndependence(producer, reviewer)).toBe(false);
   });
 });

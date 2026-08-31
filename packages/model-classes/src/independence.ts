@@ -61,7 +61,7 @@ function unreachableSourceClass(value: never): never {
   throw new Error(`unclassified endpoint source: ${String(value)}`);
 }
 
-function unreachableServingKind(value: never): never {
+function _unreachableServingKind(value: never): never {
   throw new Error(`unclassified endpoint serving kind: ${String(value)}`);
 }
 
