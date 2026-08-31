@@ -1,6 +1,15 @@
-import type { Timestamp } from "@getsimpledirect/vinci-contracts";
+import {
+  isCanonicalTimestamp,
+  isIdentifier,
+  type Timestamp,
+} from "@getsimpledirect/vinci-contracts";
 import type { ModelEndpointSpec } from "./endpoint.ts";
-import type { ModelRoleSpec, RequiredCapability } from "./role.ts";
+import {
+  REQUIRED_CAPABILITIES,
+  ROLE_RISK_CLASSES,
+  type ModelRoleSpec,
+  type RequiredCapability,
+} from "./role.ts";
 
 export const MATCH_VERDICTS = ["eligible", "ineligible", "unevaluable"] as const;
 export type MatchVerdict = (typeof MATCH_VERDICTS)[number];
@@ -38,25 +47,55 @@ type ClassifiedReason = MatchReason & { readonly hardNo: boolean };
 type ExplicitBooleanSnapshot = {
   readonly kind: unknown;
   readonly value: unknown;
+  readonly hasValue: boolean;
 };
 
 type ValidExplicitBooleanSnapshot =
-  | { readonly kind: "unknown"; readonly value: unknown }
-  | { readonly kind: "known"; readonly value: boolean };
+  | { readonly kind: "unknown"; readonly value: undefined; readonly hasValue: false }
+  | { readonly kind: "known"; readonly value: boolean; readonly hasValue: true };
+
+/** More than this many declarations is hostile input, not a useful role. */
+const MAX_CAPABILITY_DECLARATIONS = 100;
 
 /** Snapshot a hostile-reachable ExplicitValue exactly once. */
 function snapshotExplicitBoolean(value: unknown): ExplicitBooleanSnapshot | null {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  return { kind: record.kind, value: record.value };
+  return {
+    kind: record.kind,
+    value: record.value,
+    hasValue: Object.prototype.hasOwnProperty.call(record, "value"),
+  };
 }
 
 function isExplicitBoolean(
   snapshot: ExplicitBooleanSnapshot | null,
 ): snapshot is ValidExplicitBooleanSnapshot {
   return snapshot !== null &&
-    (snapshot.kind === "unknown" ||
-      (snapshot.kind === "known" && typeof snapshot.value === "boolean"));
+    ((snapshot.kind === "unknown" && snapshot.value === undefined && !snapshot.hasValue) ||
+      (snapshot.kind === "known" && typeof snapshot.value === "boolean" && snapshot.hasValue));
+}
+
+/** Snapshot and validate a hostile-reachable capability array without using its iterator. */
+function snapshotCapabilities(value: unknown): readonly RequiredCapability[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const length = value.length;
+  if (!Number.isSafeInteger(length) || length < 0 || length > MAX_CAPABILITY_DECLARATIONS) {
+    return undefined;
+  }
+
+  const snapshot: RequiredCapability[] = [];
+  for (let index = 0; index < length; index += 1) {
+    const capability = value[index];
+    if (
+      typeof capability !== "string" ||
+      !REQUIRED_CAPABILITIES.includes(capability as RequiredCapability)
+    ) {
+      return undefined;
+    }
+    snapshot.push(capability as RequiredCapability);
+  }
+  return snapshot;
 }
 
 function missingCapability(capability: RequiredCapability): ClassifiedReason {
@@ -139,30 +178,20 @@ export function matchEndpointToRole(
     const validFrom = (endpoint as Record<string, unknown>).validFrom;
 
     // Validate roleId and endpointId are strings
-    if (typeof roleId !== "string" || typeof endpointId !== "string") {
+    if (!isIdentifier(roleId) || !isIdentifier(endpointId)) {
       return {
         verdict: "unevaluable",
-        roleId: typeof roleId === "string" ? roleId : "unknown",
-        endpointId: typeof endpointId === "string" ? endpointId : "unknown",
+        roleId: isIdentifier(roleId) ? roleId : "unknown",
+        endpointId: isIdentifier(endpointId) ? endpointId : "unknown",
         reasons: [
-          { code: "input_not_evaluable", detail: "roleId and endpointId must be strings" },
+          { code: "input_not_evaluable", detail: "roleId and endpointId must be identifiers" },
         ],
       };
     }
 
     // Validate role structure
-    if (!Array.isArray(requiredCapabilities)) {
-      return {
-        verdict: "unevaluable",
-        roleId,
-        endpointId,
-        reasons: [
-          { code: "input_not_evaluable", detail: "role.requiredCapabilities is not an array" },
-        ],
-      };
-    }
-
-    if (typeof minimumContextTokens !== "number" || !Number.isFinite(minimumContextTokens)) {
+    const requiredCapabilitySnapshot = snapshotCapabilities(requiredCapabilities);
+    if (requiredCapabilitySnapshot === undefined) {
       return {
         verdict: "unevaluable",
         roleId,
@@ -170,18 +199,39 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "role.minimumContextTokens is not a finite number",
+            detail: "role.requiredCapabilities is not a bounded array of known capabilities",
           },
         ],
       };
     }
 
-    if (typeof riskClass !== "string") {
+    if (
+      typeof minimumContextTokens !== "number" ||
+      !Number.isSafeInteger(minimumContextTokens) ||
+      minimumContextTokens <= 0
+    ) {
       return {
         verdict: "unevaluable",
         roleId,
         endpointId,
-        reasons: [{ code: "input_not_evaluable", detail: "role.riskClass is not a string" }],
+        reasons: [
+          {
+            code: "input_not_evaluable",
+            detail: "role.minimumContextTokens is not a positive safe integer",
+          },
+        ],
+      };
+    }
+
+    if (
+      typeof riskClass !== "string" ||
+      !ROLE_RISK_CLASSES.includes(riskClass as (typeof ROLE_RISK_CLASSES)[number])
+    ) {
+      return {
+        verdict: "unevaluable",
+        roleId,
+        endpointId,
+        reasons: [{ code: "input_not_evaluable", detail: "role.riskClass is not recognized" }],
       };
     }
 
@@ -217,7 +267,8 @@ export function matchEndpointToRole(
     }
 
     // Validate endpoint structure
-    if (!Array.isArray(declaredCapabilities)) {
+    const declaredCapabilitySnapshot = snapshotCapabilities(declaredCapabilities);
+    if (declaredCapabilitySnapshot === undefined) {
       return {
         verdict: "unevaluable",
         roleId,
@@ -225,7 +276,7 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "endpoint.declaredCapabilities is not an array",
+            detail: "endpoint.declaredCapabilities is not a bounded array of known capabilities",
           },
         ],
       };
@@ -249,7 +300,8 @@ export function matchEndpointToRole(
     const contextLimit = capProfileObj.contextLimit;
     if (
       typeof contextLimit !== "number" ||
-      !Number.isFinite(contextLimit)
+      !Number.isSafeInteger(contextLimit) ||
+      contextLimit <= 0
     ) {
       return {
         verdict: "unevaluable",
@@ -258,7 +310,7 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "endpoint.capabilityProfile.contextLimit is not a finite number",
+            detail: "endpoint.capabilityProfile.contextLimit is not a positive safe integer",
           },
         ],
       };
@@ -333,18 +385,18 @@ export function matchEndpointToRole(
     const outputRetainedByProvider = rights.outputRetainedByProvider as ValidExplicitBooleanSnapshot;
 
     // Validate timestamps
-    if (typeof validFrom !== "string") {
+    if (!isCanonicalTimestamp(validFrom)) {
       return {
         verdict: "unevaluable",
         roleId,
         endpointId,
         reasons: [
-          { code: "input_not_evaluable", detail: "endpoint.validFrom is not a string" },
+          { code: "input_not_evaluable", detail: "endpoint.validFrom is not canonical" },
         ],
       };
     }
 
-    if (expiresAt !== null && typeof expiresAt !== "string") {
+    if (expiresAt !== null && !isCanonicalTimestamp(expiresAt)) {
       return {
         verdict: "unevaluable",
         roleId,
@@ -352,18 +404,27 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "endpoint.expiresAt must be a string or null",
+            detail: "endpoint.expiresAt must be a canonical timestamp or null",
           },
         ],
       };
     }
 
-    // All validations passed; proceed with existing logic using cast-validated types
-    const classified: ClassifiedReason[] = [];
-    const declared = new Set(declaredCapabilities as string[]);
+    if (!isCanonicalTimestamp(now)) {
+      return {
+        verdict: "unevaluable",
+        roleId,
+        endpointId,
+        reasons: [{ code: "input_not_evaluable", detail: "now is not a canonical timestamp" }],
+      };
+    }
 
-    for (const capability of requiredCapabilities as string[]) {
-      if (!declared.has(capability)) classified.push(missingCapability(capability as RequiredCapability));
+    // All validations passed; proceed with the snapshotted values.
+    const classified: ClassifiedReason[] = [];
+    const declared = new Set(declaredCapabilitySnapshot);
+
+    for (const capability of requiredCapabilitySnapshot) {
+      if (!declared.has(capability)) classified.push(missingCapability(capability));
     }
 
     if (

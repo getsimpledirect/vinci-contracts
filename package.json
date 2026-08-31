@@ -17,7 +17,8 @@
     "gate": "node scripts/gate.mjs",
     "check:pack": "node scripts/check-consumer-install.mjs",
     "check:unconsumed": "node scripts/check-unconsumed-exports.mjs",
-    "test:vectors": "python3 -B -m unittest discover -s packages/work-orders/python"
+    "test:vectors": "python3 -B -m unittest discover -s packages/work-orders/python",
+    "report:rights": "node scripts/report-rights-gaps.mjs"
   },
   "devDependencies": {
     "@types/node": "22.20.1",

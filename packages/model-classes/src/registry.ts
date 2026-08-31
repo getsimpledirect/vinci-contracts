@@ -12,6 +12,7 @@ import type {
   OpenWeightEndpoint,
   ModelEndpointSpec,
 } from "./endpoint.ts";
+import { deepFreeze } from "./deep-freeze.ts";
 
 /**
  * Bedrock — Vinci's general frontier-model lane through AWS Bedrock.
@@ -24,6 +25,8 @@ const bedrockEndpoint: FrontierApiEndpoint = {
   provider: "aws-bedrock",
   model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
   modelRevision: { kind: "unknown" },
+  // Bedrock is a multi-model gateway, so the served artifact is unknown.
+  servedArtifact: { kind: "unknown" },
   capabilityProfile: {
     capabilities: ["text", "tool_use"],
     contextLimit: 200_000,
@@ -69,6 +72,8 @@ const openrouterEndpoint: FrontierApiEndpoint = {
   provider: "openrouter",
   model: "openai/gpt-4o",
   modelRevision: { kind: "unknown" },
+  // OpenRouter is a multi-model gateway, so the served artifact is unknown.
+  servedArtifact: { kind: "unknown" },
   capabilityProfile: {
     capabilities: ["text", "tool_use", "vision"],
     contextLimit: 128_000,
@@ -159,11 +164,11 @@ const podEndpoint: OpenWeightEndpoint = {
  * Each endpoint declares the facts we know with certainty; `unknown` marks
  * what we have not yet verified.
  */
-export const VINCI_ENDPOINTS = [
+export const VINCI_ENDPOINTS = deepFreeze([
   bedrockEndpoint,
   openrouterEndpoint,
   podEndpoint,
-] as const satisfies readonly ModelEndpointSpec[];
+] as const satisfies readonly ModelEndpointSpec[]);
 
 /**
  * Look up an endpoint by its id.

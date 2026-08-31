@@ -1176,6 +1176,7 @@ function validateFrontierApiEndpoint(
       "model",
       "modelRevision",
       "jurisdiction",
+      "servedArtifact",
     ],
     issues,
     unknownFields,
@@ -1222,6 +1223,40 @@ function validateFrontierApiEndpoint(
     requiredString(known, knownPath, issues);
   });
   validateExplicitLocation(object.jurisdiction, `${path}/jurisdiction`, issues, unknownFields);
+  validateExplicitValue(
+    object.servedArtifact,
+    `${path}/servedArtifact`,
+    issues,
+    unknownFields,
+    (known, knownPath) => {
+      const artifact = objectValue(
+        known,
+        knownPath,
+        ["kind", "value"],
+        issues,
+        unknownFields,
+      );
+      if (!artifact) return;
+      if (
+        !enumValue(
+          artifact.kind,
+          ["digest", "proprietary"] as const,
+          `${knownPath}/kind`,
+          issues,
+        )
+      ) return;
+      if (artifact.kind === "digest") {
+        requiredString(artifact.value, `${knownPath}/value`, issues);
+      } else if (Object.hasOwn(artifact, "value")) {
+        addIssue(
+          issues,
+          `${knownPath}/value`,
+          "unexpected_field",
+          "a proprietary artifact does not carry a digest value",
+        );
+      }
+    },
+  );
 }
 
 function validateDigestIdentifiedEndpoint(
@@ -1250,6 +1285,7 @@ function validateDigestIdentifiedEndpoint(
       "architectureDigest",
       "servingImageDigest",
       "quantizationDigest",
+      "servedArtifact",
     ],
     issues,
     unknownFields,
@@ -1377,6 +1413,7 @@ export function validateModelEndpointSpec(input: unknown): ValidationResult<Mode
       "architectureDigest",
       "servingImageDigest",
       "quantizationDigest",
+      "servedArtifact",
     ],
     issues,
     unknownFields,
@@ -1405,7 +1442,13 @@ export function validateModelEndpointSpec(input: unknown): ValidationResult<Mode
     }
     validateFrontierApiEndpoint(input, "", issues, unknownFields);
   } else {
-    for (const field of ["provider", "model", "modelRevision", "jurisdiction"]) {
+    for (const field of [
+      "provider",
+      "model",
+      "modelRevision",
+      "jurisdiction",
+      "servedArtifact",
+    ]) {
       rejectPresentField(
         object,
         field,

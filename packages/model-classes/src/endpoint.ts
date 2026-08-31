@@ -48,8 +48,9 @@ type ModelEndpointCommon = {
 };
 
 /**
- * `frontier_api` identity is OBSERVATIONAL only; never treat it as equally
- * strong as the cryptographic digests carried by locally identified endpoints.
+ * A `frontier_api` provider/model identity is observational only. Its separate
+ * served-artifact declaration supplies the evidence used across identity
+ * schemes.
  */
 export type FrontierApiEndpoint = ModelEndpointCommon & {
   readonly sourceClass: "frontier_api";
@@ -57,6 +58,10 @@ export type FrontierApiEndpoint = ModelEndpointCommon & {
   readonly model: ModelIdentifier;
   readonly modelRevision: ExplicitValue<string>;
   readonly jurisdiction: ExplicitValue<ProcessingLocation>;
+  readonly servedArtifact: ExplicitValue<
+    | { readonly kind: "digest"; readonly value: string }
+    | { readonly kind: "proprietary" }
+  >;
 };
 
 type DigestIdentifiedEndpoint = ModelEndpointCommon & {
