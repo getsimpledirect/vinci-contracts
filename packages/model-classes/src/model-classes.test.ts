@@ -1417,6 +1417,19 @@ describe("review independence", () => {
     )).toBe(true);
   });
 
+  it("fails closed for a future source class until its identity scheme is classified", () => {
+    const future = {
+      ...validLocalEndpoint("open_weight"),
+      endpointId: "future-endpoint",
+      sourceClass: "future_source_class",
+      weightsDigest: "weights-sha256-different",
+    };
+    const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
+
+    expect(future.weightsDigest).not.toBe(local.weightsDigest);
+    expect(violatesIndependence(future as never, local)).toBe(true);
+  });
+
   it("rejects frontier endpoints with the same provider and model", () => {
     const producer = { ...validFrontierEndpoint(), endpointId: "producer-frontier" };
     const reviewer = { ...validFrontierEndpoint(), endpointId: "reviewer-frontier" };

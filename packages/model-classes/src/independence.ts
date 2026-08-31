@@ -1,5 +1,5 @@
 import { isIdentifier } from "@getsimpledirect/vinci-contracts";
-import type { ModelEndpointSpec } from "./endpoint.ts";
+import type { EndpointSourceClass, ModelEndpointSpec } from "./endpoint.ts";
 
 /**
  * Report whether a reviewer shares an endpoint identity with the producer.
@@ -24,33 +24,53 @@ import type { ModelEndpointSpec } from "./endpoint.ts";
  */
 type EndpointIdentity = {
   readonly endpointId: unknown;
-  readonly sourceClass: unknown;
+  readonly sourceClass: EndpointSourceClass;
   readonly provider: unknown;
   readonly model: unknown;
   readonly weightsDigest: unknown;
 };
 
+type IdentityScheme = "frontier" | "digest";
+
+function isEndpointSourceClass(value: unknown): value is EndpointSourceClass {
+  return value === "frontier_api" || value === "open_weight" || value === "vinci_pretrained";
+}
+
+function unreachableSourceClass(value: never): never {
+  throw new Error(`unclassified endpoint source: ${String(value)}`);
+}
+
+/** Adding a source class must make an explicit, compile-checked identity decision. */
+function identityScheme(sourceClass: EndpointSourceClass): IdentityScheme {
+  switch (sourceClass) {
+    case "frontier_api":
+      return "frontier";
+    case "open_weight":
+    case "vinci_pretrained":
+      return "digest";
+    default:
+      return unreachableSourceClass(sourceClass);
+  }
+}
+
 function snapshotIdentity(value: unknown): EndpointIdentity | undefined {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
   const record = value as Record<string, unknown>;
+  const sourceClass = record["sourceClass"];
+  if (!isEndpointSourceClass(sourceClass)) return undefined;
   const snapshot: EndpointIdentity = {
     endpointId: record["endpointId"],
-    sourceClass: record["sourceClass"],
+    sourceClass,
     provider: record["provider"],
     model: record["model"],
     weightsDigest: record["weightsDigest"],
   };
   if (!isIdentifier(snapshot.endpointId)) return undefined;
-  if (
-    snapshot.sourceClass !== "frontier_api" &&
-    snapshot.sourceClass !== "open_weight" &&
-    snapshot.sourceClass !== "vinci_pretrained"
-  ) return undefined;
   return snapshot;
 }
 
 function hasLegibleArtifactIdentity(identity: EndpointIdentity): boolean {
-  if (identity.sourceClass === "frontier_api") {
+  if (identityScheme(identity.sourceClass) === "frontier") {
     return typeof identity.provider === "string" && identity.provider.length > 0 &&
       typeof identity.model === "string" && identity.model.length > 0;
   }
@@ -76,8 +96,8 @@ export function violatesIndependence(
     // digest-identified identity scheme. The class labels may differ while the
     // weights are byte-identical, so compare their digests before considering
     // a differing source class independent.
-    const pIsDigestIdentified = p.sourceClass !== "frontier_api";
-    const rIsDigestIdentified = r.sourceClass !== "frontier_api";
+    const pIsDigestIdentified = identityScheme(p.sourceClass) === "digest";
+    const rIsDigestIdentified = identityScheme(r.sourceClass) === "digest";
     if (pIsDigestIdentified && rIsDigestIdentified) {
       return p.weightsDigest === r.weightsDigest;
     }
@@ -87,7 +107,7 @@ export function violatesIndependence(
     // legible above, so the comparison cannot be changed by a hostile getter.
     if (p.sourceClass !== r.sourceClass) return false;
 
-    if (p.sourceClass === "frontier_api") {
+    if (identityScheme(p.sourceClass) === "frontier") {
       // Weaker than a digest by construction: a provider may serve changed
       // weights behind an unchanged model name, so equality is a LOWER BOUND on
       // sameness and inequality does not prove independence. Until the contract
