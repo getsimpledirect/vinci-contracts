@@ -1,6 +1,6 @@
 {
   "name": "@getsimpledirect/vinci-remote-protocol",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,11 +24,11 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@getsimpledirect/vinci-approvals": "0.2.0",
-    "@getsimpledirect/vinci-contracts": "0.2.0",
-    "@getsimpledirect/vinci-device-auth": "0.2.0",
-    "@getsimpledirect/vinci-policy": "0.2.0",
-    "@getsimpledirect/vinci-run-events": "0.2.0"
+    "@getsimpledirect/vinci-approvals": "0.3.0",
+    "@getsimpledirect/vinci-contracts": "0.3.0",
+    "@getsimpledirect/vinci-device-auth": "0.3.0",
+    "@getsimpledirect/vinci-policy": "0.3.0",
+    "@getsimpledirect/vinci-run-events": "0.3.0"
   },
   "devDependencies": {
     "typescript": "5.9.3"
