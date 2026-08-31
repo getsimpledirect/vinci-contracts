@@ -885,14 +885,14 @@ function validateDataPolicy(
   const object = objectValue(
     value,
     path,
-    ["externalProviderAllowed", "outputRetentionAllowed", "protectedDataAllowed"],
+    ["externalProviderAllowed", "outputRetentionAllowed", "processesProtectedData"],
     issues,
     unknownFields,
   );
   if (!object) return;
   requiredBoolean(object.externalProviderAllowed, `${path}/externalProviderAllowed`, issues);
   requiredBoolean(object.outputRetentionAllowed, `${path}/outputRetentionAllowed`, issues);
-  requiredBoolean(object.protectedDataAllowed, `${path}/protectedDataAllowed`, issues);
+  requiredBoolean(object.processesProtectedData, `${path}/processesProtectedData`, issues);
 }
 
 function validateQualityPolicy(
@@ -1078,6 +1078,7 @@ function validateFrontierApiEndpoint(
       "declaredCapabilities",
       "credentials",
       "inferenceIsExternal",
+      "approvedForProtectedData",
       "rights",
       "validFrom",
       "expiresAt",
@@ -1104,11 +1105,14 @@ function validateFrontierApiEndpoint(
   validateExplicitValue(object.inferenceIsExternal, `${path}/inferenceIsExternal`, issues, unknownFields, (known, knownPath) => {
     requiredBoolean(known, knownPath, issues);
   });
+  validateExplicitValue(object.approvedForProtectedData, `${path}/approvedForProtectedData`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
   timestamp(object.validFrom, `${path}/validFrom`, issues);
-  if (object.expiresAt !== undefined && object.expiresAt !== null) {
-    timestamp(object.expiresAt, `${path}/expiresAt`, issues);
-  } else if (object.expiresAt !== undefined && object.expiresAt !== null) {
-    addIssue(issues, `${path}/expiresAt`, "invalid_type", "expected a timestamp or null");
+  if (object.expiresAt === undefined) {
+    addIssue(issues, `${path}/expiresAt`, "required_field", "expiresAt is required");
+  } else if (object.expiresAt !== null && !isCanonicalTimestamp(object.expiresAt)) {
+    addIssue(issues, `${path}/expiresAt`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
   }
   requiredString(object.provider, `${path}/provider`, issues);
   requiredString(object.model, `${path}/model`, issues);
@@ -1135,6 +1139,7 @@ function validateDigestIdentifiedEndpoint(
       "declaredCapabilities",
       "credentials",
       "inferenceIsExternal",
+      "approvedForProtectedData",
       "rights",
       "validFrom",
       "expiresAt",
@@ -1162,11 +1167,14 @@ function validateDigestIdentifiedEndpoint(
   validateExplicitValue(object.inferenceIsExternal, `${path}/inferenceIsExternal`, issues, unknownFields, (known, knownPath) => {
     requiredBoolean(known, knownPath, issues);
   });
+  validateExplicitValue(object.approvedForProtectedData, `${path}/approvedForProtectedData`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
   timestamp(object.validFrom, `${path}/validFrom`, issues);
-  if (object.expiresAt !== undefined && object.expiresAt !== null) {
-    timestamp(object.expiresAt, `${path}/expiresAt`, issues);
-  } else if (object.expiresAt !== undefined && object.expiresAt !== null) {
-    addIssue(issues, `${path}/expiresAt`, "invalid_type", "expected a timestamp or null");
+  if (object.expiresAt === undefined) {
+    addIssue(issues, `${path}/expiresAt`, "required_field", "expiresAt is required");
+  } else if (object.expiresAt !== null && !isCanonicalTimestamp(object.expiresAt)) {
+    addIssue(issues, `${path}/expiresAt`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
   }
   identifier(object.weightsDigest, `${path}/weightsDigest`, issues);
   identifier(object.tokenizerDigest, `${path}/tokenizerDigest`, issues);
@@ -1242,6 +1250,7 @@ export function validateModelEndpointSpec(input: unknown): ValidationResult<Mode
       "declaredCapabilities",
       "credentials",
       "inferenceIsExternal",
+      "approvedForProtectedData",
       "rights",
       "validFrom",
       "expiresAt",
@@ -1265,8 +1274,32 @@ export function validateModelEndpointSpec(input: unknown): ValidationResult<Mode
   }
 
   if (object.sourceClass === "frontier_api") {
+    for (const field of [
+      "weightsDigest",
+      "tokenizerDigest",
+      "architectureDigest",
+      "servingImageDigest",
+      "quantizationDigest",
+    ]) {
+      rejectPresentField(
+        object,
+        field,
+        "",
+        issues,
+        "frontier_api endpoints do not carry local identity digests",
+      );
+    }
     validateFrontierApiEndpoint(input, "", issues, unknownFields);
   } else {
+    for (const field of ["provider", "model", "modelRevision", "jurisdiction"]) {
+      rejectPresentField(
+        object,
+        field,
+        "",
+        issues,
+        "digest-identified endpoints do not carry frontier provider fields",
+      );
+    }
     validateDigestIdentifiedEndpoint(input, "", issues, unknownFields);
   }
 

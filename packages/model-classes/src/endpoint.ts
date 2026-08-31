@@ -40,6 +40,8 @@ type ModelEndpointCommon = {
    * permission.
    */
   readonly inferenceIsExternal: ExplicitValue<boolean>;
+  /** Has this endpoint been approved to process protected data? */
+  readonly approvedForProtectedData: ExplicitValue<boolean>;
   readonly rights: EndpointRights;
   readonly validFrom: Timestamp;
   readonly expiresAt: Timestamp | null;

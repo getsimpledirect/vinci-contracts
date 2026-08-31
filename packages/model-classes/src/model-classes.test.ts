@@ -1,4 +1,5 @@
 import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   CUSTOMER_ENDPOINT_SCHEMA_META,
@@ -131,7 +132,7 @@ const validRole = () => ({
   dataPolicy: {
     externalProviderAllowed: true,
     outputRetentionAllowed: false,
-    protectedDataAllowed: false,
+    processesProtectedData: false,
   },
   qualityPolicy: {
     minimumVerifiedSuccessRate: 0.9,
@@ -157,6 +158,7 @@ const endpointCommon = () => ({
     source: { kind: "managed-credential", credentialId: "credential-1" },
   },
   inferenceIsExternal: known(true),
+  approvedForProtectedData: known(true),
   rights: {
     trainingAllowed: known(true),
     evaluationAllowed: known(true),
@@ -242,6 +244,30 @@ describe("model role and endpoint ABI validation", () => {
     });
 
     expectIssue(result, "/credentials/label", "credential_material_forbidden");
+  });
+
+  it("requires expiresAt on every validated endpoint", () => {
+    const { expiresAt: _missing, ...endpoint } = validFrontierEndpoint();
+    expectIssue(validateModelEndpointSpec(endpoint), "/expiresAt", "required_field");
+  });
+
+  it("rejects digest identity fields on a frontier_api endpoint", () => {
+    expectIssue(
+      validateModelEndpointSpec({
+        ...validFrontierEndpoint(),
+        weightsDigest: "weights-sha256-abc",
+      }),
+      "/weightsDigest",
+      "unexpected_field",
+    );
+  });
+
+  it("rejects frontier provider fields on a digest-identified endpoint", () => {
+    expectIssue(
+      validateModelEndpointSpec({ ...validLocalEndpoint("open_weight"), provider: "openai" }),
+      "/provider",
+      "unexpected_field",
+    );
   });
 });
 
@@ -392,6 +418,74 @@ describe("model role endpoint matching", () => {
     expect(expired.reasons.map(({ code }) => code)).toEqual(["endpoint_expired"]);
     expect(noExpiry.verdict).toBe("eligible");
     expect(noExpiry.reasons).toEqual([]);
+  });
+
+  it("is unevaluable when a protected-data role meets an undeclared approval", () => {
+    const role = {
+      ...validRole(),
+      dataPolicy: { ...validRole().dataPolicy, processesProtectedData: true },
+    };
+    const endpoint = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      approvedForProtectedData: { kind: "unknown" as const },
+    };
+
+    const result = matchEndpointToRole(role, endpoint, now);
+    expect(result.verdict).toBe("unevaluable");
+    expect(result.reasons).toEqual([
+      {
+        code: "protected_data_approval_undeclared",
+        detail: "endpoint did not declare whether it may process protected data",
+      },
+    ]);
+  });
+
+  it("is ineligible when a protected-data role meets an endpoint not approved for protected data", () => {
+    const role = {
+      ...validRole(),
+      dataPolicy: { ...validRole().dataPolicy, processesProtectedData: true },
+    };
+    const endpoint = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      approvedForProtectedData: known(false),
+    };
+
+    const result = matchEndpointToRole(role, endpoint, now);
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons).toEqual([
+      {
+        code: "protected_data_not_approved",
+        detail: "endpoint is not approved to process protected data",
+      },
+    ]);
+  });
+
+  it("imposes no protected-data constraint when the role does not process protected data", () => {
+    const role = {
+      ...validRole(),
+      dataPolicy: { ...validRole().dataPolicy, processesProtectedData: false },
+    };
+    const endpoint = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      approvedForProtectedData: known(false),
+    };
+
+    const result = matchEndpointToRole(role, endpoint, now);
+    expect(result.verdict).toBe("eligible");
+    expect(result.reasons).toEqual([]);
+  });
+
+  it("emits evaluation_rights_required (not training_rights_required) for a forbidden evaluation right", () => {
+    const endpoint = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      rights: { ...endpointCommon().rights, evaluationAllowed: known(false) },
+    };
+    const role = { ...validRole(), riskClass: "high" };
+
+    const result = matchEndpointToRole(role, endpoint, now);
+    const codes = result.reasons.map(({ code }) => code);
+    expect(codes).toContain("evaluation_rights_required");
+    expect(codes).not.toContain("training_rights_required");
   });
 });
 
@@ -733,5 +827,29 @@ describe("branded identifiers use the constructor rule in model-class records", 
       expect(rejected.issues).toContainEqual(expect.objectContaining({ path, code: "invalid_identifier" }));
     }
     expect(validate(good).ok).toBe(true);
+  });
+});
+
+describe("role-match guards", () => {
+  /**
+   * Guards the CLASS, not three instances of it. A hard-coded list of key names
+   * would pass forever after someone adds a fourth dataPolicy field and forgets
+   * to enforce it — which is the defect this test exists to catch. The keys are
+   * therefore read off a real ModelRoleSpec at runtime.
+   *
+   * Comments are stripped before the search because a key named only in prose
+   * is a mention, not a use, and a mention must never grant a pass.
+   */
+  it("enforces every dataPolicy key that a role can declare", () => {
+    const source = readFileSync(new URL("./role-match.ts", import.meta.url), "utf8");
+    const code = source
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/\/\/.*$/gm, "");
+
+    const keys = Object.keys(validRole().dataPolicy);
+    expect(keys.length).toBeGreaterThan(0);
+
+    const unenforced = keys.filter((key) => !code.includes(key));
+    expect(unenforced).toEqual([]);
   });
 });

@@ -14,7 +14,8 @@ export type RequiredCapability = (typeof REQUIRED_CAPABILITIES)[number];
 export type ModelRoleDataPolicy = {
   readonly externalProviderAllowed: boolean;
   readonly outputRetentionAllowed: boolean;
-  readonly protectedDataAllowed: boolean;
+  /** Does this role's work involve protected data? */
+  readonly processesProtectedData: boolean;
 };
 
 export type ModelRoleQualityPolicy = {
@@ -38,7 +39,9 @@ export type ModelRoleSpec = {
   readonly minimumContextTokens: number;
   readonly riskClass: RoleRiskClass;
   readonly dataPolicy: ModelRoleDataPolicy;
+  /** Ranking thresholds for router selection; not eligibility preconditions evaluated by matchEndpointToRole. */
   readonly qualityPolicy: ModelRoleQualityPolicy;
+  /** Ranking thresholds for router selection; not eligibility preconditions evaluated by matchEndpointToRole. */
   readonly economicPolicy: ModelRoleEconomicPolicy;
   readonly fallbackRoleIds: readonly string[];
 };

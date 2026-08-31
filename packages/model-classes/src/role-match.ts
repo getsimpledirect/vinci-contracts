@@ -12,10 +12,13 @@ export type MatchReasonCode =
   | "external_provider_undeclared"
   | "retention_forbidden"
   | "training_rights_required"
+  | "evaluation_rights_required"
   | "endpoint_expired"
   | "endpoint_not_yet_valid"
   | "rights_undeclared"
-  | "retention_undeclared";
+  | "retention_undeclared"
+  | "protected_data_not_approved"
+  | "protected_data_approval_undeclared";
 
 export type MatchReason = {
   readonly code: MatchReasonCode;
@@ -40,8 +43,9 @@ function missingCapability(capability: RequiredCapability): ClassifiedReason {
 }
 
 /**
- * Applies policy as three-valued logic. Unknown declarations never become an
- * implicit yes, and any hard no outranks otherwise unevaluable conditions.
+ * qualityPolicy and economicPolicy are ranking thresholds applied by a router
+ * against measured performance, not eligibility preconditions, and are
+ * deliberately not read here.
  */
 export function matchEndpointToRole(
   role: ModelRoleSpec,
@@ -97,6 +101,23 @@ export function matchEndpointToRole(
     }
   }
 
+  if (role.dataPolicy.processesProtectedData) {
+    const approval = endpoint.approvedForProtectedData;
+    if (approval.kind === "unknown") {
+      classified.push({
+        code: "protected_data_approval_undeclared",
+        detail: "endpoint did not declare whether it may process protected data",
+        hardNo: false,
+      });
+    } else if (!approval.value) {
+      classified.push({
+        code: "protected_data_not_approved",
+        detail: "endpoint is not approved to process protected data",
+        hardNo: true,
+      });
+    }
+  }
+
   if (role.riskClass === "high") {
     for (const [rightName, right] of [
       ["trainingAllowed", endpoint.rights.trainingAllowed],
@@ -110,7 +131,10 @@ export function matchEndpointToRole(
         });
       } else if (!right.value) {
         classified.push({
-          code: "training_rights_required",
+          code:
+            rightName === "evaluationAllowed"
+              ? "evaluation_rights_required"
+              : "training_rights_required",
           detail: `high-risk role requires ${rightName}`,
           hardNo: true,
         });
