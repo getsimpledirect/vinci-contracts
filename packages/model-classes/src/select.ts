@@ -19,12 +19,15 @@ export type Selection = {
  * winner. Unevaluable results remain separate so unknown facts cannot grant or
  * deny eligibility.
  */
-function inputNotEvaluable(roleId: string): MatchResult {
+function inputNotEvaluable(
+  roleId: string,
+  detail = "endpoint list could not be read as a bounded array",
+): MatchResult {
   return {
     verdict: "unevaluable",
     roleId,
     endpointId: "",
-    reasons: [{ code: "input_not_evaluable", detail: "endpoint list could not be read as a bounded array" }],
+    reasons: [{ code: "input_not_evaluable", detail }],
   };
 }
 
@@ -40,7 +43,7 @@ export function selectForRole(
       return {
         roleId: "unknown",
         eligible: [],
-        unevaluable: [],
+        unevaluable: [inputNotEvaluable("unknown", "role could not be read as an object")],
         ineligible: [],
       };
     }
@@ -95,7 +98,7 @@ export function selectForRole(
     return {
       roleId: "unknown",
       eligible: [],
-      unevaluable: [inputNotEvaluable("unknown")],
+      unevaluable: [inputNotEvaluable("unknown", "selection inputs could not be read")],
       ineligible: [],
     };
   }
