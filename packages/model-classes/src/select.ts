@@ -90,11 +90,12 @@ export function selectForRole(
 
     return { roleId: typeof roleId === "string" ? roleId : "unknown", eligible, unevaluable, ineligible };
   } catch {
-    // Fail closed on any unexpected error
+    // Fail loud as unevaluable on any unexpected error. Empty buckets are
+    // indistinguishable from a valid empty supply population.
     return {
       roleId: "unknown",
       eligible: [],
-      unevaluable: [],
+      unevaluable: [inputNotEvaluable("unknown")],
       ineligible: [],
     };
   }

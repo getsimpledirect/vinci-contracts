@@ -1,6 +1,7 @@
 /** Vinci's closed set of institutional model-role declarations. */
 
 import type { ModelRoleSpec } from "./role.ts";
+import { deepFreeze } from "./deep-freeze.ts";
 
 const mleImplementationWorker: ModelRoleSpec = {
   schemaVersion: 1,
@@ -116,12 +117,12 @@ const teacherTrajectoryProducer: ModelRoleSpec = {
   fallbackRoleIds: [],
 };
 
-export const VINCI_ROLES = [
+export const VINCI_ROLES = deepFreeze([
   mleImplementationWorker,
   adversarialReviewer,
   cloudWorker,
   teacherTrajectoryProducer,
-] as const satisfies readonly ModelRoleSpec[];
+] as const satisfies readonly ModelRoleSpec[]);
 
 /** Look up a Vinci model role by its stable identifier. */
 export function roleById(id: string): ModelRoleSpec | undefined {

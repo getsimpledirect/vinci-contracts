@@ -513,7 +513,8 @@ const AUTHORITY_GUARDS = [
         quantizationDigest: { kind: "unknown" }
       };
       return fn(validRole, ep, "2026-08-26T12:00:00.000Z").verdict === "eligible"
-        && fn({ ...validRole, requiredCapabilities: ["unknown-capability"] }, ep, "2026-08-26T12:00:00.000Z").verdict === "ineligible"
+        && fn({ ...validRole, requiredCapabilities: ["evidence_citation"] }, ep, "2026-08-26T12:00:00.000Z").verdict === "ineligible"
+        && fn({ ...validRole, requiredCapabilities: ["unknown-capability"] }, ep, "2026-08-26T12:00:00.000Z").verdict === "unevaluable"
         && fn({ ...validRole, requiredCapabilities: "invalid" }, ep, "2026-08-26T12:00:00.000Z").verdict === "unevaluable";
     }
   },

@@ -572,6 +572,54 @@ describe("matchEndpointToRole defensive validation", () => {
     expectInputNotEvaluable(result);
   });
 
+  it("rejects malformed decision values instead of granting eligibility", () => {
+    const endpoint = validLocalEndpoint("open_weight");
+    for (const role of [
+      { ...validRole(), riskClass: "bogus" },
+      { ...validRole(), minimumContextTokens: -1 },
+      { ...validRole(), requiredCapabilities: ["bogus"] },
+    ]) {
+      expectInputNotEvaluable(matchUnknown(role, endpoint));
+    }
+
+    for (const malformedEndpoint of [
+      { ...endpoint, declaredCapabilities: ["bogus"] },
+      { ...endpoint, capabilityProfile: { ...endpoint.capabilityProfile, contextLimit: -1 } },
+      { ...endpoint, validFrom: "not-a-timestamp" },
+      { ...endpoint, expiresAt: "not-a-timestamp" },
+    ]) {
+      expectInputNotEvaluable(matchUnknown(validRole(), malformedEndpoint));
+    }
+
+    expectInputNotEvaluable(
+      matchEndpointToRole(validRole(), endpoint, "not-a-timestamp" as never),
+    );
+  });
+
+  it("reads bounded capability arrays by index without trusting their iterator", () => {
+    const capabilities = new Proxy(["repository_editing", "evidence_citation"], {
+      get(target, property, receiver) {
+        if (property === Symbol.iterator) throw new Error("must not use caller iterator");
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const result = matchUnknown(
+      { ...validRole(), requiredCapabilities: capabilities },
+      { ...validLocalEndpoint("open_weight"), declaredCapabilities: capabilities },
+    );
+
+    expect(result.verdict).toBe("eligible");
+  });
+
+  it("rejects explicit unknown values that smuggle a value", () => {
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      inferenceIsExternal: { kind: "unknown", value: false },
+    };
+    expectInputNotEvaluable(matchUnknown(validRole(), endpoint));
+  });
+
   it("rejects a null endpoint", () => {
     const result = matchUnknown(validRole(), null);
     expectInputNotEvaluable(result);
@@ -619,6 +667,15 @@ describe("matchEndpointToRole defensive validation", () => {
       endpointId: hostileId,
     });
     expectInputNotEvaluable(result);
+  });
+
+  it("rejects malformed role and endpoint identifiers", () => {
+    expectInputNotEvaluable(
+      matchUnknown({ ...validRole(), roleId: "" }, validLocalEndpoint("open_weight")),
+    );
+    expectInputNotEvaluable(
+      matchUnknown(validRole(), { ...validLocalEndpoint("open_weight"), endpointId: "" }),
+    );
   });
 
   it("does not throw on any hostile input", () => {
@@ -1183,6 +1240,23 @@ describe("vinci role registry", () => {
     expect(new Set(ids).size).toBe(4);
     expect(roleById("not-a-vinci-role")).toBeUndefined();
   });
+
+  it("keeps both authority registries deeply immutable at runtime", () => {
+    expect(Object.isFrozen(VINCI_ROLES)).toBe(true);
+    expect(Object.isFrozen(VINCI_ROLES[0])).toBe(true);
+    expect(Object.isFrozen(VINCI_ROLES[0].dataPolicy)).toBe(true);
+    expect(Object.isFrozen(VINCI_ROLES[0].requiredCapabilities)).toBe(true);
+    expect(Object.isFrozen(VINCI_ENDPOINTS)).toBe(true);
+    expect(Object.isFrozen(VINCI_ENDPOINTS[0])).toBe(true);
+    expect(Object.isFrozen(VINCI_ENDPOINTS[0].rights)).toBe(true);
+    expect(() => {
+      (VINCI_ROLES[0] as unknown as { riskClass: string }).riskClass = "low";
+    }).toThrow(TypeError);
+    expect(() => {
+      (VINCI_ENDPOINTS[0] as unknown as { expiresAt: string }).expiresAt =
+        "2020-01-01T00:00:00.000Z";
+    }).toThrow(TypeError);
+  });
 });
 
 describe("role selection", () => {
@@ -1242,6 +1316,23 @@ describe("role selection", () => {
     }
   });
 
+  it("surfaces an endpoint-list read failure as unevaluable", () => {
+    const endpoints = new Proxy([...VINCI_ENDPOINTS], {
+      get(target, property, receiver) {
+        if (property === "0") throw new Error("hostile index getter");
+        return Reflect.get(target, property, receiver);
+      },
+    });
+
+    const selection = selectForRole(VINCI_ROLES[0], endpoints, now);
+    expect(selection.eligible).toEqual([]);
+    expect(selection.ineligible).toEqual([]);
+    expect(selection.unevaluable).toHaveLength(1);
+    expect(selection.unevaluable[0]?.reasons.map(({ code }) => code)).toEqual([
+      "input_not_evaluable",
+    ]);
+  });
+
   it("classifies OpenRouter for implementation from declared facts, not its lane id", () => {
     const role = roleById("mle-implementation-worker");
     const endpoint = endpointById("openrouter-worker");
@@ -1295,6 +1386,35 @@ describe("review independence", () => {
     expect(producer.endpointId).not.toBe(reviewer.endpointId);
     expect(producer.weightsDigest).toBe(reviewer.weightsDigest);
     expect(violatesIndependence(producer, reviewer)).toBe(true);
+  });
+
+  it("rejects the same weights across open-weight and Vinci-pretrained classes", () => {
+    const producer = { ...validLocalEndpoint("open_weight"), endpointId: "producer-local" };
+    const reviewer = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      endpointId: "reviewer-local",
+    };
+
+    expect(producer.weightsDigest).toBe(reviewer.weightsDigest);
+    expect(violatesIndependence(producer, reviewer)).toBe(true);
+  });
+
+  it("fails closed before comparing source classes when either artifact identity is malformed", () => {
+    const local = {
+      ...validLocalEndpoint("open_weight"),
+      endpointId: "producer-local",
+      weightsDigest: "",
+    };
+    const frontier = {
+      ...validFrontierEndpoint(),
+      endpointId: "reviewer-frontier",
+    };
+
+    expect(violatesIndependence(local, frontier)).toBe(true);
+    expect(violatesIndependence(
+      { ...validFrontierEndpoint(), endpointId: "producer-frontier", provider: "" },
+      { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" },
+    )).toBe(true);
   });
 
   it("rejects frontier endpoints with the same provider and model", () => {

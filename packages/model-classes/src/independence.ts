@@ -1,3 +1,4 @@
+import { isIdentifier } from "@getsimpledirect/vinci-contracts";
 import type { ModelEndpointSpec } from "./endpoint.ts";
 
 /**
@@ -39,13 +40,21 @@ function snapshotIdentity(value: unknown): EndpointIdentity | undefined {
     model: record["model"],
     weightsDigest: record["weightsDigest"],
   };
-  if (typeof snapshot.endpointId !== "string" || snapshot.endpointId.length === 0) return undefined;
+  if (!isIdentifier(snapshot.endpointId)) return undefined;
   if (
     snapshot.sourceClass !== "frontier_api" &&
     snapshot.sourceClass !== "open_weight" &&
     snapshot.sourceClass !== "vinci_pretrained"
   ) return undefined;
   return snapshot;
+}
+
+function hasLegibleArtifactIdentity(identity: EndpointIdentity): boolean {
+  if (identity.sourceClass === "frontier_api") {
+    return typeof identity.provider === "string" && identity.provider.length > 0 &&
+      typeof identity.model === "string" && identity.model.length > 0;
+  }
+  return isIdentifier(identity.weightsDigest);
 }
 
 export function violatesIndependence(
@@ -59,29 +68,36 @@ export function violatesIndependence(
     const p = snapshotIdentity(producer);
     const r = snapshotIdentity(reviewer);
     if (p === undefined || r === undefined) return true;
+    if (!hasLegibleArtifactIdentity(p) || !hasLegibleArtifactIdentity(r)) return true;
 
     if (p.endpointId === r.endpointId) return true;
 
-    // Both source classes are proven legible above and cannot change now --
-    // they are values in a record we own, not reads through the caller's
-    // object. Two DIFFERENT ones cannot name the same artifact, so this
-    // establishes independence. On an unsnapshotted argument the same
-    // comparison is a fail-open.
+    // Open-weight and Vinci-pretrained are two provenance classes for the same
+    // digest-identified identity scheme. The class labels may differ while the
+    // weights are byte-identical, so compare their digests before considering
+    // a differing source class independent.
+    const pIsDigestIdentified = p.sourceClass !== "frontier_api";
+    const rIsDigestIdentified = r.sourceClass !== "frontier_api";
+    if (pIsDigestIdentified && rIsDigestIdentified) {
+      return p.weightsDigest === r.weightsDigest;
+    }
+
+    // A frontier API identity and a digest-identified local artifact use
+    // disjoint identity schemes. Both class values were snapshotted and proven
+    // legible above, so the comparison cannot be changed by a hostile getter.
     if (p.sourceClass !== r.sourceClass) return false;
 
     if (p.sourceClass === "frontier_api") {
-      if (
-        typeof p.provider !== "string" || typeof r.provider !== "string" ||
-        typeof p.model !== "string" || typeof r.model !== "string"
-      ) return true;
       // Weaker than a digest by construction: a provider may serve changed
       // weights behind an unchanged model name, so equality is a LOWER BOUND on
       // sameness and inequality does not prove independence.
       return p.provider === r.provider && p.model === r.model;
     }
 
-    if (typeof p.weightsDigest !== "string" || typeof r.weightsDigest !== "string") return true;
-    return p.weightsDigest === r.weightsDigest;
+    // The only remaining same-class cases are digest-identified and returned
+    // above. Keep this fail-closed if the source-class union grows without an
+    // explicit identity rule.
+    return true;
   } catch {
     return true;
   }
