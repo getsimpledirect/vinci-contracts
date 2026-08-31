@@ -546,6 +546,185 @@ describe("matchEndpointToRole defensive validation", () => {
     expect(result.reasons.map(({ code }) => code)).toEqual(["input_not_evaluable"]);
   }
 
+  it("snapshots outputRetentionAllowed before applying the retention gate", () => {
+    let reads = 0;
+    const dataPolicy = {
+      ...validRole().dataPolicy,
+      get outputRetentionAllowed() {
+        reads += 1;
+        return reads === 1 ? false : true;
+      },
+    };
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      rights: {
+        ...endpointCommon().rights,
+        outputRetainedByProvider: known(true),
+      },
+    };
+
+    const result = matchUnknown({ ...validRole(), dataPolicy }, endpoint);
+
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons.map(({ code }) => code)).toEqual(["retention_forbidden"]);
+  });
+
+  it("snapshots externalProviderAllowed before applying the external-provider gate", () => {
+    let reads = 0;
+    const dataPolicy = {
+      ...validRole().dataPolicy,
+      get externalProviderAllowed() {
+        reads += 1;
+        return reads === 1 ? false : true;
+      },
+    };
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      inferenceIsExternal: known(true),
+    };
+
+    const result = matchUnknown({ ...validRole(), dataPolicy }, endpoint);
+
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons.map(({ code }) => code)).toEqual([
+      "external_provider_forbidden",
+    ]);
+  });
+
+  it("snapshots processesProtectedData before applying the protected-data gate", () => {
+    let reads = 0;
+    const dataPolicy = {
+      ...validRole().dataPolicy,
+      get processesProtectedData() {
+        reads += 1;
+        return reads === 1 ? true : false;
+      },
+    };
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      approvedForProtectedData: known(false),
+    };
+
+    const result = matchUnknown({ ...validRole(), dataPolicy }, endpoint);
+
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons.map(({ code }) => code)).toEqual([
+      "protected_data_not_approved",
+    ]);
+  });
+
+  it("fails closed when contextLimit changes after validation", () => {
+    let reads = 0;
+    const capabilityProfileWithGetter = {
+      ...endpointCommon().capabilityProfile,
+      get contextLimit() {
+        reads += 1;
+        return reads === 1 ? 200_000 : 100;
+      },
+    };
+    const role = { ...validRole(), minimumContextTokens: 1_000 };
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      capabilityProfile: capabilityProfileWithGetter,
+    };
+
+    const result = matchUnknown(role, endpoint);
+
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons.map(({ code }) => code)).toEqual(["context_too_small"]);
+  });
+
+  it("fails closed when a training right changes after validation", () => {
+    let reads = 0;
+    const trainingAllowed = {
+      kind: "known" as const,
+      get value() {
+        reads += 1;
+        return reads === 1 ? true : false;
+      },
+    };
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      rights: { ...endpointCommon().rights, trainingAllowed },
+    };
+    const role = { ...validRole(), riskClass: "high" };
+
+    const result = matchUnknown(role, endpoint);
+
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons.map(({ code }) => code)).toEqual([
+      "training_rights_required",
+    ]);
+  });
+
+  it("reads every decision-relevant getter exactly once", () => {
+    const reads: Record<string, number> = {};
+    const getter = <T>(name: string, value: T) => ({
+      configurable: true,
+      enumerable: true,
+      get() {
+        reads[name] = (reads[name] ?? 0) + 1;
+        return value;
+      },
+    });
+    const explicit = <T>(name: string, value: T) =>
+      Object.defineProperties({}, {
+        kind: getter(`${name}.kind`, "known"),
+        value: getter(`${name}.value`, value),
+      });
+
+    const dataPolicy = Object.defineProperties({}, {
+      externalProviderAllowed: getter("externalProviderAllowed", true),
+      outputRetentionAllowed: getter("outputRetentionAllowed", false),
+      processesProtectedData: getter("processesProtectedData", true),
+    });
+    const role = Object.defineProperties({}, {
+      roleId: getter("roleId", "repository-agent"),
+      requiredCapabilities: getter("requiredCapabilities", ["repository_editing"]),
+      minimumContextTokens: getter("minimumContextTokens", 64_000),
+      riskClass: getter("riskClass", "high"),
+      dataPolicy: getter("dataPolicy", dataPolicy),
+    });
+    const capabilityProfileWithGetter = Object.defineProperties({}, {
+      contextLimit: getter("contextLimit", 128_000),
+    });
+    const rights = Object.defineProperties({}, {
+      trainingAllowed: getter(
+        "trainingAllowed",
+        explicit("trainingAllowed", true),
+      ),
+      evaluationAllowed: getter(
+        "evaluationAllowed",
+        explicit("evaluationAllowed", true),
+      ),
+      outputRetainedByProvider: getter(
+        "outputRetainedByProvider",
+        explicit("outputRetainedByProvider", false),
+      ),
+    });
+    const endpoint = Object.defineProperties({}, {
+      endpointId: getter("endpointId", "endpoint-1"),
+      declaredCapabilities: getter("declaredCapabilities", ["repository_editing"]),
+      capabilityProfile: getter("capabilityProfile", capabilityProfileWithGetter),
+      inferenceIsExternal: getter(
+        "inferenceIsExternal",
+        explicit("inferenceIsExternal", false),
+      ),
+      approvedForProtectedData: getter(
+        "approvedForProtectedData",
+        explicit("approvedForProtectedData", true),
+      ),
+      rights: getter("rights", rights),
+      validFrom: getter("validFrom", "2026-08-01T00:00:00.000Z"),
+      expiresAt: getter("expiresAt", "2027-08-01T00:00:00.000Z"),
+    });
+
+    const result = matchUnknown(role, endpoint);
+
+    expect(result.verdict).toBe("eligible");
+    expect(reads).toEqual(Object.fromEntries(Object.keys(reads).map((name) => [name, 1])));
+  });
+
   it("rejects a null role", () => {
     const result = matchUnknown(null, validLocalEndpoint("open_weight"));
     expectInputNotEvaluable(result);
@@ -1068,6 +1247,145 @@ describe("vinci endpoint registry", () => {
 
 });
 
+
+  describe("deep-snapshot guards (fail-open test cases)", () => {
+    it("rejects endpoint with retention when getter says false then true", () => {
+      const endpointWithRetention = {
+        ...validLocalEndpoint("vinci_pretrained"),
+        rights: {
+          ...endpointCommon().rights,
+          outputRetainedByProvider: known(true),
+        },
+      };
+
+      let callCount = 0;
+      const dataPolicy = { 
+        externalProviderAllowed: true, 
+        processesProtectedData: false 
+      };
+      Object.defineProperty(dataPolicy, "outputRetentionAllowed", {
+        enumerable: true,
+        get() {
+          callCount++;
+          return callCount === 1 ? false : true;
+        },
+      });
+
+      const role = {
+        ...validRole(),
+        dataPolicy,
+      };
+
+      const result = matchEndpointToRole(role, endpointWithRetention, "2026-08-30T12:00:00.000Z");
+      expect(result.verdict).toBe("ineligible");
+      expect(result.reasons).toContainEqual({
+        code: "retention_forbidden",
+        detail: "endpoint retains output but role policy forbids retention",
+      });
+      expect(callCount).toBe(1);
+    });
+
+    it("rejects endpoint with external inference when getter says false then true", () => {
+      const externalEndpoint = {
+        ...validLocalEndpoint("vinci_pretrained"),
+        inferenceIsExternal: known(true),
+      };
+
+      let callCount = 0;
+      const dataPolicy = {
+        outputRetentionAllowed: true,
+        processesProtectedData: false,
+      };
+      Object.defineProperty(dataPolicy, "externalProviderAllowed", {
+        enumerable: true,
+        get() {
+          callCount++;
+          return callCount === 1 ? false : true;
+        },
+      });
+
+      const role = {
+        ...validRole(),
+        dataPolicy,
+      };
+
+      const result = matchEndpointToRole(role, externalEndpoint, "2026-08-30T12:00:00.000Z");
+      expect(result.verdict).toBe("ineligible");
+      expect(result.reasons).toContainEqual({
+        code: "external_provider_forbidden",
+        detail: "role policy forbids an external inference provider",
+      });
+      expect(callCount).toBe(1);
+    });
+
+    it("rejects endpoint without protected data approval when role processes protected data", () => {
+      let callCount = 0;
+      const dataPolicy = {
+        externalProviderAllowed: true,
+        outputRetentionAllowed: true,
+      };
+      Object.defineProperty(dataPolicy, "processesProtectedData", {
+        enumerable: true,
+        get() {
+          callCount++;
+          return true; // Role processes protected data
+        },
+      });
+
+      const unprotectedEndpoint = {
+        ...validLocalEndpoint("vinci_pretrained"),
+        approvedForProtectedData: known(false),
+      };
+
+      const role = {
+        ...validRole(),
+        dataPolicy,
+      };
+
+      const result = matchEndpointToRole(role, unprotectedEndpoint, "2026-08-30T12:00:00.000Z");
+      expect(result.verdict).toBe("ineligible");
+      expect(result.reasons).toContainEqual({
+        code: "protected_data_not_approved",
+        detail: "endpoint is not approved to process protected data",
+      });
+      expect(callCount).toBe(1);
+    });
+
+    it("getter on rights field value invoked exactly once per match", () => {
+      let retentionReadCount = 0;
+      const outputRetainedByProvider = { kind: "known" as const, value: false };
+      Object.defineProperty(outputRetainedByProvider, "value", {
+        enumerable: true,
+        get() {
+          retentionReadCount++;
+          return false;
+        },
+      });
+
+      const endpoint = {
+        ...validLocalEndpoint("vinci_pretrained"),
+        rights: {
+          ...endpointCommon().rights,
+          outputRetainedByProvider,
+        },
+      };
+
+      const role = {
+        ...validRole(),
+        dataPolicy: {
+          ...validRole().dataPolicy,
+          outputRetentionAllowed: false,
+        },
+      };
+
+      const result = matchEndpointToRole(role, endpoint, "2026-08-30T12:00:00.000Z");
+      expect(result.verdict).toBe("unevaluable");
+      expect(result.reasons).toContainEqual({
+        code: "retention_undeclared",
+        detail: "endpoint did not declare retention policy",
+      });
+      expect(retentionReadCount).toBe(1);
+    });
 describe("role-match guards", () => {
   /**
    * Guards the class, not just today's three instances. Reading keys from a real
@@ -1103,4 +1421,5 @@ describe("role-match guards", () => {
       expect(outcomes[0], `${key} does not affect matching`).not.toEqual(outcomes[1]);
     }
   });
+});
 });
