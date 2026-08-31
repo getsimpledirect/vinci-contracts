@@ -1333,6 +1333,16 @@ describe("role selection", () => {
     ]);
   });
 
+  it("surfaces an unreadable role as unevaluable instead of an empty population", () => {
+    const selection = selectForRole(null as never, VINCI_ENDPOINTS, now);
+    expect(selection.eligible).toEqual([]);
+    expect(selection.ineligible).toEqual([]);
+    expect(selection.unevaluable).toHaveLength(1);
+    expect(selection.unevaluable[0]?.reasons.map(({ code }) => code)).toEqual([
+      "input_not_evaluable",
+    ]);
+  });
+
   it("classifies OpenRouter for implementation from declared facts, not its lane id", () => {
     const role = roleById("mle-implementation-worker");
     const endpoint = endpointById("openrouter-worker");
