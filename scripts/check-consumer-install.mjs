@@ -182,6 +182,9 @@ writeFileSync(
   `${namespaceImports}
 import { RISK_LEVELS, isCanonicalTimestamp, type RiskLevel } from "@getsimpledirect/vinci-contracts";
 import { RETENTION_CLASSES } from "@getsimpledirect/vinci-policy";
+import {
+  matchEndpointToRole, selectForRole, violatesIndependence, roleById, endpointById,
+} from "@getsimpledirect/vinci-model-classes";
 import { validateSessionBinding, REMOTE_PROTOCOL_VERSION, SESSION_BINDING_SCHEMA_META } from "@getsimpledirect/vinci-remote-protocol";
 
 const level: RiskLevel = RISK_LEVELS[0];
@@ -207,9 +210,43 @@ const skewed = validateSessionBinding({
 });
 if (skewed.ok) throw new Error("protocol skew was accepted by an installed build");
 
+// The Model Role ABI must DECIDE from outside the workspace, not merely import.
+// This is the check 0.2.0 would have failed: it shipped eight of sixteen
+// modules, so matchEndpointToRole was absent from every published artifact
+// while the package still installed and imported cleanly. An ABI that is
+// present but cannot rule is the same defect one layer down.
+const abiRole = roleById("teacher-trajectory-producer");
+const abiEndpoint = endpointById("forte-deepinfra");
+if (!abiRole || !abiEndpoint) throw new Error("the installed registry lost a role or a lane");
+
+const NOW_ABI = "2026-08-31T00:00:00.000Z";
+if (matchEndpointToRole(abiRole, abiEndpoint, NOW_ABI).verdict !== "eligible") {
+  throw new Error("a fully declared lane was not eligible from an installed build");
+}
+
+// Both directions, because a matcher that refuses everything passes the accept
+// side of every test and is worthless. These three are fail-CLOSED assertions:
+// each was a real fail-open in this package's history.
+const hostileEndpoint = Object.create(null);
+if (matchEndpointToRole(abiRole, hostileEndpoint, NOW_ABI).verdict === "eligible") {
+  throw new Error("an unreadable endpoint was granted eligibility by an installed build");
+}
+if (violatesIndependence(hostileEndpoint, abiEndpoint) !== true) {
+  throw new Error("independence was granted against an unreadable endpoint");
+}
+
+// The iteration bound: a real Array claiming four billion entries must refuse,
+// not exhaust the heap. Array.isArray is true for it, which is why a shape
+// check alone did not catch this.
+const hugeSupply = Object.assign([], { length: 2 ** 32 - 1 });
+const hugeSelection = selectForRole(abiRole, hugeSupply, NOW_ABI);
+if (hugeSelection.eligible.length !== 0 || hugeSelection.unevaluable.length !== 1) {
+  throw new Error("the endpoint-list bound did not survive installation");
+}
+
 ${namespaceChecks}
 
-console.log(\`  consumer imported all ${everyPackage.length} packages across layers 0-3, types checked, guards still refuse\`);
+console.log(\`  consumer imported all ${everyPackage.length} packages across layers 0-3, types checked, guards still refuse, Model Role ABI still decides\`);
 `,
 );
 
