@@ -1094,13 +1094,13 @@ describe("vinci endpoint registry", () => {
     expect(uniqueIds.size).toBe(ids.length);
   });
 
-  it("rejects OpenRouter endpoint when role forbids external providers", () => {
-    const openrouterEndpoint = VINCI_ENDPOINTS.find(
-      (ep) => ep.endpointId === "openrouter-worker",
+  it("rejects an external endpoint when role forbids external providers", () => {
+    const externalEndpoint = VINCI_ENDPOINTS.find(
+      (ep) => ep.endpointId === "forte-deepinfra",
     );
-    expect(openrouterEndpoint).toBeDefined();
+    expect(externalEndpoint).toBeDefined();
 
-    if (openrouterEndpoint) {
+    if (externalEndpoint) {
       const roleWithoutExternal = {
         ...validRole(),
         dataPolicy: {
@@ -1109,7 +1109,7 @@ describe("vinci endpoint registry", () => {
         },
       };
       const now = "2026-08-30T12:00:00.000Z";
-      const result = matchEndpointToRole(roleWithoutExternal, openrouterEndpoint, now);
+      const result = matchEndpointToRole(roleWithoutExternal, externalEndpoint, now);
 
       expect(result.verdict).toBe("ineligible");
       expect(result.reasons).toContainEqual({
@@ -1120,34 +1120,41 @@ describe("vinci endpoint registry", () => {
   });
 
   it("permits pod-served endpoint when role forbids external providers", () => {
-    const podEndpoint = VINCI_ENDPOINTS.find((ep) => ep.endpointId === "pod-openweight-local");
-    expect(podEndpoint).toBeDefined();
+    // A local fixture served on Vinci's own infrastructure. The role forbids
+    // external providers, so this must stay eligible: the refusal in the test
+    // above is about where inference runs (serving.kind), not about the lane
+    // name. No registered lane is vinci_hosted today — every real lane is a
+    // third-party API — so the fixture carries the property explicitly.
+    const podEndpoint = {
+      ...validLocalEndpoint("open_weight"),
+      endpointId: "pod-openweight-local",
+      serving: { kind: "vinci_hosted" },
+      inferenceIsExternal: known(false),
+    };
 
-    if (podEndpoint) {
-      const roleWithoutExternal = {
-        ...validRole(),
-        dataPolicy: {
-          ...validRole().dataPolicy,
-          externalProviderAllowed: false,
-        },
-      };
-      const now = "2026-08-30T12:00:00.000Z";
-      const result = matchEndpointToRole(roleWithoutExternal, podEndpoint, now);
+    const roleWithoutExternal = {
+      ...validRole(),
+      dataPolicy: {
+        ...validRole().dataPolicy,
+        externalProviderAllowed: false,
+      },
+    };
+    const now = "2026-08-30T12:00:00.000Z";
+    const result = matchEndpointToRole(roleWithoutExternal, podEndpoint, now);
 
-      expect(result.verdict).toBe("eligible");
-      expect(result.reasons).toEqual([]);
-    }
+    expect(result.verdict).toBe("eligible");
+    expect(result.reasons).toEqual([]);
   });
 
   it("looks up endpoints by id", () => {
-    expect(endpointById("bedrock-general")).toBeDefined();
-    expect(endpointById("bedrock-general")?.endpointId).toBe("bedrock-general");
+    expect(endpointById("forte-deepinfra")).toBeDefined();
+    expect(endpointById("forte-deepinfra")?.endpointId).toBe("forte-deepinfra");
 
-    expect(endpointById("openrouter-worker")).toBeDefined();
-    expect(endpointById("openrouter-worker")?.endpointId).toBe("openrouter-worker");
+    expect(endpointById("vision-openrouter")).toBeDefined();
+    expect(endpointById("vision-openrouter")?.endpointId).toBe("vision-openrouter");
 
-    expect(endpointById("pod-openweight-local")).toBeDefined();
-    expect(endpointById("pod-openweight-local")?.endpointId).toBe("pod-openweight-local");
+    expect(endpointById("mezzo-deepinfra")).toBeDefined();
+    expect(endpointById("mezzo-deepinfra")?.endpointId).toBe("mezzo-deepinfra");
 
     expect(endpointById("unknown-endpoint-id")).toBeUndefined();
   });
@@ -1162,8 +1169,12 @@ describe("vinci endpoint registry", () => {
     const stdout = output.replace(/\n__EXIT_CODE__=\d+\n$/, "");
 
     expect(match?.[1]).toBe("0");
-    expect(stdout).toContain("unknown");
-    expect(stdout.trim().length).toBeGreaterThan(80);
+    // Every registry field a role depends on is now declared: George checked the
+    // three providers' terms on 2026-08-31 (training and evaluation permitted),
+    // and non-retention is an enforced invariant of vinci-chat's serving path.
+    // So the honest expectation is that the report finds NOTHING -- and it must
+    // still exit 0, because no gaps is a healthy state rather than a failure.
+    expect(stdout).toContain("No undeclared facts found");
   });
 });
 
@@ -1293,31 +1304,37 @@ describe("role selection", () => {
       VINCI_ROLES.map((role) => [role.roleId, selectForRole(role, VINCI_ENDPOINTS, now)]),
     );
 
-    expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([
-      "bedrock-general",
-    ]);
+    expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([]);
     expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([]);
     expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
-      "openrouter-worker",
-      "pod-openweight-local",
-      "deepinfra-glm-5.2",
+      "forte-deepinfra",
+      "forte-fireworks",
+      "vision-deepinfra",
+      "vision-openrouter",
+      "mezzo-deepinfra",
+      "fortissimo-fireworks",
     ]);
 
+    // Rights are now declared, so every lane is eligible for review work.
     expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([
-      "bedrock-general",
-      "pod-openweight-local",
+      "forte-deepinfra",
+      "forte-fireworks",
+      "vision-deepinfra",
+      "vision-openrouter",
+      "mezzo-deepinfra",
+      "fortissimo-fireworks",
     ]);
-    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([
-      "openrouter-worker",
-      "deepinfra-glm-5.2",
-    ]);
+    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([]);
+
     expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([]);
 
     expect(endpointIds(selections["cloud-worker"].eligible)).toEqual([
-      "bedrock-general",
-      "openrouter-worker",
-      "pod-openweight-local",
-      "deepinfra-glm-5.2",
+      "forte-deepinfra",
+      "forte-fireworks",
+      "vision-deepinfra",
+      "vision-openrouter",
+      "mezzo-deepinfra",
+      "fortissimo-fireworks",
     ]);
     expect(endpointIds(selections["cloud-worker"].unevaluable)).toEqual([]);
     expect(endpointIds(selections["cloud-worker"].ineligible)).toEqual([]);
@@ -1370,47 +1387,70 @@ describe("role selection", () => {
     ]);
   });
 
-  it("classifies OpenRouter for implementation from declared facts, not its lane id", () => {
+  it("classifies an implementation endpoint from declared facts, not its lane id", () => {
     const role = roleById("mle-implementation-worker");
-    const endpoint = endpointById("openrouter-worker");
+    const endpoint = endpointById("forte-deepinfra");
     expect(role).toBeDefined();
     expect(endpoint).toBeDefined();
 
     if (role && endpoint) {
       const result = matchEndpointToRole(role, endpoint, now);
 
-      // OpenRouter does not declare long_horizon_recovery. That hard capability
-      // failure makes it ineligible regardless of its separately unknown retention policy.
+      // The verdict follows the declared facts, not the lane name. Retention is
+      // now declared (vinci-chat enforces ZDR on every serving path), so the
+      // only remaining failure is the real one: this lane does not declare
+      // long_horizon_recovery. That is a capability gap, not a rights gap, and
+      // no terms-of-service reading can close it.
       expect(result.verdict).toBe("ineligible");
-      expect(result.reasons.map(({ code }) => code)).toEqual([
-        "capability_missing",
-        "retention_undeclared",
-      ]);
+      expect(result.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
     }
   });
 
-  it("leaves teacher-trajectory production unevaluable when rights are undeclared", () => {
+  /**
+   * The registry's rights are now DECLARED, so it can no longer demonstrate
+   * this property -- but the property is the reason the role exists and must
+   * keep a test. An undeclared right must never become an implicit yes for
+   * high-risk work; it must refuse.
+   *
+   * Uses a local fixture rather than the registry, the same way the pod-served
+   * test does, because the registry moved on and the invariant did not.
+   */
+  it("refuses high-risk work when a right is undeclared, whatever the lane", () => {
     const role = roleById("teacher-trajectory-producer");
+    const declared = endpointById("forte-deepinfra");
     expect(role).toBeDefined();
+    expect(declared).toBeDefined();
 
-    if (role) {
-      const selection = selectForRole(role, VINCI_ENDPOINTS, now);
+    if (role && declared) {
+      // Identical to a lane that IS eligible, except training rights are unknown.
+      const undeclared = {
+        ...declared,
+        endpointId: "fixture-rights-undeclared",
+        rights: { ...declared.rights, trainingAllowed: { kind: "unknown" } },
+      } as unknown as ModelEndpointSpec;
 
-      for (const endpointId of ["bedrock-general", "openrouter-worker"]) {
-        expect(endpointIds(selection.eligible)).not.toContain(endpointId);
-        expect(endpointIds(selection.ineligible)).not.toContain(endpointId);
-        const result = selection.unevaluable.find((item) => item.endpointId === endpointId);
-        expect(result).toBeDefined();
-        expect(result?.reasons.map(({ code }) => code)).toEqual([
-          "rights_undeclared",
-          "rights_undeclared",
-        ]);
-      }
+      expect(matchEndpointToRole(role, declared, now).verdict).toBe("eligible");
+
+      const result = matchEndpointToRole(role, undeclared, now);
+      expect(result.verdict).toBe("unevaluable");
+      expect(result.reasons.map(({ code }) => code)).toContain("rights_undeclared");
     }
   });
-});
 
-describe("review independence", () => {
+  /**
+   * The companion, so the test above cannot pass vacuously. If the check simply
+   * returned true for everything it would be worthless, and the sweep above
+   * could not tell the difference. With digests actually KNOWN it discriminates.
+   */
+  it("still discriminates when artifact identity IS established", () => {
+    const digest = (value: string) =>
+      ({ ...validLocalEndpoint("open_weight"), endpointId: `e-${value}`,
+         weightsDigest: known(`sha256-${value.repeat(64).slice(0, 64)}`) }) as unknown as ModelEndpointSpec;
+
+    expect(violatesIndependence(digest("a"), digest("a"))).toBe(true);
+    expect(violatesIndependence(digest("a"), digest("b"))).toBe(false);
+  });
+
   it("rejects the same endpoint id", () => {
     const endpoint = validLocalEndpoint("open_weight");
     expect(violatesIndependence(endpoint, endpoint)).toBe(true);
@@ -1581,17 +1621,21 @@ describe("review independence", () => {
     expect(reads).toBe(1);
   });
 
-  it("rejects both unknown registry frontiers against the pod endpoint", () => {
-    const pod = endpointById("pod-openweight-local");
-    const bedrock = endpointById("bedrock-general");
-    const openrouter = endpointById("openrouter-worker");
+  it("rejects independence between real lanes whose artifact identity is unknown", () => {
+    const forte = endpointById("forte-deepinfra");
+    const vision = endpointById("vision-openrouter");
+    const mezzo = endpointById("mezzo-deepinfra");
 
-    expect(pod).toBeDefined();
-    expect(bedrock).toBeDefined();
-    expect(openrouter).toBeDefined();
-    if (pod && bedrock && openrouter) {
-      expect(violatesIndependence(bedrock, pod)).toBe(true);
-      expect(violatesIndependence(openrouter, pod)).toBe(true);
+    expect(forte).toBeDefined();
+    expect(vision).toBeDefined();
+    expect(mezzo).toBeDefined();
+    if (forte && vision && mezzo) {
+      // All real lanes are third-party APIs with an unknown weightsDigest, so
+      // no pair can prove independence: an absent identity is not a different
+      // identity. Independence is refused, not granted.
+      expect(violatesIndependence(forte, mezzo)).toBe(true);
+      expect(violatesIndependence(vision, mezzo)).toBe(true);
+      expect(violatesIndependence(forte, vision)).toBe(true);
     }
   });
 
