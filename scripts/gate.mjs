@@ -22,6 +22,10 @@ const STEPS = [
   ["build", "npx tsc --build packages/*/tsconfig.json --force"],
   ["lint", "npx eslint packages --max-warnings=0"],
   ["tests", "npx vitest run"],
+  // The digest vectors in packages/work-orders/vectors are shared with a
+  // Python implementation. Node's side runs inside vitest; this is the other
+  // language reading the same files. -B: no __pycache__ left in the tree.
+  ["digest vectors (python)", "python3 -B -m unittest discover -s packages/work-orders/python"],
   ["dependency graph", "node scripts/check-dependency-graph.mjs"],
   ["SchemaMeta conformance", "node scripts/check-schema-meta.mjs"],
   ["hostile-key conformance", "node scripts/check-hostile-keys.mjs"],
