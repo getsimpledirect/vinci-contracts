@@ -1,5 +1,7 @@
 import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
+import { execSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   CUSTOMER_ENDPOINT_SCHEMA_META,
@@ -9,14 +11,18 @@ import {
   MODEL_ROLE_SPEC_SCHEMA_META,
   RESIDENCY_RECORD_SCHEMA_META,
   VINCI_ENDPOINTS,
+  VINCI_ROLES,
   endpointById,
   matchEndpointToRole,
+  roleById,
+  selectForRole,
   validateCustomerEndpointConfig,
   validateModelEndpointSpec,
   validateFallbackRecord,
   validateModelProvenanceRecord,
   validateModelRoleSpec,
   validateResidencyRecord,
+  violatesIndependence,
 } from "./index.ts";
 
 const known = <T>(value: T) => ({ kind: "known" as const, value });
@@ -904,6 +910,20 @@ describe("vinci endpoint registry", () => {
 
     expect(endpointById("unknown-endpoint-id")).toBeUndefined();
   });
+
+  it("reports the registry's undeclared rights and policy facts", () => {
+    const script = fileURLToPath(
+      new URL("../../../scripts/report-rights-gaps.mjs", import.meta.url),
+    );
+    const command = `${JSON.stringify(process.execPath)} ${JSON.stringify(script)}; status=$?; printf '\\n__EXIT_CODE__=%s\\n' "$status"`;
+    const output = execSync(command, { encoding: "utf8", shell: "/bin/sh" });
+    const match = output.match(/\n__EXIT_CODE__=(\d+)\n$/);
+    const stdout = output.replace(/\n__EXIT_CODE__=\d+\n$/, "");
+
+    expect(match?.[1]).toBe("0");
+    expect(stdout).toContain("unknown");
+    expect(stdout.trim().length).toBeGreaterThan(80);
+  });
 });
 
 });
@@ -929,5 +949,160 @@ describe("role-match guards", () => {
 
     const unenforced = keys.filter((key) => !code.includes(key));
     expect(unenforced).toEqual([]);
+  });
+});
+
+describe("vinci role registry", () => {
+  it("declares valid roles with unique ids and lookup support", () => {
+    expect(VINCI_ROLES.map(({ roleId }) => roleId)).toEqual([
+      "mle-implementation-worker",
+      "adversarial-reviewer",
+      "cloud-worker",
+      "teacher-trajectory-producer",
+    ]);
+
+    for (const role of VINCI_ROLES) {
+      const result = validateModelRoleSpec(role);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toEqual(role);
+      expect(roleById(role.roleId)).toBe(role);
+    }
+
+    const ids = VINCI_ROLES.map(({ roleId }) => roleId);
+    expect(new Set(ids).size).toBe(4);
+    expect(roleById("not-a-vinci-role")).toBeUndefined();
+  });
+});
+
+describe("role selection", () => {
+  const now = "2026-08-30T12:00:00.000Z";
+  const endpointIds = (results: readonly { readonly endpointId: string }[]) =>
+    results.map(({ endpointId }) => endpointId);
+
+  it("reports the concrete three-way registry partition for every role", () => {
+    const selections = Object.fromEntries(
+      VINCI_ROLES.map((role) => [role.roleId, selectForRole(role, VINCI_ENDPOINTS, now)]),
+    );
+
+    expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([
+      "bedrock-general",
+    ]);
+    expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
+      "openrouter-worker",
+      "pod-openweight-local",
+    ]);
+
+    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([
+      "bedrock-general",
+      "pod-openweight-local",
+    ]);
+    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([
+      "openrouter-worker",
+    ]);
+    expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([]);
+
+    expect(endpointIds(selections["cloud-worker"].eligible)).toEqual([
+      "bedrock-general",
+      "openrouter-worker",
+      "pod-openweight-local",
+    ]);
+    expect(endpointIds(selections["cloud-worker"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["cloud-worker"].ineligible)).toEqual([]);
+  });
+
+  it("keeps each partition disjoint and accounts for every endpoint", () => {
+    const expectedIds = VINCI_ENDPOINTS.map(({ endpointId }) => endpointId).sort();
+
+    for (const role of VINCI_ROLES) {
+      const selection = selectForRole(role, VINCI_ENDPOINTS, now);
+      const eligible = endpointIds(selection.eligible);
+      const unevaluable = endpointIds(selection.unevaluable);
+      const ineligible = endpointIds(selection.ineligible);
+      const allIds = [...eligible, ...unevaluable, ...ineligible];
+
+      expect(selection.roleId).toBe(role.roleId);
+      expect(new Set(allIds).size).toBe(VINCI_ENDPOINTS.length);
+      expect(allIds.sort()).toEqual(expectedIds);
+      expect(eligible.filter((id) => unevaluable.includes(id) || ineligible.includes(id))).toEqual(
+        [],
+      );
+      expect(unevaluable.filter((id) => ineligible.includes(id))).toEqual([]);
+    }
+  });
+
+  it("classifies OpenRouter for implementation from declared facts, not its lane id", () => {
+    const role = roleById("mle-implementation-worker");
+    const endpoint = endpointById("openrouter-worker");
+    expect(role).toBeDefined();
+    expect(endpoint).toBeDefined();
+
+    if (role && endpoint) {
+      const result = matchEndpointToRole(role, endpoint, now);
+
+      // OpenRouter does not declare long_horizon_recovery. That hard capability
+      // failure makes it ineligible regardless of its separately unknown retention policy.
+      expect(result.verdict).toBe("ineligible");
+      expect(result.reasons.map(({ code }) => code)).toEqual([
+        "capability_missing",
+        "retention_undeclared",
+      ]);
+    }
+  });
+
+  it("leaves teacher-trajectory production unevaluable when rights are undeclared", () => {
+    const role = roleById("teacher-trajectory-producer");
+    expect(role).toBeDefined();
+
+    if (role) {
+      const selection = selectForRole(role, VINCI_ENDPOINTS, now);
+
+      for (const endpointId of ["bedrock-general", "openrouter-worker"]) {
+        expect(endpointIds(selection.eligible)).not.toContain(endpointId);
+        expect(endpointIds(selection.ineligible)).not.toContain(endpointId);
+        const result = selection.unevaluable.find((item) => item.endpointId === endpointId);
+        expect(result).toBeDefined();
+        expect(result?.reasons.map(({ code }) => code)).toEqual([
+          "rights_undeclared",
+          "rights_undeclared",
+        ]);
+      }
+    }
+  });
+});
+
+describe("review independence", () => {
+  it("rejects the same endpoint id", () => {
+    const endpoint = validLocalEndpoint("open_weight");
+    expect(violatesIndependence(endpoint, endpoint)).toBe(true);
+  });
+
+  it("rejects different local endpoints serving the same weights", () => {
+    const producer = { ...validLocalEndpoint("open_weight"), endpointId: "producer-local" };
+    const reviewer = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
+
+    expect(producer.endpointId).not.toBe(reviewer.endpointId);
+    expect(producer.weightsDigest).toBe(reviewer.weightsDigest);
+    expect(violatesIndependence(producer, reviewer)).toBe(true);
+  });
+
+  it("rejects frontier endpoints with the same provider and model", () => {
+    const producer = { ...validFrontierEndpoint(), endpointId: "producer-frontier" };
+    const reviewer = { ...validFrontierEndpoint(), endpointId: "reviewer-frontier" };
+
+    expect(producer.endpointId).not.toBe(reviewer.endpointId);
+    expect(violatesIndependence(producer, reviewer)).toBe(true);
+  });
+
+  it("accepts endpoints with genuinely different identities", () => {
+    const producer = { ...validLocalEndpoint("open_weight"), endpointId: "producer-local" };
+    const reviewer = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      endpointId: "reviewer-local",
+      weightsDigest: "weights-sha256-different",
+    };
+
+    expect(producer.weightsDigest).not.toBe(reviewer.weightsDigest);
+    expect(violatesIndependence(producer, reviewer)).toBe(false);
   });
 });

@@ -609,6 +609,8 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-worker-capabilities.derivedTrustLevel": "derivation over an already-validated capability matrix",
   "@getsimpledirect/vinci-worker-capabilities.permittedRemoteCommands": "UI projection over an already-validated capability matrix",
   "@getsimpledirect/vinci-worker-capabilities.trustLevelLabel": "total label lookup over the trust vocabulary",
+  "@getsimpledirect/vinci-model-classes.endpointById": "pure lookup by id over a frozen array; returns a record or undefined; grants nothing",
+  "@getsimpledirect/vinci-model-classes.roleById": "pure lookup by id over a frozen array; returns a record or undefined; grants nothing",
 };
 
 /**
