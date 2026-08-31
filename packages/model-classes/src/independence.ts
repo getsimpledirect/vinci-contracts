@@ -90,8 +90,10 @@ export function violatesIndependence(
     if (p.sourceClass === "frontier_api") {
       // Weaker than a digest by construction: a provider may serve changed
       // weights behind an unchanged model name, so equality is a LOWER BOUND on
-      // sameness and inequality does not prove independence.
-      return p.provider === r.provider && p.model === r.model;
+      // sameness and inequality does not prove independence. Until the contract
+      // carries stronger identity evidence, no frontier/frontier pair can
+      // establish an independent review relationship.
+      return true;
     }
 
     // The only remaining same-class cases are digest-identified and returned

@@ -1425,6 +1425,27 @@ describe("review independence", () => {
     expect(violatesIndependence(producer, reviewer)).toBe(true);
   });
 
+  it("fails closed for differently labelled frontier endpoints", () => {
+    const producer = { ...validFrontierEndpoint(), endpointId: "producer-frontier" };
+    const reviewer = {
+      ...validFrontierEndpoint(),
+      endpointId: "reviewer-frontier",
+      provider: "different-provider",
+      model: "different-model",
+    };
+
+    expect(producer.provider).not.toBe(reviewer.provider);
+    expect(producer.model).not.toBe(reviewer.model);
+    expect(violatesIndependence(producer, reviewer)).toBe(true);
+  });
+
+  it("accepts a legible frontier endpoint and digest-identified endpoint as distinct", () => {
+    const frontier = { ...validFrontierEndpoint(), endpointId: "producer-frontier" };
+    const local = { ...validLocalEndpoint("open_weight"), endpointId: "reviewer-local" };
+
+    expect(violatesIndependence(frontier, local)).toBe(false);
+  });
+
   it("accepts endpoints with genuinely different identities", () => {
     const producer = { ...validLocalEndpoint("open_weight"), endpointId: "producer-local" };
     const reviewer = {
