@@ -59,10 +59,38 @@ So part of the answer to "why does almost nothing import these contracts" is:
 **in two of three candidate repos, nothing can.** Not by policy, and not because
 the code is unready — by an unstated permission default.
 
+## Resolved 2026-08-31, and the deeper cause was different
+
+Both grants were issued the same day, and both blocked PRs landed:
+`vinci-code` #247 and `vinci-platform` #84. So the access finding was real.
+
+**But it was not the whole reason, and the whole reason is worse.** After the
+grants cleared, `vinci-chat` still could not consume the Model Role ABI — and
+this time the cause was that **the ABI had never been published at all**. The
+registry's `0.2.0` carried eight `.d.ts` files where `main` had sixteen:
+`endpoint`, `role`, `role-match`, `select`, `independence` and `registry` were
+absent from every published artifact. `matchEndpointToRole` was installable by
+nobody, whatever their permissions.
+
+That is now fixed too: all twelve packages are published at `0.3.0`, verified by
+installing from the registry into an empty directory and calling the matcher.
+
+**The order in which these surfaced is the lesson.** The access problem was
+visible — a `403` in CI, with a name and an owner. The publishing problem was
+invisible: every check passed, the package installed cleanly, and it simply did
+not contain the thing anyone wanted. It was found only by diffing the published
+tarball's contents against `main`, which nothing asked anyone to do.
+
+A release gate now closes it. `check:pack` asserts from an *installed* build
+that the ABI still **decides** — not merely that it imports — and is
+mutation-verified: restricting the `files` list to simulate `0.2.0`'s partial
+ship makes it fail with `has no exported member 'matchEndpointToRole'`.
+
 ## What would change it
 
 Only George or an org admin can do these; the package-repository API returns 404
-to this session, which is itself evidence of where the boundary sits.
+to this session, which is itself evidence of where the boundary sits. Items 1 and
+3 were done on 2026-08-31; item 2, the default, is still open.
 
 1. **Grant per-package read access** to the repos that should consume them —
    at minimum `vinci-model-classes` to `vinci-code`, and `vinci-policy` to
