@@ -1,0 +1,180 @@
+import { describe, expect, it } from "vitest";
+import {
+  EXECUTION_OUTPUTS,
+  EXECUTION_PROMOTIONS,
+  bindExecutionSpec,
+  isPlainBranchName,
+  executionSpecDigest,
+  validateExecutionSpec,
+  workOrderDigest,
+  type ExecutionSpec,
+  type WorkOrder,
+} from "./index.ts";
+import { reversed, validOrder, validSpec } from "./fixtures.test-helpers.ts";
+
+const codes = (input: unknown): string[] => {
+  const r = validateExecutionSpec(input);
+  return r.ok ? [] : r.issues.map((i) => `${i.path}:${i.code}`);
+};
+
+describe("validateExecutionSpec fails closed", () => {
+  it("accepts a well-formed spec, with and without a provider", () => {
+    expect(validateExecutionSpec(validSpec()).ok).toBe(true);
+    expect(validateExecutionSpec({ ...validSpec(), provider: "deepinfra" }).ok).toBe(true);
+  });
+
+
+  it("rejects unknown fields at every level", () => {
+    expect(codes({ ...validSpec(), repo: "x" })).toContain("/repo:unknown_field");
+    expect(codes({ ...validSpec(), repository: { ...validSpec().repository, url: "x" } })).toContain("/repository/url:unknown_field");
+    expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, gpu: 1 } })).toContain("/resourceBounds/gpu:unknown_field");
+    expect(codes({ ...validSpec(), inputArtifacts: [{ id: "a", digest: "a".repeat(64), url: "x" }] })).toContain("/inputArtifacts/0/url:unknown_field");
+  });
+
+  it("rejects each malformed field", () => {
+    expect(codes({ ...validSpec(), schemaVersion: 2 })).toContain("/schemaVersion:invalid_schema_version");
+    expect(codes({ ...validSpec(), workOrderDigest: "A".repeat(64) })).toContain("/workOrderDigest:invalid_digest");
+    expect(codes({ ...validSpec(), baseCommit: "60bd211" })).toContain("/baseCommit:invalid_commit");
+    expect(codes({ ...validSpec(), baseCommit: "60BD211A3F4C5D6E7F8091A2B3C4D5E6F7A8B9C0" })).toContain("/baseCommit:invalid_commit");
+    expect(codes({ ...validSpec(), targetBranch: "feat/rate limit" })).toContain("/targetBranch:invalid_ref");
+    expect(codes({ ...validSpec(), baseRef: "refs/heads/main" })).toContain("/baseRef:invalid_ref");
+    expect(codes({ ...validSpec(), repository: { host: "GitHub.com", owner: "o", name: "n" } })).toContain("/repository/host:invalid_host");
+    expect(codes({ ...validSpec(), modelClass: "" })).toContain("/modelClass:invalid_model_class");
+    expect(codes({ ...validSpec(), provider: "" })).toContain("/provider:invalid_provider");
+    for (const bad of [-1, 12.5, 1e-7, 0.1 + 0.2, 2 ** 53, -0.5, "12500000", null]) {
+      expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: bad } }), String(bad))
+        .toContain("/resourceBounds/budgetMicrousd:invalid_budget");
+    }
+    for (const good of [0, 1, 12_500_000, Number.MAX_SAFE_INTEGER]) {
+      expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: good } }), String(good)).toEqual([]);
+    }
+    expect(codes({ ...validSpec(), resourceBounds: { budgetUsd: 12.5, maxRuntimeS: 3600, deadline: "2026-08-23T14:00:00.000Z" } }))
+      .toEqual(expect.arrayContaining(["/resourceBounds/budgetUsd:unknown_field", "/resourceBounds/budgetMicrousd:invalid_budget"]));
+    // -0: toPlainRecord (every validator's first step) normalises it to +0
+    // before this validator runs, so a validator-side Object.is(-0) guard
+    // would be unreachable — an inert guard. Pin the behaviour that IS real:
+    // the validated record carries +0 and canonicalizes to "0".
+    {
+      const r = validateExecutionSpec({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: -0 } });
+      expect(r.ok).toBe(true);
+      if (r.ok) {
+        expect(Object.is(r.value.resourceBounds.budgetMicrousd, 0)).toBe(true);
+        expect(Object.is(r.value.resourceBounds.budgetMicrousd, -0)).toBe(false);
+      }
+      expect(executionSpecDigest({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: -0 } }))
+        .toBe(executionSpecDigest({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: 0 } }));
+    }
+    // NaN is refused one layer down, by toPlainRecord; either way it never validates.
+    expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, budgetMicrousd: Number.NaN } }).length).toBeGreaterThan(0);
+    expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, maxRuntimeS: 0 } })).toContain("/resourceBounds/maxRuntimeS:invalid_runtime");
+    expect(codes({ ...validSpec(), resourceBounds: { ...validSpec().resourceBounds, deadline: "2026-08-23T12:05:00.000Z" } })).toContain("/resourceBounds/deadline:deadline_not_after_issuance");
+    expect(codes({ ...validSpec(), tools: ["read", "read"] })).toContain("/tools/1:duplicate_entry");
+    expect(codes({ ...validSpec(), tools: [""] })).toContain("/tools/0:invalid_tool");
+    expect(codes({ ...validSpec(), requiredCapabilities: ["Structured Evidence"] })).toContain("/requiredCapabilities/0:invalid_capability");
+    expect(codes({ ...validSpec(), inputArtifacts: [{ id: "a", digest: "a".repeat(64) }, { id: "a", digest: "b".repeat(64) }] })).toContain("/inputArtifacts/1/id:duplicate_artifact");
+    expect(codes({ ...validSpec(), inputArtifacts: [{ id: "a", digest: "nope" }] })).toContain("/inputArtifacts/0/digest:invalid_digest");
+    expect(codes({ ...validSpec(), output: "pr" })).toContain("/output:unknown_output");
+    expect(codes({ ...validSpec(), evidence: { required: "yes" } })).toContain("/evidence/required:invalid_type");
+    expect(codes({ ...validSpec(), evidence: { required: true, kinds: [] } })).toContain("/evidence/kinds:unknown_field");
+    expect(codes({ ...validSpec(), promotion: "merge" })).toContain("/promotion:unknown_promotion");
+    expect(codes({ ...validSpec(), output: "patch", promotion: "pull_request" })).toContain("/promotion:promotion_needs_branch");
+    expect(codes({ ...validSpec(), output: "patch", promotion: "none" })).toEqual([]);
+    expect(codes({ ...validSpec(), output: "none", evidence: { required: false }, promotion: "none" })).toEqual([]);
+    expect(codes({ ...validSpec(), issuedAt: "2026-08-23T12:05:00Z" })).toContain("/issuedAt:invalid_timestamp");
+    expect(codes(null).length).toBeGreaterThan(0);
+  });
+
+  it("output and promotion vocabularies are closed; a pull request is promotion, not evidence", () => {
+    expect([...EXECUTION_OUTPUTS]).toEqual(["branch", "patch", "artifact", "none"]);
+    expect([...EXECUTION_PROMOTIONS]).toEqual(["pull_request", "none"]);
+    expect(codes({ ...validSpec(), evidencePolicy: "pr" })).toContain("/evidencePolicy:unknown_field");
+  });
+});
+
+describe("baseRef and targetBranch are plain branch names (vinci-code-cli PR #8 rules + check-ref-format --branch)", () => {
+  // The exact hostile strings from that PR's tests, plus check-ref-format cases.
+  const HOSTILE = [
+    "+main", "-x", "a:b", "main:evil", "x:refs/heads/evil", "a..b", "refs/heads/x", "refs//x", "refs.foo/x",
+    "a b", "--force", "a@{b}", "a~b", "a^b", "a?b", "a*b", "a[b", "a\\b", "trail/", "x.lock", "HEAD",
+    "a//b", ".hidden", "a/.hidden", "a.lock/b", "trail.", "", "/lead", "a\tb", "a\nb", "@", "a{b}", "m".repeat(256),
+  ];
+  const FINE = ["main", "feat/rate-limit", "release/1.2.3", "worker/msg_e85b659e", "a.b", "v1.0", "x".repeat(255)];
+
+  it("rejects every hostile string, for both fields", () => {
+    for (const bad of HOSTILE) {
+      expect(isPlainBranchName(bad), JSON.stringify(bad)).toBe(false);
+      expect(codes({ ...validSpec(), targetBranch: bad }), JSON.stringify(bad)).toContain("/targetBranch:invalid_ref");
+      expect(codes({ ...validSpec(), baseRef: bad }), JSON.stringify(bad)).toContain("/baseRef:invalid_ref");
+    }
+  });
+
+  it("accepts plain branch names", () => {
+    for (const good of FINE) {
+      expect(isPlainBranchName(good), JSON.stringify(good)).toBe(true);
+      expect(codes({ ...validSpec(), targetBranch: good, baseRef: good }), JSON.stringify(good)).toEqual([]);
+    }
+  });
+
+  it("is a predicate over strings only", () => {
+    expect(isPlainBranchName(null)).toBe(false);
+    expect(isPlainBranchName(["main"])).toBe(false);
+  });
+});
+
+describe("executionSpecDigest and the handoff triple", () => {
+  it("digests are key-order independent and change on any field", () => {
+    const base = executionSpecDigest(validSpec());
+    expect(executionSpecDigest(reversed(validSpec()) as ExecutionSpec)).toBe(base);
+    expect(executionSpecDigest({ ...validSpec(), baseCommit: "1".repeat(40) })).not.toBe(base);
+    expect(executionSpecDigest({ ...validSpec(), provider: "deepinfra" })).not.toBe(base);
+    expect(executionSpecDigest({ ...validSpec(), tools: ["bash", "edit", "read"] })).not.toBe(base);
+  });
+
+  it("refuses to digest an invalid spec", () => {
+    expect(() => executionSpecDigest({ ...validSpec(), baseCommit: "short" })).toThrow(/invalid_commit/);
+  });
+
+  it("binds a spec to the exact order it was compiled from", () => {
+    const order = validOrder();
+    const result = bindExecutionSpec(validSpec(order), order);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({
+      work_order_id: "wo-1",
+      contract_digest: workOrderDigest(order),
+      execution_spec_digest: executionSpecDigest(validSpec(order)),
+    });
+  });
+
+  it("rejects a spec whose workOrderDigest is not the digest of the given order", () => {
+    // Same id, different contract version: the dangerous pairing.
+    const original = validOrder();
+    const amended: WorkOrder = {
+      ...original,
+      contractVersion: 2,
+      supersedes: { contractVersion: 1, amendmentId: "am-1" },
+      scope: "The /v1 AND /v2 HTTP handlers.",
+    };
+    const spec = validSpec(original);
+    const result = bindExecutionSpec(spec, amended);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((i) => i.code)).toEqual(["work_order_digest_mismatch"]);
+  });
+
+  it("rejects an id mismatch even when the digest matches nothing", () => {
+    const other = { ...validOrder(), id: "wo-2" };
+    const result = bindExecutionSpec(validSpec(), other);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((i) => i.code)).toEqual(["work_order_id_mismatch", "work_order_digest_mismatch"]);
+  });
+
+  it("reports an invalid order as a binding failure, not an exception", () => {
+    const broken = { ...validOrder(), acceptanceCriteria: [] };
+    const result = bindExecutionSpec(validSpec(), broken);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues[0]?.path).toBe("/order/acceptanceCriteria");
+  });
+});

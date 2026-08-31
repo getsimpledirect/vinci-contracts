@@ -443,6 +443,147 @@ const AUTHORITY_GUARDS = [
       fn("VERIFIED_PASS", [{ status: "supported" }]) === true
       && fn("BLOCKED", [{ status: "supported" }]) === true,
   },
+  {
+    pkg: "@getsimpledirect/vinci-model-classes",
+    export: "matchEndpointToRole",
+    label: "matchEndpointToRole(hostile role, endpoint, now)",
+    call: (fn, hostile) => fn(hostile, {
+      schemaVersion: 1,
+      endpointId: "test-ep",
+      capabilityProfile: { capabilities: ["text"], contextLimit: 128000, toolSupport: true },
+      declaredCapabilities: ["repository_editing"],
+      credentials: { source: { kind: "managed-credential", credentialId: "test-c" } },
+      inferenceIsExternal: { kind: "known", value: true },
+      approvedForProtectedData: { kind: "known", value: true },
+      rights: {
+        trainingAllowed: { kind: "known", value: true },
+        evaluationAllowed: { kind: "known", value: true },
+        redistributionAllowed: { kind: "known", value: false },
+        outputRetainedByProvider: { kind: "known", value: false },
+        policySnapshotDigest: { kind: "known", value: "test-digest" }
+      },
+      validFrom: "2026-08-01T00:00:00.000Z",
+      expiresAt: "2027-08-01T00:00:00.000Z",
+      sourceClass: "vinci_pretrained",
+      weightsDigest: "test-weights",
+      tokenizerDigest: "test-tok",
+      architectureDigest: "test-arch",
+      servingImageDigest: { kind: "known", value: "test-image" },
+      quantizationDigest: { kind: "unknown" }
+    }, "2026-08-26T12:00:00.000Z").verdict === "eligible",
+    control: (fn) => {
+      const validRole = {
+        schemaVersion: 1,
+        roleId: "test-role",
+        taskClass: "test",
+        requiredCapabilities: ["repository_editing"],
+        minimumContextTokens: 64000,
+        riskClass: "low",
+        dataPolicy: {
+          externalProviderAllowed: true,
+          outputRetentionAllowed: false,
+          processesProtectedData: false
+        },
+        qualityPolicy: { minimumVerifiedSuccessRate: 0.9, maximumFalseClaimRate: 0.02 },
+        economicPolicy: { maximumCostPerVerifiedSuccessUsd: 3.5, maximumP95WallSeconds: 120 },
+        fallbackRoleIds: []
+      };
+      const ep = {
+        schemaVersion: 1,
+        endpointId: "test-ep",
+        capabilityProfile: { capabilities: ["text"], contextLimit: 128000, toolSupport: true },
+        declaredCapabilities: ["repository_editing"],
+        credentials: { source: { kind: "managed-credential", credentialId: "test-c" } },
+        inferenceIsExternal: { kind: "known", value: true },
+        approvedForProtectedData: { kind: "known", value: true },
+        rights: {
+          trainingAllowed: { kind: "known", value: true },
+          evaluationAllowed: { kind: "known", value: true },
+          redistributionAllowed: { kind: "known", value: false },
+          outputRetainedByProvider: { kind: "known", value: false },
+          policySnapshotDigest: { kind: "known", value: "test-digest" }
+        },
+        validFrom: "2026-08-01T00:00:00.000Z",
+        expiresAt: "2027-08-01T00:00:00.000Z",
+        sourceClass: "vinci_pretrained",
+        weightsDigest: "test-weights",
+        tokenizerDigest: "test-tok",
+        architectureDigest: "test-arch",
+        servingImageDigest: { kind: "known", value: "test-image" },
+        quantizationDigest: { kind: "unknown" }
+      };
+      return fn(validRole, ep, "2026-08-26T12:00:00.000Z").verdict === "eligible"
+        && fn({ ...validRole, requiredCapabilities: ["unknown-capability"] }, ep, "2026-08-26T12:00:00.000Z").verdict === "ineligible"
+        && fn({ ...validRole, requiredCapabilities: "invalid" }, ep, "2026-08-26T12:00:00.000Z").verdict === "unevaluable";
+    }
+  },
+  {
+    pkg: "@getsimpledirect/vinci-model-classes",
+    export: "matchEndpointToRole",
+    label: "matchEndpointToRole(role, hostile endpoint, now)",
+    call: (fn, hostile) => fn({
+      schemaVersion: 1,
+      roleId: "test-role",
+      taskClass: "test",
+      requiredCapabilities: ["repository_editing"],
+      minimumContextTokens: 64000,
+      riskClass: "low",
+      dataPolicy: {
+        externalProviderAllowed: true,
+        outputRetentionAllowed: false,
+        processesProtectedData: false
+      },
+      qualityPolicy: { minimumVerifiedSuccessRate: 0.9, maximumFalseClaimRate: 0.02 },
+      economicPolicy: { maximumCostPerVerifiedSuccessUsd: 3.5, maximumP95WallSeconds: 120 },
+      fallbackRoleIds: []
+    }, hostile, "2026-08-26T12:00:00.000Z").verdict === "eligible",
+    control: (fn) => {
+      const validRole = {
+        schemaVersion: 1,
+        roleId: "test-role",
+        taskClass: "test",
+        requiredCapabilities: ["repository_editing"],
+        minimumContextTokens: 64000,
+        riskClass: "low",
+        dataPolicy: {
+          externalProviderAllowed: true,
+          outputRetentionAllowed: false,
+          processesProtectedData: false
+        },
+        qualityPolicy: { minimumVerifiedSuccessRate: 0.9, maximumFalseClaimRate: 0.02 },
+        economicPolicy: { maximumCostPerVerifiedSuccessUsd: 3.5, maximumP95WallSeconds: 120 },
+        fallbackRoleIds: []
+      };
+      const ep = {
+        schemaVersion: 1,
+        endpointId: "test-ep",
+        capabilityProfile: { capabilities: ["text"], contextLimit: 128000, toolSupport: true },
+        declaredCapabilities: ["repository_editing"],
+        credentials: { source: { kind: "managed-credential", credentialId: "test-c" } },
+        inferenceIsExternal: { kind: "known", value: true },
+        approvedForProtectedData: { kind: "known", value: true },
+        rights: {
+          trainingAllowed: { kind: "known", value: true },
+          evaluationAllowed: { kind: "known", value: true },
+          redistributionAllowed: { kind: "known", value: false },
+          outputRetainedByProvider: { kind: "known", value: false },
+          policySnapshotDigest: { kind: "known", value: "test-digest" }
+        },
+        validFrom: "2026-08-01T00:00:00.000Z",
+        expiresAt: "2027-08-01T00:00:00.000Z",
+        sourceClass: "vinci_pretrained",
+        weightsDigest: "test-weights",
+        tokenizerDigest: "test-tok",
+        architectureDigest: "test-arch",
+        servingImageDigest: { kind: "known", value: "test-image" },
+        quantizationDigest: { kind: "unknown" }
+      };
+      return fn(validRole, ep, "2026-08-26T12:00:00.000Z").verdict === "eligible"
+        && fn(validRole, { ...ep, declaredCapabilities: [] }, "2026-08-26T12:00:00.000Z").verdict === "ineligible"
+        && fn(validRole, { ...ep, declaredCapabilities: "invalid" }, "2026-08-26T12:00:00.000Z").verdict === "unevaluable";
+    }
+  },
+
 ];
 
 /**
@@ -499,6 +640,8 @@ const REQUIRED_GUARDS = [
   "mayRequireDecision(budget, hostileSpend)",
   "statusIsSupportedBy('VERIFIED_PASS', results)",
   "statusIsSupportedBy(status, [supported])",
+  "matchEndpointToRole(hostile role, endpoint, now)",
+  "matchEndpointToRole(role, hostile endpoint, now)",
 ];
 
 
@@ -549,6 +692,12 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-work-orders.amendWorkOrder": "constructor over validated inputs; its output is validated",
   "@getsimpledirect/vinci-work-orders.classifyMateriality": "total classification over typed contract changes",
   "@getsimpledirect/vinci-work-orders.verificationIsStaleAfter": "projection from a validated amendment, not an authority decision",
+  "@getsimpledirect/vinci-work-orders.workOrderDigest": "encoder over a record it validates first; throws on an invalid one",
+  "@getsimpledirect/vinci-work-orders.executionSpecDigest": "encoder over a record it validates first; throws on an invalid one",
+  "@getsimpledirect/vinci-work-orders.isPlainBranchName": "pure string/regex predicate",
+  "@getsimpledirect/vinci-work-orders.sha256Hex": "pure hash of a string",
+  "@getsimpledirect/vinci-work-orders.checkExecutionSpecWithinOrder": "returns a ValidationResult, not a boolean; validates both inputs through the probed validators before comparing grants",
+  "@getsimpledirect/vinci-work-orders.bindExecutionSpec": "returns a ValidationResult, not a boolean; both inputs go through the probed validators (validateExecutionSpec, validateWorkOrder) before any comparison",
   "@getsimpledirect/vinci-contracts.isStrictlyAfter": "pure string predicate over two canonical timestamps",
   // Takes an ALREADY-SNAPSHOTTED PlainRecord and is a thin Object.hasOwn.
   // Returning true for an accessor is correct — the key is own-present — so
