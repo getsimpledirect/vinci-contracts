@@ -112,7 +112,7 @@ test("cross-repository consumer scanning", (t) => {
   write(
     consumerRoot,
     "src/consume.ts",
-    'import { SharedExport } from "@example/shared";\nconsole.log(SharedExport);\n',
+    'import { SharedExport } from "@getsimpledirect/vinci-shared";\nconsole.log(SharedExport);\n',
   );
 
   const withoutConsumers = run(packageRoot);
@@ -127,6 +127,40 @@ test("cross-repository consumer scanning", (t) => {
     new RegExp(`\\[Consumer\\] ${consumerRoot.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}: exists=yes files_scanned=1`),
   );
   assert.doesNotMatch(withConsumers.stdout, /- SharedExport \(src\/shared\.ts\)/);
+});
+
+test("consumer scanning requires a Vinci import and follows named-import aliases", (t) => {
+  const packageRoot = mkdtempSync(join(tmpdir(), "vinci-unconsumed-package-"));
+  const redeclaringConsumerRoot = mkdtempSync(join(tmpdir(), "vinci-unconsumed-redeclaring-consumer-"));
+  const importingConsumerRoot = mkdtempSync(join(tmpdir(), "vinci-unconsumed-importing-consumer-"));
+  t.after(() => rmSync(packageRoot, { recursive: true, force: true }));
+  t.after(() => rmSync(redeclaringConsumerRoot, { recursive: true, force: true }));
+  t.after(() => rmSync(importingConsumerRoot, { recursive: true, force: true }));
+
+  write(packageRoot, "packages/shared/src/index.ts", 'export * from "./shared.ts";\n');
+  write(packageRoot, "packages/shared/src/shared.ts", "export type SharedExport = { id: string };\n");
+  write(
+    redeclaringConsumerRoot,
+    "src/local.ts",
+    "type SharedExport = { local: true };\nconst value: SharedExport = { local: true };\n",
+  );
+  write(
+    importingConsumerRoot,
+    "src/imported.ts",
+    [
+      'import type { SharedExport as ImportedSharedExport } from "@getsimpledirect/vinci-contracts";',
+      "const value: ImportedSharedExport = { id: \"imported\" };",
+      "",
+    ].join("\n"),
+  );
+
+  const redeclared = run(packageRoot, "--consumers", redeclaringConsumerRoot);
+  assert.equal(redeclared.status, 0);
+  assert.match(redeclared.stdout, /- SharedExport \(src\/shared\.ts\)/);
+
+  const imported = run(packageRoot, "--consumers", importingConsumerRoot);
+  assert.equal(imported.status, 0);
+  assert.doesNotMatch(imported.stdout, /- SharedExport \(src\/shared\.ts\)/);
 });
 
 test("reports a nonexistent consumer directory without crashing", (t) => {

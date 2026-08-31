@@ -167,6 +167,110 @@ function stripCommentsAndStrings(source) {
   return result;
 }
 
+const vinciModuleLiteral = String.raw`["']@getsimpledirect\/vinci-[^"'\s]+["']`;
+
+function extractVinciImports(source) {
+  // Preserve Vinci module literals while masking comments and all other
+  // strings, so import-like text in either cannot create false references.
+  const importSource = source.replace(
+    /\/\*[\s\S]*?\*\/|\/\/[^\r\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`/g,
+    (token) => (
+      /^["']@getsimpledirect\/vinci-[^"'\s]+["']$/.test(token)
+        ? token
+        : token.replace(/[^\r\n]/g, " ")
+    ),
+  );
+  const bindings = new Map();
+  const namespaces = new Set();
+  const directImports = new Set();
+  let importsEverything = false;
+
+  function addBinding(importedName, localName) {
+    if (!/^\w+$/.test(importedName) || !/^\w+$/.test(localName)) return;
+    if (!bindings.has(importedName)) bindings.set(importedName, new Set());
+    bindings.get(importedName).add(localName);
+  }
+
+  function parseNamedImports(list, aliasPattern, addName) {
+    for (let item of list.split(",")) {
+      item = item.trim().replace(/^type\s+/, "");
+      if (!item) continue;
+      const [importedName, localName = importedName] = item.split(aliasPattern);
+      addName(importedName.trim(), localName.trim());
+    }
+  }
+
+  const staticImportPattern = new RegExp(
+    String.raw`\bimport\s+(?:type\s+)?([\w\s{},*$]+?)\s+from\s+${vinciModuleLiteral}`,
+    "g",
+  );
+  for (const match of importSource.matchAll(staticImportPattern)) {
+    const named = match[1].match(/\{([^}]*)\}/s);
+    if (named) parseNamedImports(named[1], /\s+as\s+/, addBinding);
+    const namespace = match[1].match(/\*\s+as\s+(\w+)/);
+    if (namespace) namespaces.add(namespace[1]);
+  }
+
+  const reexportPattern = new RegExp(
+    String.raw`\bexport\s+(?:type\s+)?(\*\s*(?:as\s+\w+)?|\{[^}]*\})\s+from\s+${vinciModuleLiteral}`,
+    "g",
+  );
+  for (const match of importSource.matchAll(reexportPattern)) {
+    if (match[1].trim().startsWith("*")) {
+      importsEverything = true;
+    } else {
+      parseNamedImports(match[1].slice(1, -1), /\s+as\s+/, (importedName) => {
+        if (/^\w+$/.test(importedName)) directImports.add(importedName);
+      });
+    }
+  }
+
+  const requireCall = String.raw`require\s*\(\s*${vinciModuleLiteral}\s*\)`;
+  const dynamicImportCall = String.raw`import\s*\(\s*${vinciModuleLiteral}\s*\)`;
+
+  for (const match of importSource.matchAll(new RegExp(
+    String.raw`\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*${requireCall}`,
+    "g",
+  ))) {
+    parseNamedImports(match[1], /\s*:\s*/, addBinding);
+  }
+  for (const match of importSource.matchAll(new RegExp(
+    String.raw`\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*await\s+${dynamicImportCall}`,
+    "g",
+  ))) {
+    parseNamedImports(match[1], /\s*:\s*/, addBinding);
+  }
+
+  for (const match of importSource.matchAll(new RegExp(
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*${requireCall}`,
+    "g",
+  ))) {
+    namespaces.add(match[1]);
+  }
+  for (const match of importSource.matchAll(new RegExp(
+    String.raw`\b(?:const|let|var)\s+(\w+)\s*=\s*await\s+${dynamicImportCall}`,
+    "g",
+  ))) {
+    namespaces.add(match[1]);
+  }
+  for (const match of importSource.matchAll(new RegExp(
+    String.raw`\bimport\s+(\w+)\s*=\s*${requireCall}`,
+    "g",
+  ))) {
+    namespaces.add(match[1]);
+  }
+
+  const propertyPatterns = [
+    new RegExp(String.raw`(?:${requireCall}|${dynamicImportCall})\s*(?:\?\.|\.)\s*(\w+)`, "g"),
+    new RegExp(String.raw`\(\s*await\s+${dynamicImportCall}\s*\)\s*(?:\?\.|\.)\s*(\w+)`, "g"),
+  ];
+  for (const pattern of propertyPatterns) {
+    for (const match of importSource.matchAll(pattern)) directImports.add(match[1]);
+  }
+
+  return { bindings, namespaces, directImports, importsEverything };
+}
+
 const consumerSourceExtension = /\.(?:[cm]?[jt]sx?)$/;
 const ignoredConsumerDirectories = new Set([
   ".git",
@@ -242,18 +346,35 @@ function getConsumerSourceFiles(consumer, exportName, exportNames) {
 
       consumer.filesScanned++;
       let source;
+      let imports;
       try {
-        source = stripCommentsAndStrings(readFileSync(fullPath, "utf8"));
+        source = readFileSync(fullPath, "utf8");
+        imports = extractVinciImports(source);
+        source = stripCommentsAndStrings(source);
       } catch {
         // A file that becomes unreadable during the scan has still been counted,
         // but cannot contribute references.
         continue;
       }
 
+      const referencedImports = new Set(imports.directImports);
+      for (const [importedName, localNames] of imports.bindings) {
+        if ([...localNames].some((localName) => patternFor(localName).test(source))) {
+          referencedImports.add(importedName);
+        }
+      }
+      for (const namespace of imports.namespaces) {
+        const namespacePattern = new RegExp(
+          `\\b${namespace}\\s*(?:\\?\\.|\\.)\\s*(\\w+)`,
+          "g",
+        );
+        for (const match of source.matchAll(namespacePattern)) referencedImports.add(match[1]);
+      }
+
       // Test every export name immediately against this one file, then let
       // `source` go out of scope so its memory is freed right away.
       for (const name of exportNames) {
-        if (patternFor(name).test(source)) {
+        if (imports.importsEverything || referencedImports.has(name)) {
           matches.get(name).push(`${consumer.displayPath}:${relativePath(consumer.path, fullPath)}`);
         }
       }
