@@ -3,7 +3,13 @@
  * exactly this set at its routing boundary. Expanding it requires a deliberate
  * platform contract change rather than an accidental pass-through string.
  */
-export const MODEL_PROVIDERS = ["openai", "anthropic", "openrouter"] as const;
+export const MODEL_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "aws-bedrock",
+  "deepinfra",
+  "openrouter",
+] as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
 
 /**

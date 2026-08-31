@@ -16,16 +16,19 @@ import { deepFreeze } from "./deep-freeze.ts";
 
 /**
  * Bedrock — Vinci's general frontier-model lane through AWS Bedrock.
- * Inference runs through external infrastructure.
+ * Inference runs through external infrastructure (AWS).
  */
 const bedrockEndpoint: FrontierApiEndpoint = {
   schemaVersion: 1,
   endpointId: "bedrock-general",
   sourceClass: "frontier_api",
-  provider: "aws-bedrock",
-  model: "anthropic.claude-3-5-sonnet-20241022-v2:0",
-  modelRevision: { kind: "unknown" },
-  // Bedrock is a multi-model gateway, so the served artifact is unknown.
+  serving: {
+    kind: "third_party_api",
+    provider: "anthropic",
+    model: "claude-3-5-sonnet",
+    modelRevision: { kind: "unknown" },
+    jurisdiction: { kind: "known", value: { jurisdiction: "US" } },
+  },
   servedArtifact: { kind: "unknown" },
   capabilityProfile: {
     capabilities: ["text", "tool_use"],
@@ -58,7 +61,6 @@ const bedrockEndpoint: FrontierApiEndpoint = {
   },
   validFrom: "2024-01-01T00:00:00.000Z",
   expiresAt: null,
-  jurisdiction: { kind: "known", value: { jurisdiction: "US" } },
 };
 
 /**
@@ -69,10 +71,13 @@ const openrouterEndpoint: FrontierApiEndpoint = {
   schemaVersion: 1,
   endpointId: "openrouter-worker",
   sourceClass: "frontier_api",
-  provider: "openrouter",
-  model: "openai/gpt-4o",
-  modelRevision: { kind: "unknown" },
-  // OpenRouter is a multi-model gateway, so the served artifact is unknown.
+  serving: {
+    kind: "third_party_api",
+    provider: "openrouter",
+    model: "openai/gpt-4o",
+    modelRevision: { kind: "unknown" },
+    jurisdiction: { kind: "unknown" },
+  },
   servedArtifact: { kind: "unknown" },
   capabilityProfile: {
     capabilities: ["text", "tool_use", "vision"],
@@ -104,7 +109,6 @@ const openrouterEndpoint: FrontierApiEndpoint = {
   },
   validFrom: "2024-01-01T00:00:00.000Z",
   expiresAt: null,
-  jurisdiction: { kind: "unknown" },
 };
 
 /**
@@ -116,9 +120,10 @@ const podEndpoint: OpenWeightEndpoint = {
   schemaVersion: 1,
   endpointId: "pod-openweight-local",
   sourceClass: "open_weight",
-  weightsDigest: "sha256:placeholder-weights-do-not-use",
-  tokenizerDigest: "sha256:placeholder-tokenizer-do-not-use",
-  architectureDigest: "sha256:placeholder-architecture-do-not-use",
+  serving: { kind: "vinci_hosted" },
+  weightsDigest: { kind: "known", value: "sha256:placeholder-weights-do-not-use" },
+  tokenizerDigest: { kind: "known", value: "sha256:placeholder-tokenizer-do-not-use" },
+  architectureDigest: { kind: "known", value: "sha256:placeholder-architecture-do-not-use" },
   servingImageDigest: {
     kind: "known",
     value: "sha256:placeholder-image-do-not-use",
@@ -160,6 +165,57 @@ const podEndpoint: OpenWeightEndpoint = {
 };
 
 /**
+ * DeepInfra-served GLM-5.2 — open-weight model served through external API.
+ * Inference runs through external infrastructure (DeepInfra).
+ * This is the fourth combination: open_weight + third_party_api.
+ * Digests are unknown because we have not established them for this deployment route.
+ */
+const deepinfraEndpoint: OpenWeightEndpoint = {
+  schemaVersion: 1,
+  endpointId: "deepinfra-glm-5.2",
+  sourceClass: "open_weight",
+  serving: {
+    kind: "third_party_api",
+    provider: "deepinfra",
+    model: "deepseek-ai/GLM-5.2",
+    modelRevision: { kind: "unknown" },
+    jurisdiction: { kind: "unknown" },
+  },
+  weightsDigest: { kind: "unknown" },
+  tokenizerDigest: { kind: "unknown" },
+  architectureDigest: { kind: "unknown" },
+  servingImageDigest: { kind: "unknown" },
+  quantizationDigest: { kind: "unknown" },
+  capabilityProfile: {
+    capabilities: ["text", "tool_use"],
+    contextLimit: 128_000,
+    toolSupport: true,
+  },
+  declaredCapabilities: [
+    "structured_tool_use",
+    "repository_editing",
+    "evidence_citation",
+  ],
+  credentials: {
+    source: {
+      kind: "managed-credential",
+      credentialId: "deepinfra-api-key",
+    },
+  },
+  inferenceIsExternal: { kind: "known", value: true },
+  approvedForProtectedData: { kind: "unknown" },
+  rights: {
+    trainingAllowed: { kind: "unknown" },
+    evaluationAllowed: { kind: "unknown" },
+    redistributionAllowed: { kind: "unknown" },
+    outputRetainedByProvider: { kind: "unknown" },
+    policySnapshotDigest: { kind: "unknown" },
+  },
+  validFrom: "2026-01-01T00:00:00.000Z",
+  expiresAt: null,
+};
+
+/**
  * Registry of Vinci's real inference endpoints.
  * Each endpoint declares the facts we know with certainty; `unknown` marks
  * what we have not yet verified.
@@ -168,6 +224,7 @@ export const VINCI_ENDPOINTS = deepFreeze([
   bedrockEndpoint,
   openrouterEndpoint,
   podEndpoint,
+  deepinfraEndpoint,
 ] as const satisfies readonly ModelEndpointSpec[]);
 
 /**

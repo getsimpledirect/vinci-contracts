@@ -1040,7 +1040,7 @@ function validateDeclaredCapabilitiesAgainstProfile(
 import type { ModelRoleSpec } from "./role.ts";
 import type { ModelEndpointSpec } from "./endpoint.ts";
 import { ROLE_RISK_CLASSES, REQUIRED_CAPABILITIES } from "./role.ts";
-import { ENDPOINT_SOURCE_CLASSES } from "./endpoint.ts";
+import { ENDPOINT_SOURCE_CLASSES, ENDPOINT_SERVING_KINDS } from "./endpoint.ts";
 
 export function validateModelRoleSpec(input: unknown): ValidationResult<ModelRoleSpec> {
   const plain = toPlainRecord(input);
@@ -1151,6 +1151,35 @@ function validateEndpointRights(
   });
 }
 
+function validateServing(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  unknownFields: UnknownFields,
+): void {
+  const object = objectValue(
+    value,
+    path,
+    ["kind", "provider", "model", "modelRevision", "jurisdiction"],
+    issues,
+    unknownFields,
+  );
+  if (!object) return;
+  if (!enumValue(object.kind, ENDPOINT_SERVING_KINDS, `${path}/kind`, issues)) return;
+
+  if (object.kind === "vinci_hosted") {
+    rejectPresentField(object, "provider", path, issues, "vinci_hosted serving does not carry provider");
+    rejectPresentField(object, "model", path, issues, "vinci_hosted serving does not carry model");
+    rejectPresentField(object, "modelRevision", path, issues, "vinci_hosted serving does not carry modelRevision");
+    rejectPresentField(object, "jurisdiction", path, issues, "vinci_hosted serving does not carry jurisdiction");
+  } else {
+    enumValue(object.provider, MODEL_PROVIDERS, `${path}/provider`, issues);
+    requiredString(object.model, `${path}/model`, issues);
+    validateExplicitString(object.modelRevision, `${path}/modelRevision`, issues, unknownFields);
+    validateExplicitLocation(object.jurisdiction, `${path}/jurisdiction`, issues, unknownFields);
+  }
+}
+
 function validateFrontierApiEndpoint(
   value: unknown,
   path: string,
@@ -1172,10 +1201,7 @@ function validateFrontierApiEndpoint(
       "rights",
       "validFrom",
       "expiresAt",
-      "provider",
-      "model",
-      "modelRevision",
-      "jurisdiction",
+      "serving",
       "servedArtifact",
     ],
     issues,
@@ -1217,12 +1243,7 @@ function validateFrontierApiEndpoint(
   } else if (object.expiresAt !== null && !isCanonicalTimestamp(object.expiresAt)) {
     addIssue(issues, `${path}/expiresAt`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
   }
-  requiredString(object.provider, `${path}/provider`, issues);
-  requiredString(object.model, `${path}/model`, issues);
-  validateExplicitValue(object.modelRevision, `${path}/modelRevision`, issues, unknownFields, (known, knownPath) => {
-    requiredString(known, knownPath, issues);
-  });
-  validateExplicitLocation(object.jurisdiction, `${path}/jurisdiction`, issues, unknownFields);
+  validateServing(object.serving, `${path}/serving`, issues, unknownFields);
   validateExplicitValue(
     object.servedArtifact,
     `${path}/servedArtifact`,
@@ -1285,7 +1306,7 @@ function validateDigestIdentifiedEndpoint(
       "architectureDigest",
       "servingImageDigest",
       "quantizationDigest",
-      "servedArtifact",
+      "serving",
     ],
     issues,
     unknownFields,
@@ -1326,15 +1347,22 @@ function validateDigestIdentifiedEndpoint(
   } else if (object.expiresAt !== null && !isCanonicalTimestamp(object.expiresAt)) {
     addIssue(issues, `${path}/expiresAt`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
   }
-  identifier(object.weightsDigest, `${path}/weightsDigest`, issues);
-  identifier(object.tokenizerDigest, `${path}/tokenizerDigest`, issues);
-  identifier(object.architectureDigest, `${path}/architectureDigest`, issues);
+  validateExplicitValue(object.weightsDigest, `${path}/weightsDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
+  validateExplicitValue(object.tokenizerDigest, `${path}/tokenizerDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
+  validateExplicitValue(object.architectureDigest, `${path}/architectureDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
   validateExplicitValue(object.servingImageDigest, `${path}/servingImageDigest`, issues, unknownFields, (known, knownPath) => {
     identifier(known, knownPath, issues);
   });
   validateExplicitValue(object.quantizationDigest, `${path}/quantizationDigest`, issues, unknownFields, (known, knownPath) => {
     identifier(known, knownPath, issues);
   });
+  validateServing(object.serving, `${path}/serving`, issues, unknownFields);
 }
 
 function validateCredentialsObject(
