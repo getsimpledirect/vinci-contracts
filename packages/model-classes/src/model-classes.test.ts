@@ -1,6 +1,5 @@
 import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import { execSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {

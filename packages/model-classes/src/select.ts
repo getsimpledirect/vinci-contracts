@@ -3,6 +3,9 @@ import type { ModelEndpointSpec } from "./endpoint.ts";
 import type { ModelRoleSpec } from "./role.ts";
 import { matchEndpointToRole, type MatchResult } from "./role-match.ts";
 
+/** A supply population larger than this is not a fleet; it is a hostile argument. */
+const MAX_ENDPOINTS = 10_000;
+
 /** The complete, disjoint eligibility partition for a role. */
 export type Selection = {
   readonly roleId: string;
@@ -36,7 +39,14 @@ export function selectForRole(
     const roleId = role.roleId;
     
     // Validate endpoints shape
-    if (!Array.isArray(endpoints)) {
+    // Array.isArray is TRUE for `Object.assign([], {length: 2 ** 32 - 1})` -- a
+    // real Array that claims four billion entries and holds none. Iterating it
+    // exhausts the heap before any verdict is reached, so an unbounded loop here
+    // is a denial of service reachable from a single hostile argument. A length
+    // check is not a style preference: it is the guard. MAX_ENDPOINTS is far
+    // above any real supply population (the live registry declares three) and
+    // far below the point where iteration costs anything.
+    if (!Array.isArray(endpoints) || endpoints.length > MAX_ENDPOINTS) {
       return {
         roleId: typeof roleId === "string" ? roleId : "unknown",
         eligible: [],
