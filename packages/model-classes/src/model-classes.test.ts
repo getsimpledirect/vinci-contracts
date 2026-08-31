@@ -3,11 +3,16 @@ import { describe, expect, it } from "vitest";
 import {
   CUSTOMER_ENDPOINT_SCHEMA_META,
   FALLBACK_RECORD_SCHEMA_META,
+  MODEL_ENDPOINT_SPEC_SCHEMA_META,
   MODEL_PROVENANCE_SCHEMA_META,
+  MODEL_ROLE_SPEC_SCHEMA_META,
   RESIDENCY_RECORD_SCHEMA_META,
+  matchEndpointToRole,
   validateCustomerEndpointConfig,
+  validateModelEndpointSpec,
   validateFallbackRecord,
   validateModelProvenanceRecord,
+  validateModelRoleSpec,
   validateResidencyRecord,
 } from "./index.ts";
 
@@ -85,8 +90,10 @@ const validResolvedProvenance = () => ({
 function expectIssue(
   result:
     | ReturnType<typeof validateCustomerEndpointConfig>
+    | ReturnType<typeof validateModelEndpointSpec>
     | ReturnType<typeof validateFallbackRecord>
     | ReturnType<typeof validateModelProvenanceRecord>
+    | ReturnType<typeof validateModelRoleSpec>
     | ReturnType<typeof validateResidencyRecord>,
   path: string,
   code: string,
@@ -104,11 +111,211 @@ describe("schema compatibility contracts", () => {
       FALLBACK_RECORD_SCHEMA_META,
       CUSTOMER_ENDPOINT_SCHEMA_META,
       RESIDENCY_RECORD_SCHEMA_META,
+      MODEL_ROLE_SPEC_SCHEMA_META,
+      MODEL_ENDPOINT_SPEC_SCHEMA_META,
     ]) {
       expect(() => assertSchemaMetaComplete(meta)).not.toThrow();
       expect(meta.malformedData).toBe("fail-closed");
       expect(meta.unknownFields).toBe("preserve");
     }
+  });
+});
+
+const validRole = () => ({
+  schemaVersion: 1,
+  roleId: "repository-agent",
+  taskClass: "repository-edit",
+  requiredCapabilities: ["repository_editing", "evidence_citation"],
+  minimumContextTokens: 64_000,
+  riskClass: "medium",
+  dataPolicy: {
+    externalProviderAllowed: true,
+    outputRetentionAllowed: false,
+    protectedDataAllowed: false,
+  },
+  qualityPolicy: {
+    minimumVerifiedSuccessRate: 0.9,
+    maximumFalseClaimRate: 0.02,
+  },
+  economicPolicy: {
+    maximumCostPerVerifiedSuccessUsd: 3.5,
+    maximumP95WallSeconds: 120,
+  },
+  fallbackRoleIds: ["repository-agent-fallback"],
+});
+
+const endpointCommon = () => ({
+  schemaVersion: 1,
+  endpointId: "endpoint-1",
+  capabilityProfile: {
+    capabilities: ["text", "tool_use"],
+    contextLimit: 128_000,
+    toolSupport: true,
+  },
+  declaredCapabilities: ["repository_editing", "evidence_citation"],
+  credentials: {
+    source: { kind: "managed-credential", credentialId: "credential-1" },
+  },
+  rights: {
+    trainingAllowed: known(true),
+    evaluationAllowed: known(true),
+    redistributionAllowed: known(false),
+    outputRetainedByProvider: known(false),
+    policySnapshotDigest: known("policy-snapshot-1"),
+  },
+  validFrom: "2026-08-01T00:00:00.000Z",
+  expiresAt: "2027-08-01T00:00:00.000Z",
+});
+
+const validFrontierEndpoint = () => ({
+  ...endpointCommon(),
+  sourceClass: "frontier_api",
+  provider: "openai",
+  model: "supplier-model-current",
+  modelRevision: known("2026-08-01"),
+  jurisdiction: known({ jurisdiction: "CA", region: "ca-central-1" }),
+});
+
+const validLocalEndpoint = (sourceClass: "open_weight" | "vinci_pretrained") => ({
+  ...endpointCommon(),
+  sourceClass,
+  weightsDigest: "weights-sha256-abc",
+  tokenizerDigest: "tokenizer-sha256-def",
+  architectureDigest: "architecture-sha256-ghi",
+  servingImageDigest: known("image-sha256-jkl"),
+  quantizationDigest: { kind: "unknown" },
+});
+
+describe("model role and endpoint ABI validation", () => {
+  it("round-trips a valid role and all three endpoint source classes", () => {
+    const role = validRole();
+    const endpoints = [
+      validFrontierEndpoint(),
+      validLocalEndpoint("open_weight"),
+      validLocalEndpoint("vinci_pretrained"),
+    ];
+
+    const roleResult = validateModelRoleSpec(role);
+    expect(roleResult.ok).toBe(true);
+    if (roleResult.ok) expect(roleResult.value).toEqual(role);
+
+    for (const endpoint of endpoints) {
+      const result = validateModelEndpointSpec(endpoint);
+      expect(result.ok).toBe(true);
+      if (result.ok) expect(result.value).toEqual(endpoint);
+    }
+  });
+
+  it("accumulates malformed role and endpoint issues at exact JSON pointers", () => {
+    const roleResult = validateModelRoleSpec({
+      ...validRole(),
+      roleId: "has space",
+      qualityPolicy: {
+        ...validRole().qualityPolicy,
+        minimumVerifiedSuccessRate: 1.1,
+      },
+    });
+    expectIssue(roleResult, "/roleId", "invalid_identifier");
+    expectIssue(
+      roleResult,
+      "/qualityPolicy/minimumVerifiedSuccessRate",
+      "invalid_number",
+    );
+
+    const endpointResult = validateModelEndpointSpec({
+      ...validFrontierEndpoint(),
+      declaredCapabilities: ["not-a-required-capability"],
+      validFrom: "August 1",
+    });
+    expectIssue(endpointResult, "/declaredCapabilities/0", "invalid_enum");
+    expectIssue(endpointResult, "/validFrom", "invalid_timestamp");
+  });
+
+  it("rejects rather than preserves an unknown credentials key", () => {
+    const result = validateModelEndpointSpec({
+      ...validLocalEndpoint("open_weight"),
+      credentials: {
+        ...endpointCommon().credentials,
+        label: "must-not-be-preserved",
+      },
+    });
+
+    expectIssue(result, "/credentials/label", "credential_material_forbidden");
+  });
+});
+
+describe("model role endpoint matching", () => {
+  const now = "2026-08-30T12:00:00.000Z";
+
+  it("fails closed when a retention-dependent policy is undeclared", () => {
+    const endpoint = {
+      ...validLocalEndpoint("vinci_pretrained"),
+      rights: {
+        ...endpointCommon().rights,
+        outputRetainedByProvider: { kind: "unknown" as const },
+      },
+    };
+
+    const result = matchEndpointToRole(validRole(), endpoint, now);
+    expect(result.verdict).toBe("unevaluable");
+    expect(result.reasons).toEqual([
+      {
+        code: "retention_undeclared",
+        detail: "endpoint did not declare retention policy",
+      },
+    ]);
+  });
+
+  it("does not change verdict or reason codes merely because sourceClass changes", () => {
+    const role = { ...validRole(), requiredCapabilities: ["vision"] };
+    const frontier = validFrontierEndpoint();
+    const local = validLocalEndpoint("vinci_pretrained");
+
+    const frontierResult = matchEndpointToRole(role, frontier, now);
+    const localResult = matchEndpointToRole(role, local, now);
+    expect(frontierResult.verdict).toBe("ineligible");
+    expect(localResult.verdict).toBe("ineligible");
+    expect(frontierResult.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
+    expect(localResult.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
+  });
+
+  it("makes ineligible outrank unevaluable while collecting every reason", () => {
+    const endpoint = {
+      ...validLocalEndpoint("open_weight"),
+      capabilityProfile: {
+        ...endpointCommon().capabilityProfile,
+        contextLimit: 4_096,
+      },
+      rights: {
+        ...endpointCommon().rights,
+        outputRetainedByProvider: { kind: "unknown" as const },
+      },
+    };
+
+    const result = matchEndpointToRole(validRole(), endpoint, now);
+    expect(result.verdict).toBe("ineligible");
+    expect(result.reasons.map(({ code }) => code)).toEqual([
+      "context_too_small",
+      "retention_undeclared",
+    ]);
+  });
+
+  it("rejects an expired endpoint and treats null as no declared expiry", () => {
+    const expired = matchEndpointToRole(
+      validRole(),
+      { ...validLocalEndpoint("open_weight"), expiresAt: "2026-08-30T11:59:59.999Z" },
+      now,
+    );
+    const noExpiry = matchEndpointToRole(
+      validRole(),
+      { ...validLocalEndpoint("open_weight"), expiresAt: null },
+      now,
+    );
+
+    expect(expired.verdict).toBe("ineligible");
+    expect(expired.reasons.map(({ code }) => code)).toEqual(["endpoint_expired"]);
+    expect(noExpiry.verdict).toBe("eligible");
+    expect(noExpiry.reasons).toEqual([]);
   });
 });
 
