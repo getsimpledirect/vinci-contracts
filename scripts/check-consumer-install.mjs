@@ -220,8 +220,22 @@ const abiEndpoint = endpointById("forte-deepinfra");
 if (!abiRole || !abiEndpoint) throw new Error("the installed registry lost a role or a lane");
 
 const NOW_ABI = "2026-08-31T00:00:00.000Z";
-if (matchEndpointToRole(abiRole, abiEndpoint, NOW_ABI).verdict !== "eligible") {
-  throw new Error("a fully declared lane was not eligible from an installed build");
+
+// This role requires evidence_citation from the HARNESS, which an inference endpoint
+// cannot supply. Withholding eligibility until a caller attests it is the fix for
+// fail-open #9, where the requirement was moved into a field nothing read and four
+// production lanes became eligible for a role nobody could satisfy.
+if (matchEndpointToRole(abiRole, abiEndpoint, NOW_ABI).verdict === "eligible") {
+  throw new Error("an unattested harness requirement was granted by an installed build");
+}
+
+// ...and it must still GRANT once the harness is attested, or the guard above is just
+// a matcher that refuses everything. Both directions, through the published surface.
+if (
+  matchEndpointToRole(abiRole, abiEndpoint, NOW_ABI, ["evidence_citation"]).verdict !==
+  "eligible"
+) {
+  throw new Error("a fully declared and attested lane was not eligible from an installed build");
 }
 
 // Both directions, because a matcher that refuses everything passes the accept
