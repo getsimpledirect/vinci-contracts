@@ -133,7 +133,12 @@ const validRole = () => ({
   schemaVersion: 1,
   roleId: "repository-agent",
   taskClass: "repository-edit",
-  requiredCapabilities: ["repository_editing", "evidence_citation"],
+  requiredCapabilities: ["structured_tool_use"],
+  // Deliberately EMPTY. A role that requires a harness capability can never be
+  // `eligible` from the endpoint matcher alone, so a non-empty default here would
+  // silently make every test below assert `unevaluable` for a reason unrelated to
+  // what it is testing. The harness requirement is covered by its own tests.
+  requiredHarnessCapabilities: [],
   minimumContextTokens: 64_000,
   riskClass: "medium",
   dataPolicy: {
@@ -160,7 +165,7 @@ const endpointCommon = () => ({
     contextLimit: 128_000,
     toolSupport: true,
   },
-  declaredCapabilities: ["repository_editing", "evidence_citation"],
+  declaredCapabilities: ["structured_tool_use"],
   credentials: {
     source: { kind: "managed-credential", credentialId: "credential-1" },
   },
@@ -621,7 +626,7 @@ describe("matchEndpointToRole defensive validation", () => {
   });
 
   it("reads bounded capability arrays by index without trusting their iterator", () => {
-    const capabilities = new Proxy(["repository_editing", "evidence_citation"], {
+    const capabilities = new Proxy(["structured_tool_use"], {
       get(target, property, receiver) {
         if (property === Symbol.iterator) throw new Error("must not use caller iterator");
         return Reflect.get(target, property, receiver);
@@ -1169,12 +1174,19 @@ describe("vinci endpoint registry", () => {
     const stdout = output.replace(/\n__EXIT_CODE__=\d+\n$/, "");
 
     expect(match?.[1]).toBe("0");
-    // Every registry field a role depends on is now declared: George checked the
-    // three providers' terms on 2026-08-31 (training and evaluation permitted),
-    // and non-retention is an enforced invariant of vinci-chat's serving path.
-    // So the honest expectation is that the report finds NOTHING -- and it must
-    // still exit 0, because no gaps is a healthy state rather than a failure.
-    expect(stdout).toContain("No undeclared facts found");
+    // Every registry RIGHTS field a role depends on is now declared: George checked the
+    // three providers' terms on 2026-08-31 (training and evaluation permitted), and
+    // non-retention is an enforced invariant of vinci-chat's serving path. So no
+    // provider-terms gap should appear.
+    expect(stdout).not.toContain("terms of service");
+    expect(stdout).not.toContain("protected-data approval record");
+
+    // One honest gap remains, and it is not a rights gap: three roles require harness
+    // capabilities that only the CALLER can attest, so the registry alone cannot make
+    // them eligible. The report must name it rather than report a clean bill of health,
+    // and must still exit 0, because a declared gap is a healthy state, not a failure.
+    expect(stdout).toContain("attestedHarnessCapabilities");
+    expect(stdout).toContain("mle-implementation-worker");
   });
 });
 
@@ -1304,29 +1316,36 @@ describe("role selection", () => {
       VINCI_ROLES.map((role) => [role.roleId, selectForRole(role, VINCI_ENDPOINTS, now)]),
     );
 
+    // NOT eligible. The role requires repository_editing and long_horizon_recovery,
+    // which are harness capabilities an inference endpoint cannot supply and
+    // selectForRole does not attest. Absence of that attestation withholds
+    // eligibility instead of granting it.
     expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([]);
-    expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([
+      "forte-deepinfra",
+      "forte-fireworks",
+      "mezzo-deepinfra",
+      "fortissimo-fireworks",
+    ]);
     expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
-      "forte-deepinfra",
-      "forte-fireworks",
       "vision-deepinfra",
       "vision-openrouter",
+    ]);
+
+    // adversarial-reviewer requires evidence_citation from the HARNESS. Splitting the
+    // field out of requiredCapabilities removed it from the endpoint check; it must not
+    // also remove it from enforcement, so these lanes are unevaluable, not eligible.
+    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([]);
+    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([
+      "forte-deepinfra",
+      "forte-fireworks",
       "mezzo-deepinfra",
       "fortissimo-fireworks",
     ]);
-
-    // Rights are now declared, so every lane is eligible for review work.
-    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([
-      "forte-deepinfra",
-      "forte-fireworks",
+    expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([
       "vision-deepinfra",
       "vision-openrouter",
-      "mezzo-deepinfra",
-      "fortissimo-fireworks",
     ]);
-    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([]);
-
-    expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([]);
 
     expect(endpointIds(selections["cloud-worker"].eligible)).toEqual([
       "forte-deepinfra",
@@ -1338,6 +1357,125 @@ describe("role selection", () => {
     ]);
     expect(endpointIds(selections["cloud-worker"].unevaluable)).toEqual([]);
     expect(endpointIds(selections["cloud-worker"].ineligible)).toEqual([]);
+
+    // teacher-trajectory-producer requires no ENDPOINT capabilities, which is exactly why
+    // it is the sharpest case: with evidence_citation moved to the harness field and left
+    // unenforced, every endpoint would have become eligible for a role whose one real
+    // requirement nothing checks. Unattested, all six are unevaluable.
+    expect(endpointIds(selections["teacher-trajectory-producer"].eligible)).toEqual([]);
+    expect(endpointIds(selections["teacher-trajectory-producer"].unevaluable)).toEqual([
+      "forte-deepinfra",
+      "forte-fireworks",
+      "vision-deepinfra",
+      "vision-openrouter",
+      "mezzo-deepinfra",
+      "fortissimo-fireworks",
+    ]);
+    expect(endpointIds(selections["teacher-trajectory-producer"].ineligible)).toEqual([]);
+  });
+
+  it("does not let a two-faced length make a harness requirement vanish", () => {
+    // Regression for a fail-open introduced BY the first version of this very guard.
+    // `Array.isArray` returns true for a Proxy wrapping an array, so it is not a defence.
+    // The first implementation tested `length > 0` and then re-read the list with
+    // `.map()`. A Proxy reporting 2 to the test and 0 to the map made the requirement
+    // disappear between the check and its use, and the pair came back `eligible`.
+    const role = roleById("mle-implementation-worker");
+    const endpoint = endpointById("forte-deepinfra");
+    expect(role).toBeDefined();
+    expect(endpoint).toBeDefined();
+
+    if (role && endpoint) {
+      let lengthReads = 0;
+      const twoFaced = new Proxy(["repository_editing", "long_horizon_recovery"], {
+        get(target, property, receiver) {
+          if (property === "length") {
+            lengthReads += 1;
+            return lengthReads === 1 ? 2 : 0;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+
+      const result = matchEndpointToRole(
+        { ...role, requiredHarnessCapabilities: twoFaced } as unknown as ModelRoleSpec,
+        endpoint,
+        now,
+        ["something_irrelevant"],
+      );
+
+      expect(result.verdict).not.toBe("eligible");
+      expect(result.reasons.map(({ code }) => code)).toContain(
+        "harness_capabilities_unverified",
+      );
+    }
+  });
+
+  it("ignores a hostile includes() on the attestation", () => {
+    // The attestation is snapshotted into a fresh array, so membership is decided by
+    // Array.prototype.includes over values we copied -- not by a method the caller
+    // supplied. An empty attestation that claims to contain everything must not grant.
+    const role = roleById("mle-implementation-worker");
+    const endpoint = endpointById("forte-deepinfra");
+    if (role && endpoint) {
+      const liar = Object.assign([] as unknown[], { includes: () => true });
+      const result = matchEndpointToRole(
+        role,
+        endpoint,
+        now,
+        liar as unknown as readonly never[],
+      );
+      expect(result.verdict).not.toBe("eligible");
+    }
+  });
+
+  it("bounds a caller-declared harness list length", () => {
+    const role = roleById("mle-implementation-worker");
+    const endpoint = endpointById("forte-deepinfra");
+    if (role && endpoint) {
+      const started = Date.now();
+      const result = matchEndpointToRole(
+        {
+          ...role,
+          requiredHarnessCapabilities: Object.assign([], { length: 2 ** 32 - 1 }),
+        } as unknown as ModelRoleSpec,
+        endpoint,
+        now,
+        ["x"],
+      );
+      expect(result.verdict).toBe("unevaluable");
+      expect(Date.now() - started).toBeLessThan(1000);
+    }
+  });
+
+  it("withholds eligibility when a role omits requiredHarnessCapabilities entirely", () => {
+    // A role that simply does not mention the field is NOT a role with no harness
+    // requirements. Reading omission as "none required" is the fail-open this guard
+    // exists to prevent: it would let a role become eligible by saying less.
+    const endpoint = endpointById("forte-deepinfra");
+    expect(endpoint).toBeDefined();
+
+    const role = roleById("cloud-worker");
+    expect(role).toBeDefined();
+
+    if (role && endpoint) {
+      // Control: cloud-worker declares [] explicitly and IS eligible, so the assertion
+      // below fails for the omission and not for some unrelated property of the pair.
+      expect(matchEndpointToRole(role, endpoint, now).verdict).toBe("eligible");
+
+      const withoutField: Record<string, unknown> = { ...role };
+      delete withoutField.requiredHarnessCapabilities;
+
+      const result = matchEndpointToRole(
+        withoutField as unknown as ModelRoleSpec,
+        endpoint,
+        now,
+      );
+      expect(result.verdict).toBe("unevaluable");
+      expect(result.reasons.map(({ code }) => code)).toContain(
+        "harness_capabilities_unverified",
+      );
+    }
   });
 
   it("keeps each partition disjoint and accounts for every endpoint", () => {
@@ -1396,13 +1534,27 @@ describe("role selection", () => {
     if (role && endpoint) {
       const result = matchEndpointToRole(role, endpoint, now);
 
-      // The verdict follows the declared facts, not the lane name. Retention is
-      // now declared (vinci-chat enforces ZDR on every serving path), so the
-      // only remaining failure is the real one: this lane does not declare
-      // long_horizon_recovery. That is a capability gap, not a rights gap, and
-      // no terms-of-service reading can close it.
-      expect(result.verdict).toBe("ineligible");
-      expect(result.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
+      // The verdict follows the declared facts. The endpoint satisfies every ENDPOINT
+      // capability the role asks for, but the role also requires harness capabilities
+      // that no endpoint can supply and this call does not attest, so the honest answer
+      // is "cannot tell", not "yes".
+      expect(result.verdict).toBe("unevaluable");
+      expect(result.reasons.map(({ code }) => code)).toEqual([
+        "harness_capabilities_unverified",
+      ]);
+
+      // Both directions. With the harness attested, the same pair IS eligible -- so the
+      // check above is withholding a real grant rather than refusing everything.
+      const attested = matchEndpointToRole(role, endpoint, now, [
+        "repository_editing",
+        "long_horizon_recovery",
+      ]);
+      expect(attested.verdict).toBe("eligible");
+      expect(attested.reasons).toEqual([]);
+
+      // And an attestation that does not cover the requirement is a definite no.
+      const partial = matchEndpointToRole(role, endpoint, now, ["repository_editing"]);
+      expect(partial.verdict).toBe("ineligible");
     }
   });
 
@@ -1422,16 +1574,31 @@ describe("role selection", () => {
     expect(declared).toBeDefined();
 
     if (role && declared) {
-      // Identical to a lane that IS eligible, except training rights are unknown.
-      const undeclared = {
+      // After separating endpoint and harness capabilities, teacher-trajectory-producer
+      // requires no endpoint capabilities (evidence_citation is now a harness capability).
+      // Create a fixture that is eligible to verify the rights-undeclared check still fires.
+      const withCapabilities = {
         ...declared,
-        endpointId: "fixture-rights-undeclared",
-        rights: { ...declared.rights, trainingAllowed: { kind: "unknown" } },
+        endpointId: "fixture-rights-eligible-capable",
+        declaredCapabilities: [],
       } as unknown as ModelEndpointSpec;
 
-      expect(matchEndpointToRole(role, declared, now).verdict).toBe("eligible");
+      const undeclared = {
+        ...withCapabilities,
+        endpointId: "fixture-rights-undeclared",
+        rights: { ...withCapabilities.rights, trainingAllowed: { kind: "unknown" } },
+      } as unknown as ModelEndpointSpec;
 
-      const result = matchEndpointToRole(role, undeclared, now);
+      // Attest the harness capability so that the ONLY thing differing between the two
+      // fixtures below is the declared right. Without this the pair would both be
+      // unevaluable for a harness reason and the test would pass without touching rights.
+      const harness = ["evidence_citation"] as const;
+
+      expect(matchEndpointToRole(role, withCapabilities, now, harness).verdict).toBe(
+        "eligible",
+      );
+
+      const result = matchEndpointToRole(role, undeclared, now, harness);
       expect(result.verdict).toBe("unevaluable");
       expect(result.reasons.map(({ code }) => code)).toContain("rights_undeclared");
     }

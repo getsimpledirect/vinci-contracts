@@ -35,15 +35,21 @@ const forteDeepinfraEndpoint: OpenWeightEndpoint = {
   servingImageDigest: { kind: "unknown" },
   quantizationDigest: { kind: "unknown" },
   capabilityProfile: {
+    // EVIDENCE-BACKED: text is universal (all LLMs support text).
+    // tool_use: app/api/v1/chat/completions/route.ts forwards tool definitions
+    // and tool results over the OpenAI-compatible protocol to the upstream
+    // provider, where they are processed. The forwarding path and provider
+    // acceptance both are required for tool_use to be true; neither alone suffices.
     capabilities: ["text", "tool_use"],
-    contextLimit: 128_000,
+    // From vinci-chat/config/classes.yaml line 26: forte declares 1000000 tokens.
+    contextLimit: 1000000,
     toolSupport: true,
   },
-  declaredCapabilities: [
-    "structured_tool_use",
-    "repository_editing",
-    "evidence_citation",
-  ],
+  // DECISION: structured_tool_use is arguably evidenced (tool forwarding); it was kept.
+  // repository_editing: NO EVIDENCE. These are inference endpoints; vinci-code
+  // (PR #69, lib/code/capabilities.ts) has its own registry for agent work.
+  // evidence_citation: NO EVIDENCE found. No citations are handled by this layer.
+  declaredCapabilities: ["structured_tool_use"],
   credentials: {
     source: {
       kind: "managed-credential",
@@ -102,15 +108,18 @@ const forteFireworksEndpoint: OpenWeightEndpoint = {
   servingImageDigest: { kind: "unknown" },
   quantizationDigest: { kind: "unknown" },
   capabilityProfile: {
+    // EVIDENCE-BACKED: text is universal (all LLMs support text).
+    // tool_use: app/api/v1/chat/completions/route.ts forwards tool definitions
+    // and tool results over the OpenAI-compatible protocol to the upstream
+    // provider, where they are processed.
     capabilities: ["text", "tool_use"],
-    contextLimit: 128_000,
+    // From vinci-chat/config/classes.yaml line 26: forte declares 1000000 tokens.
+    contextLimit: 1000000,
     toolSupport: true,
   },
-  declaredCapabilities: [
-    "structured_tool_use",
-    "repository_editing",
-    "evidence_citation",
-  ],
+  // DECISION: structured_tool_use is arguably evidenced (tool forwarding); it was kept.
+  // repository_editing and evidence_citation have no evidence and were removed.
+  declaredCapabilities: ["structured_tool_use"],
   credentials: {
     source: {
       kind: "managed-credential",
@@ -166,15 +175,19 @@ const visionDeepinfraEndpoint: OpenWeightEndpoint = {
   servingImageDigest: { kind: "unknown" },
   quantizationDigest: { kind: "unknown" },
   capabilityProfile: {
-    capabilities: ["text", "tool_use", "vision"],
-    contextLimit: 262_144,
+    // EVIDENCE-BACKED: text is universal; vision is declared because this model
+    // is Qwen3-VL-30B-A3B-Instruct, a multimodal model, and classes.yaml line 142
+    // declares multimodal: true for this class. tool_use is NOT declared for vision
+    // because these image-description outputs are fed only to Forte, which handles tools;
+    // vision itself does not need tool support.
+    capabilities: ["text", "vision"],
+    // From vinci-chat/config/classes.yaml line 145: vision declares 262144 tokens.
+    contextLimit: 262144,
     toolSupport: true,
   },
-  declaredCapabilities: [
-    "structured_tool_use",
-    "evidence_citation",
-    "vision",
-  ],
+  // vision: evidenced by the model being multimodal.
+  // structured_tool_use and evidence_citation: no evidence, removed.
+  declaredCapabilities: ["vision"],
   credentials: {
     source: {
       kind: "managed-credential",
@@ -239,15 +252,16 @@ const visionOpenrouterEndpoint: OpenWeightEndpoint = {
   servingImageDigest: { kind: "unknown" },
   quantizationDigest: { kind: "unknown" },
   capabilityProfile: {
-    capabilities: ["text", "tool_use", "vision"],
-    contextLimit: 262_144,
+    // EVIDENCE-BACKED: text is universal; vision is declared for the same reason
+    // as the DeepInfra lane (multimodal model, classes.yaml line 142).
+    capabilities: ["text", "vision"],
+    // From vinci-chat/config/classes.yaml line 145: vision declares 262144 tokens.
+    contextLimit: 262144,
     toolSupport: true,
   },
-  declaredCapabilities: [
-    "structured_tool_use",
-    "evidence_citation",
-    "vision",
-  ],
+  // vision: evidenced by the model being multimodal.
+  // structured_tool_use and evidence_citation: no evidence, removed.
+  declaredCapabilities: ["vision"],
   credentials: {
     source: {
       kind: "managed-credential",
@@ -304,15 +318,17 @@ const mezzoDeepinfraEndpoint: OpenWeightEndpoint = {
   servingImageDigest: { kind: "unknown" },
   quantizationDigest: { kind: "unknown" },
   capabilityProfile: {
+    // EVIDENCE-BACKED: text is universal (all LLMs support text).
+    // tool_use: app/api/v1/chat/completions/route.ts forwards tool definitions
+    // and tool results over the OpenAI-compatible protocol to the upstream provider.
     capabilities: ["text", "tool_use"],
-    contextLimit: 128_000,
+    // From vinci-chat/config/classes.yaml line 187: mezzo declares 1000000 tokens.
+    contextLimit: 1000000,
     toolSupport: true,
   },
-  declaredCapabilities: [
-    "structured_tool_use",
-    "repository_editing",
-    "evidence_citation",
-  ],
+  // DECISION: structured_tool_use is arguably evidenced (tool forwarding); it was kept.
+  // repository_editing and evidence_citation: no evidence, removed.
+  declaredCapabilities: ["structured_tool_use"],
   credentials: {
     source: {
       kind: "managed-credential",
@@ -384,15 +400,17 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
   servingImageDigest: { kind: "unknown" },
   quantizationDigest: { kind: "unknown" },
   capabilityProfile: {
+    // EVIDENCE-BACKED: text is universal (all LLMs support text).
+    // tool_use: app/api/v1/chat/completions/route.ts forwards tool definitions
+    // and tool results over the OpenAI-compatible protocol to the upstream provider.
     capabilities: ["text", "tool_use"],
-    contextLimit: 128_000,
+    // From vinci-chat/config/classes.yaml line 77: fortissimo declares 1000000 tokens.
+    contextLimit: 1000000,
     toolSupport: true,
   },
-  declaredCapabilities: [
-    "structured_tool_use",
-    "repository_editing",
-    "evidence_citation",
-  ],
+  // DECISION: structured_tool_use is arguably evidenced (tool forwarding); it was kept.
+  // repository_editing and evidence_citation: no evidence, removed.
+  declaredCapabilities: ["structured_tool_use"],
   credentials: {
     source: {
       kind: "managed-credential",

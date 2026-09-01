@@ -7,8 +7,13 @@ const mleImplementationWorker: ModelRoleSpec = {
   schemaVersion: 1,
   roleId: "mle-implementation-worker",
   taskClass: "mle-implementation",
+  // Endpoint capabilities: what the inference endpoint itself must provide
   requiredCapabilities: [
     "structured_tool_use",
+  ],
+  // Harness capabilities: what the calling system must provide
+  // (repository_editing and long_horizon_recovery are system/framework features)
+  requiredHarnessCapabilities: [
     "repository_editing",
     "long_horizon_recovery",
   ],
@@ -35,7 +40,11 @@ const adversarialReviewer: ModelRoleSpec = {
   schemaVersion: 1,
   roleId: "adversarial-reviewer",
   taskClass: "adversarial-review",
-  requiredCapabilities: ["structured_tool_use", "evidence_citation"],
+  // Endpoint capabilities: what the inference endpoint itself must provide
+  requiredCapabilities: ["structured_tool_use"],
+  // Harness capabilities: what the calling system must provide
+  // (evidence_citation is a prompt/scaffold feature, not an endpoint property)
+  requiredHarnessCapabilities: ["evidence_citation"],
   minimumContextTokens: 64_000,
   riskClass: "medium",
   dataPolicy: {
@@ -59,6 +68,7 @@ const cloudWorker: ModelRoleSpec = {
   roleId: "cloud-worker",
   taskClass: "cloud-work",
   requiredCapabilities: [],
+  requiredHarnessCapabilities: [],
   minimumContextTokens: 1,
   riskClass: "low",
   dataPolicy: {
@@ -93,7 +103,11 @@ const teacherTrajectoryProducer: ModelRoleSpec = {
   schemaVersion: 1,
   roleId: "teacher-trajectory-producer",
   taskClass: "teacher-trajectory-generation",
-  requiredCapabilities: ["evidence_citation"],
+  // Endpoint capabilities: empty; this role does not require specific model features
+  requiredCapabilities: [],
+  // Harness capabilities: what the calling system must provide
+  // (evidence_citation is a prompt/scaffold feature for curating trajectories)
+  requiredHarnessCapabilities: ["evidence_citation"],
   minimumContextTokens: 8_000,
   riskClass: "high",
   dataPolicy: {

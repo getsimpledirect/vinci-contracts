@@ -1,6 +1,6 @@
 import type { Timestamp } from "@getsimpledirect/vinci-contracts";
 import type { CustomerEndpointAuthenticationSource } from "./customer-endpoint.ts";
-import type { RequiredCapability } from "./role.ts";
+import type { EndpointCapability } from "./role.ts";
 import type {
   ExplicitValue,
   ModelCapabilityProfile,
@@ -53,7 +53,7 @@ type ModelEndpointCommon = {
   readonly schemaVersion: 1;
   readonly endpointId: string;
   readonly capabilityProfile: ModelCapabilityProfile;
-  readonly declaredCapabilities: readonly RequiredCapability[];
+  readonly declaredCapabilities: readonly EndpointCapability[];
   /** Strictly validated: unknown fields anywhere below this key are rejected. */
   readonly credentials: {
     readonly source: CustomerEndpointAuthenticationSource;

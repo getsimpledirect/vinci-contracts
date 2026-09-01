@@ -5,10 +5,11 @@ import {
 } from "@getsimpledirect/vinci-contracts";
 import type { ModelEndpointSpec } from "./endpoint.ts";
 import {
-  REQUIRED_CAPABILITIES,
+  ENDPOINT_CAPABILITIES,
   ROLE_RISK_CLASSES,
+  type EndpointCapability,
+  type HarnessCapability,
   type ModelRoleSpec,
-  type RequiredCapability,
 } from "./role.ts";
 
 export const MATCH_VERDICTS = ["eligible", "ineligible", "unevaluable"] as const;
@@ -28,6 +29,7 @@ export type MatchReasonCode =
   | "retention_undeclared"
   | "protected_data_not_approved"
   | "protected_data_approval_undeclared"
+  | "harness_capabilities_unverified"
   | "input_not_evaluable";
 
 export type MatchReason = {
@@ -77,28 +79,59 @@ function isExplicitBoolean(
 }
 
 /** Snapshot and validate a hostile-reachable capability array without using its iterator. */
-function snapshotCapabilities(value: unknown): readonly RequiredCapability[] | undefined {
+function snapshotCapabilities(value: unknown): readonly EndpointCapability[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const length = value.length;
   if (!Number.isSafeInteger(length) || length < 0 || length > MAX_CAPABILITY_DECLARATIONS) {
     return undefined;
   }
 
-  const snapshot: RequiredCapability[] = [];
+  const snapshot: EndpointCapability[] = [];
   for (let index = 0; index < length; index += 1) {
     const capability = value[index];
     if (
       typeof capability !== "string" ||
-      !REQUIRED_CAPABILITIES.includes(capability as RequiredCapability)
+      !ENDPOINT_CAPABILITIES.includes(capability as EndpointCapability)
     ) {
       return undefined;
     }
-    snapshot.push(capability as RequiredCapability);
+    snapshot.push(capability as EndpointCapability);
   }
   return snapshot;
 }
 
-function missingCapability(capability: RequiredCapability): ClassifiedReason {
+/**
+ * Copy a caller-supplied list into a real array, reading `length` ONCE and each index
+ * ONCE, so nothing can answer differently on a second read.
+ *
+ * `Array.isArray` returns TRUE for a Proxy wrapping an array, so it is not a defence on
+ * its own. A Proxy whose `length` reported 2 to a `length > 0` guard and 0 to the
+ * subsequent `.map()` made a requirement vanish between the check and its use, and
+ * granted `eligible`. Returns null for anything not usable as a list.
+ */
+const MAXIMUM_CAPABILITY_LIST_LENGTH = 64;
+
+function snapshotCapabilityList(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const declaredLength = (value as { length: unknown }).length;
+  if (
+    typeof declaredLength !== "number" ||
+    !Number.isInteger(declaredLength) ||
+    declaredLength < 0 ||
+    declaredLength > MAXIMUM_CAPABILITY_LIST_LENGTH
+  ) {
+    return null;
+  }
+  const snapshot: string[] = [];
+  for (let index = 0; index < declaredLength; index++) {
+    snapshot.push(String((value as Record<number, unknown>)[index]));
+  }
+  return snapshot;
+}
+
+function missingCapability(capability: EndpointCapability): ClassifiedReason {
   return {
     code: "capability_missing",
     detail: `endpoint did not declare required capability: ${capability}`,
@@ -107,14 +140,33 @@ function missingCapability(capability: RequiredCapability): ClassifiedReason {
 }
 
 /**
- * qualityPolicy and economicPolicy are ranking thresholds applied by a router
- * against measured performance, not eligibility preconditions, and are
- * deliberately not read here.
+ * qualityPolicy and economicPolicy are ranking thresholds applied by a router against
+ * measured performance, not eligibility preconditions, and are deliberately not read here.
+ *
+ * requiredHarnessCapabilities IS read, and it can only ever WITHHOLD eligibility. An
+ * inference endpoint structurally cannot supply a harness capability such as
+ * `repository_editing`, so this function is not in a position to confirm one is available.
+ * It therefore refuses to return `eligible` for any role that requires one, and reports
+ * `harness_capabilities_unverified`. A harness that has actually established these
+ * capabilities may treat that verdict as satisfied; nothing else may.
+ *
+ * The field was previously written by the registry and read by nobody, which made it an
+ * inert guard: a constraint that existed in the record and in no execution path. It was
+ * harmless only because every real lane is currently `unevaluable` for the unrelated
+ * reason that its weights digest is unknown. Once artifact identity lands, an unread
+ * requirement would have become a silently dropped one.
  */
 export function matchEndpointToRole(
   role: ModelRoleSpec,
   endpoint: ModelEndpointSpec,
   now: Timestamp,
+  /**
+   * Harness capabilities the CALLER has actually established. Omitting it is not a
+   * claim that none are needed -- it means nothing has been established, so any role
+   * requiring one resolves to `unevaluable`. Passing a list that does not cover the
+   * requirement is a definite failure and resolves to `ineligible`.
+   */
+  attestedHarnessCapabilities?: readonly HarnessCapability[],
 ): MatchResult {
   try {
     // DEFENSIVE VALIDATION PREAMBLE
@@ -163,6 +215,7 @@ export function matchEndpointToRole(
     // Read all potentially-dangerous fields exactly once into locals
     const roleId = (role as Record<string, unknown>).roleId;
     const requiredCapabilities = (role as Record<string, unknown>).requiredCapabilities;
+    const requiredHarnessCapabilities = (role as Record<string, unknown>).requiredHarnessCapabilities;
     const minimumContextTokens = (role as Record<string, unknown>).minimumContextTokens;
     const riskClass = (role as Record<string, unknown>).riskClass;
     const dataPolicy = (role as Record<string, unknown>).dataPolicy;
@@ -199,7 +252,7 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "role.requiredCapabilities is not a bounded array of known capabilities",
+            detail: "role.requiredCapabilities is not a bounded array of known endpoint capabilities",
           },
         ],
       };
@@ -276,7 +329,7 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "endpoint.declaredCapabilities is not a bounded array of known capabilities",
+            detail: "endpoint.declaredCapabilities is not a bounded array of known endpoint capabilities",
           },
         ],
       };
@@ -524,6 +577,45 @@ export function matchEndpointToRole(
         detail: `endpoint is not valid until ${validFrom}`,
         hardNo: true,
       });
+    }
+
+    // An undeclared fact must never grant a permission, so an absent or malformed
+    // requiredHarnessCapabilities withholds eligibility rather than defaulting to
+    // "none required". Snapshot BEFORE testing length: the test and the use must see
+    // the same list, or a two-faced length makes the requirement disappear between them.
+    const requiredHarness = snapshotCapabilityList(requiredHarnessCapabilities);
+    if (requiredHarness === null) {
+      classified.push({
+        code: "harness_capabilities_unverified",
+        detail: "role did not declare a readable requiredHarnessCapabilities list",
+        hardNo: false,
+      });
+    } else if (requiredHarness.length > 0) {
+      const attestedHarness =
+        attestedHarnessCapabilities === undefined || attestedHarnessCapabilities === null
+          ? null
+          : snapshotCapabilityList(attestedHarnessCapabilities);
+      if (attestedHarness === null) {
+        // Either nothing was supplied, or what was supplied is not a readable list.
+        // Both are an absence of evidence, and neither is a grant.
+        classified.push({
+          code: "harness_capabilities_unverified",
+          detail: `no readable harness attestation supplied for: ${requiredHarness.join(", ")}`,
+          hardNo: false,
+        });
+      } else {
+        const missing = requiredHarness.filter(
+          (capability) => !attestedHarness.includes(capability),
+        );
+        if (missing.length > 0) {
+          // The caller stated what it has and it does not cover the role: a definite no.
+          classified.push({
+            code: "harness_capabilities_unverified",
+            detail: `harness attestation is missing: ${missing.join(", ")}`,
+            hardNo: true,
+          });
+        }
+      }
     }
 
     const verdict: MatchVerdict = classified.some(({ hardNo }) => hardNo)

@@ -33,6 +33,16 @@ export function mapUnevaluableReason(reason, endpoint) {
     };
   }
 
+  if (reason?.code === "harness_capabilities_unverified") {
+    // Not a property of the endpoint or of any provider's terms. The unresolved fact is
+    // whether the CALLING HARNESS has established these capabilities, which only the
+    // caller can attest by passing them to matchEndpointToRole.
+    return {
+      field: "attestedHarnessCapabilities",
+      document: "harness capability attestation (supplied by the caller, not the registry)",
+    };
+  }
+
   const code = typeof reason?.code === "string" && reason.code.length > 0
     ? reason.code
     : "unknown_reason";
