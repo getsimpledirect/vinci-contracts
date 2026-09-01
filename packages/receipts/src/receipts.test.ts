@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSchemaMetaComplete, type ReceiptId, type RunId } from "@getsimpledirect/vinci-contracts";
+import { TERMINAL_STATES, assertSchemaMetaComplete, type ReceiptId, type RunId } from "@getsimpledirect/vinci-contracts";
 import {
   CORRECTION_SCHEMA_META,
   RECEIPT_COVERED_FIELDS,
@@ -55,6 +55,49 @@ function unsignedReceipt(overrides: Record<string, unknown> = {}): Record<string
     ...overrides,
   };
 }
+
+// 🔴 DRIFT REGRESSION. receipts inlined its own 5-element terminal-state array and
+// omitted WAITING, so a run ending WAITING_FOR_APPROVAL or WAITING_FOR_USER (both
+// map onto WAITING in contracts) could not have a receipt written at all. The
+// package already depended on @getsimpledirect/vinci-contracts, so the copy bought
+// nothing.
+//
+// This enumerates the WHOLE canonical vocabulary rather than asserting the one
+// value that happened to be missing. A test naming only WAITING would pass again
+// the next time a DIFFERENT state is added to contracts and not mirrored here --
+// which is the failure that actually occurred, one identifier at a time.
+// `receipt()` throws when the fixture does not validate, so it cannot carry a case
+// whose validity is the thing under test. This builds and digests without asserting ok.
+function digested(overrides: Record<string, unknown>): Record<string, unknown> {
+  const candidate = unsignedReceipt(overrides);
+  candidate.digest = receiptDigest(candidate as unknown as Receipt);
+  return candidate;
+}
+
+describe("finalState accepts exactly the canonical terminal vocabulary", () => {
+  for (const state of TERMINAL_STATES) {
+    it(`accepts ${state}`, () => {
+      const result = validateReceipt(digested({ finalState: state }));
+      // validateReceipt is a discriminated union: `issues` exists only on the failure arm.
+      const finalStateIssues = result.ok
+        ? []
+        : result.issues.filter((issue) => issue.path === "/finalState");
+      expect(finalStateIssues, `${state} is in contracts TERMINAL_STATES but receipts rejected it`).toEqual([]);
+    });
+  }
+
+  // Anti-vacuity: if every string were accepted the loop above would pass while
+  // proving nothing about the vocabulary.
+  it("still rejects a state outside the vocabulary", () => {
+    const result = validateReceipt(digested({ finalState: "TOTALLY_NOT_A_STATE" }));
+    expect(result.ok).toBe(false);
+    expect(
+      result.ok
+        ? false
+        : result.issues.some((issue) => issue.path === "/finalState" && issue.code === "invalid_state"),
+    ).toBe(true);
+  });
+});
 
 function receipt(overrides: Record<string, unknown> = {}): Receipt {
   const candidate = unsignedReceipt(overrides);
@@ -259,7 +302,7 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
   // FAILED run's. That forced a verifier's word onto work that never existed.
   // Version 3 permits null exactly where execution ended with nothing to
   // assess, and nowhere else.
-  it.each(["BLOCKED", "FAILED", "CANCELLED"] as const)(
+  it.each(["WAITING", "BLOCKED", "FAILED", "CANCELLED"] as const)(
     "accepts verdict: null on a %s receipt that produced no artifacts",
     (finalState) => {
       const candidate = unsignedReceipt({ finalState, verdict: null, artifactsProduced: [] });
@@ -281,7 +324,7 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
     },
   );
 
-  it.each(["BLOCKED", "FAILED", "CANCELLED"] as const)(
+  it.each(["WAITING", "BLOCKED", "FAILED", "CANCELLED"] as const)(
     "rejects verdict: null on a %s receipt that lists artifacts (artifacts_without_verdict)",
     (finalState) => {
       const candidate = unsignedReceipt({ finalState, verdict: null, artifactsProduced: ["artifact:partial"] });
@@ -293,9 +336,55 @@ describe("verdict: null is a statement about execution, not a missing verdict", 
   );
 
   it("still accepts a real verdict on every final state, so null is an option and not a requirement", () => {
-    for (const finalState of ["DONE", "DONE_UNVERIFIED", "BLOCKED", "FAILED", "CANCELLED"] as const) {
+    for (const finalState of ["DONE", "DONE_UNVERIFIED", "WAITING", "BLOCKED", "FAILED", "CANCELLED"] as const) {
       expect(receipt({ finalState, verdict: "BLOCKED" }).verdict).toBe("BLOCKED");
     }
+  });
+
+  // 🔴 THE COUPLING, NAMED. WAITING joining the null-permitted set is only
+  // meaningful because the receipts validator stopped inlining its own
+  // terminal-state list and imported the canonical TERMINAL_STATES (#37).
+  // Before that, a WAITING receipt was refused at /finalState and this rule
+  // was unreachable -- the guard would have existed and answered nothing.
+  //
+  // This asserts the two halves hold TOGETHER: WAITING must be a writable
+  // finalState AND null must be permitted on it. It fails if either half is
+  // reverted, which is the point -- the halves are not independently correct.
+  it("permits a WAITING receipt with a null verdict, reaching the verdict rule and not an earlier one", () => {
+    const candidate = unsignedReceipt({
+      finalState: "WAITING", verdict: null, artifactsProduced: [],
+    });
+    candidate.digest = receiptDigest(candidate as never);
+    const result = validateReceipt(candidate);
+
+    // If the terminal-state half regressed, this fails at /finalState with
+    // invalid_state -- a DIFFERENT mechanism from the one under test. Naming
+    // the path distinguishes "the verdict rule accepted it" from "some other
+    // guard refused it first".
+    const finalStateIssues = result.ok
+      ? []
+      : result.issues.filter((i) => i.path === "/finalState");
+    expect(finalStateIssues, "WAITING must be a writable finalState (the #37 half)").toEqual([]);
+
+    const verdictIssues = result.ok
+      ? []
+      : result.issues.filter((i) => i.path === "/verdict");
+    expect(verdictIssues, "null must be permitted on WAITING (the S2 half)").toEqual([]);
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+  });
+
+  it("still refuses a null verdict on a state outside the permitted set", () => {
+    // Anti-vacuity for the rule above: if permitsNullVerdict returned true for
+    // everything, every assertion in this block would pass while the rule
+    // guarded nothing.
+    const candidate = unsignedReceipt({
+      finalState: "DONE", verdict: null, artifactsProduced: [],
+    });
+    candidate.digest = receiptDigest(candidate as never);
+    const result = validateReceipt(candidate);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.map((i) => i.code)).toContain("verdict_required");
   });
 
   it("covers the null in the digest: null and a status do not hash alike", () => {

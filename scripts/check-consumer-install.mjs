@@ -182,6 +182,10 @@ writeFileSync(
   `${namespaceImports}
 import { RISK_LEVELS, isCanonicalTimestamp, type RiskLevel } from "@getsimpledirect/vinci-contracts";
 import { RETENTION_CLASSES } from "@getsimpledirect/vinci-policy";
+import {
+  matchEndpointToRole, selectForRole, violatesIndependence, roleById, endpointById,
+  validateModelEndpointSpec,
+} from "@getsimpledirect/vinci-model-classes";
 import { validateSessionBinding, REMOTE_PROTOCOL_VERSION, SESSION_BINDING_SCHEMA_META } from "@getsimpledirect/vinci-remote-protocol";
 
 const level: RiskLevel = RISK_LEVELS[0];
@@ -207,9 +211,217 @@ const skewed = validateSessionBinding({
 });
 if (skewed.ok) throw new Error("protocol skew was accepted by an installed build");
 
+// The Model Role ABI must DECIDE from outside the workspace, not merely import.
+// This is the check 0.2.0 would have failed: it shipped eight of sixteen
+// modules, so matchEndpointToRole was absent from every published artifact
+// while the package still installed and imported cleanly. An ABI that is
+// present but cannot rule is the same defect one layer down.
+const abiRole = roleById("teacher-trajectory-producer");
+const abiEndpoint = endpointById("forte-deepinfra");
+if (!abiRole || !abiEndpoint) throw new Error("the installed registry lost a role or a lane");
+
+const NOW_ABI = "2026-08-31T00:00:00.000Z";
+
+// This role requires evidence_citation from the HARNESS, which an inference endpoint
+// cannot supply. Withholding eligibility until a caller attests it is the fix for
+// fail-open #9, where the requirement was moved into a field nothing read and four
+// production lanes became eligible for a role nobody could satisfy.
+if (matchEndpointToRole(abiRole, abiEndpoint, NOW_ABI).verdict === "eligible") {
+  throw new Error("an unattested harness requirement was granted by an installed build");
+}
+
+// ...and it must still GRANT once the harness is attested, or the guard above is just
+// a matcher that refuses everything. Both directions, through the published surface.
+if (
+  matchEndpointToRole(abiRole, abiEndpoint, NOW_ABI, ["evidence_citation"]).verdict !==
+  "eligible"
+) {
+  throw new Error("a fully declared and attested lane was not eligible from an installed build");
+}
+
+// Both directions, because a matcher that refuses everything passes the accept
+// side of every test and is worthless. These three are fail-CLOSED assertions:
+// each was a real fail-open in this package's history.
+const hostileEndpoint = Object.create(null);
+if (matchEndpointToRole(abiRole, hostileEndpoint, NOW_ABI).verdict === "eligible") {
+  throw new Error("an unreadable endpoint was granted eligibility by an installed build");
+}
+if (violatesIndependence(hostileEndpoint, abiEndpoint) !== true) {
+  throw new Error("independence was granted against an unreadable endpoint");
+}
+
+// The iteration bound: a real Array claiming four billion entries must refuse,
+// not exhaust the heap. Array.isArray is true for it, which is why a shape
+// check alone did not catch this.
+const hugeSupply = Object.assign([], { length: 2 ** 32 - 1 });
+const hugeSelection = selectForRole(abiRole, hugeSupply, NOW_ABI);
+if (hugeSelection.eligible.length !== 0 || hugeSelection.unevaluable.length !== 1) {
+  throw new Error("the endpoint-list bound did not survive installation");
+}
+
+// ---------------------------------------------------------------------------
+// FAIL-OPEN BATTERY, run against the INSTALLED build.
+//
+// These probes used to live as loose files in /tmp. They drifted out of sync
+// with the schema and went vacuous WITHOUT SAYING SO: every spec they built was
+// rejected as malformed in the defensive preamble, so each probe measured
+// "refused as invalid" and never reached the guard it named. It still looked
+// healthy, because refusal blocks and blocking is the safe direction. They also
+// hardcoded a path to a worktree that still existed at a different commit, so
+// running them validated code nobody was reviewing.
+//
+// Living here fixes both. The fixture is built from the package's own exports,
+// so a schema change breaks this loudly instead of quietly, and the target is
+// whatever was actually packed.
+const K = (value: unknown) => ({ kind: "known", value });
+const UNKNOWN = { kind: "unknown" };
+const probeSpec = (
+  endpointId: string,
+  sourceClass: unknown,
+  weightsDigest?: string,
+  serving?: unknown,
+): ns4.ModelEndpointSpec =>
+  ({
+  schemaVersion: 1,
+  endpointId,
+  capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false },
+  declaredCapabilities: [],
+  credentials: { source: { kind: "managed-credential", credentialId: "c" } },
+  inferenceIsExternal: K(false),
+  approvedForProtectedData: K(false),
+  rights: {
+    trainingAllowed: K(false),
+    evaluationAllowed: K(false),
+    redistributionAllowed: K(false),
+    outputRetainedByProvider: K(false),
+    policySnapshotDigest: K("d"),
+  },
+  validFrom: "2026-01-01T00:00:00.000Z",
+  expiresAt: "2027-01-01T00:00:00.000Z",
+  sourceClass,
+  serving: serving ?? { kind: "vinci_hosted" },
+  weightsDigest: weightsDigest === undefined ? UNKNOWN : K(weightsDigest),
+  tokenizerDigest: K("t"),
+  architectureDigest: K("a"),
+  servingImageDigest: K("i"),
+    quantizationDigest: UNKNOWN,
+  }) as unknown as ns4.ModelEndpointSpec;
+
+// A probe that cannot build a VALID spec proves nothing about any guard. This is
+// the assertion whose absence let the /tmp battery report success for weeks.
+const probeValidation = validateModelEndpointSpec(probeSpec("probe-a", "open_weight", "W-A"));
+if (!probeValidation.ok) {
+  throw new Error(
+    "fail-open probes construct an INVALID spec, so their verdicts mean nothing: " +
+      JSON.stringify((probeValidation as { readonly issues?: unknown }).issues),
+  );
+}
+
+// Both directions. A guard that refuses everything passes every fail-closed test
+// and is useless, so the grant case is asserted first.
+if (violatesIndependence(probeSpec("a", "open_weight", "W-A"), probeSpec("b", "open_weight", "W-B")) !== false) {
+  throw new Error("two endpoints with DIFFERENT weights were not independent");
+}
+if (violatesIndependence(probeSpec("a", "open_weight", "W-A"), probeSpec("b", "open_weight", "W-A")) !== true) {
+  throw new Error("two endpoints with THE SAME weights were treated as independent");
+}
+
+// Absence must never grant, in every shape it has actually arrived in.
+const mustBlock: [string, ns4.ModelEndpointSpec, ns4.ModelEndpointSpec][] = [
+  ["both digests unknown", probeSpec("a", "open_weight", undefined), probeSpec("b", "open_weight", undefined)],
+  ["one digest unknown", probeSpec("a", "open_weight", "W-A"), probeSpec("b", "open_weight", undefined)],
+  ["null sourceClass", probeSpec("a", null, "W-A"), probeSpec("b", "open_weight", "W-B")],
+  ["unknown sourceClass", probeSpec("a", "not_a_class", "W-A"), probeSpec("b", "open_weight", "W-B")],
+  [
+    "same weights across different serving",
+    probeSpec("a", "open_weight", "W-A", {
+      kind: "third_party_api",
+      provider: "deepinfra",
+      model: "m",
+      modelRevision: K("r"),
+      jurisdiction: K("us"),
+    }),
+    probeSpec("b", "open_weight", "W-A"),
+  ],
+];
+for (const [label, left, right] of mustBlock) {
+  if (violatesIndependence(left, right) !== true) {
+    throw new Error("independence was granted from an installed build: " + label);
+  }
+}
+
+// A class instance is not a plain object, and once passed a check written for one.
+class SpecInstance {
+  constructor(fields: unknown) {
+    Object.assign(this, fields);
+  }
+}
+if (
+  violatesIndependence(
+    new SpecInstance(probeSpec("a", "open_weight", "W-A")) as unknown as ns4.ModelEndpointSpec,
+    new SpecInstance(probeSpec("b", "open_weight", "W-A")) as unknown as ns4.ModelEndpointSpec,
+  ) !== true
+) {
+  throw new Error("a class-instance spec escaped the independence guard");
+}
+
+// Read-once: a field that answers differently on a second read must not be able
+// to grant. The decision value must be the value recorded.
+const twoFaced = probeSpec("g", "open_weight", "W-A");
+let digestReads = 0;
+Object.defineProperty(twoFaced, "sourceClass", {
+  enumerable: true,
+  get() {
+    digestReads += 1;
+    return digestReads === 1 ? "open_weight" : "frontier_api";
+  },
+});
+if (violatesIndependence(twoFaced, probeSpec("b", "open_weight", "W-A")) !== true) {
+  throw new Error("a two-faced accessor was granted independence by an installed build");
+}
+
+// The harness guard's own fail-open: Array.isArray is TRUE for a Proxy wrapping
+// an array, and reading length twice let a requirement vanish between the check
+// and its use.
+let harnessLengthReads = 0;
+const twoFacedHarness = new Proxy(["repository_editing", "long_horizon_recovery"], {
+  get(target, property, receiver) {
+    if (property === "length") {
+      harnessLengthReads += 1;
+      return harnessLengthReads === 1 ? 2 : 0;
+    }
+    return Reflect.get(target, property, receiver);
+  },
+});
+const proxyRole = roleById("mle-implementation-worker");
+const proxyEndpoint = endpointById("forte-deepinfra");
+if (!proxyRole || !proxyEndpoint) throw new Error("the installed registry lost the proxy-probe fixtures");
+if (
+  matchEndpointToRole(
+    { ...proxyRole, requiredHarnessCapabilities: twoFacedHarness } as unknown as ns4.ModelRoleSpec,
+    proxyEndpoint,
+    NOW_ABI,
+    ["irrelevant"] as unknown as readonly ns4.HarnessCapability[],
+  ).verdict === "eligible"
+) {
+  throw new Error("a two-faced harness length granted eligibility from an installed build");
+}
+
+// An attestation that claims to contain everything, but contains nothing.
+if (
+  matchEndpointToRole(
+    proxyRole,
+    proxyEndpoint,
+    NOW_ABI,
+    Object.assign([], { includes: () => true }) as unknown as readonly ns4.HarnessCapability[],
+  ).verdict === "eligible"
+) {
+  throw new Error("a lying attestation granted eligibility from an installed build");
+}
+
 ${namespaceChecks}
 
-console.log(\`  consumer imported all ${everyPackage.length} packages across layers 0-3, types checked, guards still refuse\`);
+console.log(\`  consumer imported all ${everyPackage.length} packages across layers 0-3, types checked, guards still refuse, Model Role ABI still decides\`);
 `,
 );
 

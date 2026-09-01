@@ -29,10 +29,15 @@ export type HumanAttention = {
  * had to carry a verdict about work that does not exist. That is the latent
  * contradiction the three outcome dimensions (contracts `OutcomeTriple`)
  * make explicit: assurance is a separate axis from execution, and when
- * execution ended in BLOCKED, FAILED or CANCELLED there is nothing for the
- * assurance axis to say. `null` is that statement. It is permitted ONLY on
- * those final states — see `validateReceipt` — so a DONE or DONE_UNVERIFIED
- * receipt still cannot be written without saying what a verifier concluded.
+ * execution ended in WAITING, BLOCKED, FAILED or CANCELLED there is nothing
+ * for the assurance axis to say. `null` is that statement. It is permitted
+ * ONLY on those final states — see `validateReceipt` — so a DONE or
+ * DONE_UNVERIFIED receipt still cannot be written without saying what a
+ * verifier concluded.
+ *
+ * WAITING is in that set for the same reason as the other three: a run paused
+ * for approval has produced nothing a verifier has assessed, so requiring a
+ * verdict would force the receipt to state a conclusion no verifier reached.
  */
 export type Receipt = {
   readonly receiptVersion: 3;

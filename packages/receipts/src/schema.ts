@@ -4,6 +4,7 @@ import {
   hasField,
   isActorKind,
   isCanonicalTimestamp,
+  isTerminalState,
   isVerdictStatus,
   ok,
   toPlainRecord,
@@ -24,18 +25,29 @@ function issue(path: string, code: string, message: string): ValidationIssue {
   return { path, code, message };
 }
 
-function isTerminalState(value: unknown): value is string {
-  return typeof value === "string" && ["DONE", "DONE_UNVERIFIED", "BLOCKED", "FAILED", "CANCELLED"].includes(value);
-}
-
 /**
  * The final states on which `verdict: null` is permitted: execution ended
  * without an artifact for a verifier to assess. On every other final state a
  * null verdict is a receipt claiming an outcome while declining to say what a
  * verifier concluded, and is refused (FR-6.4).
+ *
+ * WAITING belongs here for the same reason the other three do, and its absence
+ * was a hazard rather than an omission. A run that paused for approval has
+ * produced nothing a verifier has assessed; requiring a verdict on it would
+ * force the receipt to state a conclusion no verifier reached, which is the
+ * precise false-completion this vocabulary exists to prevent. Note the two
+ * halves are COUPLED: WAITING only became a writable finalState when the
+ * receipts validator stopped inlining its own terminal-state list and imported
+ * the canonical TERMINAL_STATES (#37). Before that, a WAITING receipt was
+ * refused at /finalState and this rule could never be reached.
  */
 function permitsNullVerdict(finalState: unknown): boolean {
-  return finalState === "BLOCKED" || finalState === "FAILED" || finalState === "CANCELLED";
+  return (
+    finalState === "WAITING"
+    || finalState === "BLOCKED"
+    || finalState === "FAILED"
+    || finalState === "CANCELLED"
+  );
 }
 
 function validateActor(raw: unknown, path: string, issues: ValidationIssue[]): void {
@@ -213,7 +225,7 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
         issue(
           "/verdict",
           "verdict_required",
-          "a receipt whose run produced an artifact must say what a verifier concluded; null is permitted only on BLOCKED, FAILED or CANCELLED",
+          "a receipt whose run produced an artifact must say what a verifier concluded; null is permitted only on WAITING, BLOCKED, FAILED or CANCELLED",
         ),
       );
     }
