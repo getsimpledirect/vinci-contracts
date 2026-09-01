@@ -1374,6 +1374,80 @@ describe("role selection", () => {
     expect(endpointIds(selections["teacher-trajectory-producer"].ineligible)).toEqual([]);
   });
 
+  it("does not let a two-faced length make a harness requirement vanish", () => {
+    // Regression for a fail-open introduced BY the first version of this very guard.
+    // `Array.isArray` returns true for a Proxy wrapping an array, so it is not a defence.
+    // The first implementation tested `length > 0` and then re-read the list with
+    // `.map()`. A Proxy reporting 2 to the test and 0 to the map made the requirement
+    // disappear between the check and its use, and the pair came back `eligible`.
+    const role = roleById("mle-implementation-worker");
+    const endpoint = endpointById("forte-deepinfra");
+    expect(role).toBeDefined();
+    expect(endpoint).toBeDefined();
+
+    if (role && endpoint) {
+      let lengthReads = 0;
+      const twoFaced = new Proxy(["repository_editing", "long_horizon_recovery"], {
+        get(target, property, receiver) {
+          if (property === "length") {
+            lengthReads += 1;
+            return lengthReads === 1 ? 2 : 0;
+          }
+          return Reflect.get(target, property, receiver);
+        },
+      });
+
+      const result = matchEndpointToRole(
+        { ...role, requiredHarnessCapabilities: twoFaced } as unknown as ModelRoleSpec,
+        endpoint,
+        now,
+        ["something_irrelevant"],
+      );
+
+      expect(result.verdict).not.toBe("eligible");
+      expect(result.reasons.map(({ code }) => code)).toContain(
+        "harness_capabilities_unverified",
+      );
+    }
+  });
+
+  it("ignores a hostile includes() on the attestation", () => {
+    // The attestation is snapshotted into a fresh array, so membership is decided by
+    // Array.prototype.includes over values we copied -- not by a method the caller
+    // supplied. An empty attestation that claims to contain everything must not grant.
+    const role = roleById("mle-implementation-worker");
+    const endpoint = endpointById("forte-deepinfra");
+    if (role && endpoint) {
+      const liar = Object.assign([] as unknown[], { includes: () => true });
+      const result = matchEndpointToRole(
+        role,
+        endpoint,
+        now,
+        liar as unknown as readonly never[],
+      );
+      expect(result.verdict).not.toBe("eligible");
+    }
+  });
+
+  it("bounds a caller-declared harness list length", () => {
+    const role = roleById("mle-implementation-worker");
+    const endpoint = endpointById("forte-deepinfra");
+    if (role && endpoint) {
+      const started = Date.now();
+      const result = matchEndpointToRole(
+        {
+          ...role,
+          requiredHarnessCapabilities: Object.assign([], { length: 2 ** 32 - 1 }),
+        } as unknown as ModelRoleSpec,
+        endpoint,
+        now,
+        ["x"],
+      );
+      expect(result.verdict).toBe("unevaluable");
+      expect(Date.now() - started).toBeLessThan(1000);
+    }
+  });
+
   it("withholds eligibility when a role omits requiredHarnessCapabilities entirely", () => {
     // A role that simply does not mention the field is NOT a role with no harness
     // requirements. Reading omission as "none required" is the fail-open this guard

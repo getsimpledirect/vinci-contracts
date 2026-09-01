@@ -100,6 +100,37 @@ function snapshotCapabilities(value: unknown): readonly EndpointCapability[] | u
   return snapshot;
 }
 
+/**
+ * Copy a caller-supplied list into a real array, reading `length` ONCE and each index
+ * ONCE, so nothing can answer differently on a second read.
+ *
+ * `Array.isArray` returns TRUE for a Proxy wrapping an array, so it is not a defence on
+ * its own. A Proxy whose `length` reported 2 to a `length > 0` guard and 0 to the
+ * subsequent `.map()` made a requirement vanish between the check and its use, and
+ * granted `eligible`. Returns null for anything not usable as a list.
+ */
+const MAXIMUM_CAPABILITY_LIST_LENGTH = 64;
+
+function snapshotCapabilityList(value: unknown): readonly string[] | null {
+  if (!Array.isArray(value)) {
+    return null;
+  }
+  const declaredLength = (value as { length: unknown }).length;
+  if (
+    typeof declaredLength !== "number" ||
+    !Number.isInteger(declaredLength) ||
+    declaredLength < 0 ||
+    declaredLength > MAXIMUM_CAPABILITY_LIST_LENGTH
+  ) {
+    return null;
+  }
+  const snapshot: string[] = [];
+  for (let index = 0; index < declaredLength; index++) {
+    snapshot.push(String((value as Record<number, unknown>)[index]));
+  }
+  return snapshot;
+}
+
 function missingCapability(capability: EndpointCapability): ClassifiedReason {
   return {
     code: "capability_missing",
@@ -550,27 +581,32 @@ export function matchEndpointToRole(
 
     // An undeclared fact must never grant a permission, so an absent or malformed
     // requiredHarnessCapabilities withholds eligibility rather than defaulting to
-    // "none required".
-    if (!Array.isArray(requiredHarnessCapabilities)) {
+    // "none required". Snapshot BEFORE testing length: the test and the use must see
+    // the same list, or a two-faced length makes the requirement disappear between them.
+    const requiredHarness = snapshotCapabilityList(requiredHarnessCapabilities);
+    if (requiredHarness === null) {
       classified.push({
         code: "harness_capabilities_unverified",
-        detail: "role did not declare requiredHarnessCapabilities",
+        detail: "role did not declare a readable requiredHarnessCapabilities list",
         hardNo: false,
       });
-    } else if (requiredHarnessCapabilities.length > 0) {
-      const attested = Array.isArray(attestedHarnessCapabilities)
-        ? attestedHarnessCapabilities.map((capability) => String(capability))
-        : null;
-      const required = requiredHarnessCapabilities.map((capability) => String(capability));
-      if (attested === null) {
-        // Nothing established. An absence of evidence, not evidence of failure.
+    } else if (requiredHarness.length > 0) {
+      const attestedHarness =
+        attestedHarnessCapabilities === undefined || attestedHarnessCapabilities === null
+          ? null
+          : snapshotCapabilityList(attestedHarnessCapabilities);
+      if (attestedHarness === null) {
+        // Either nothing was supplied, or what was supplied is not a readable list.
+        // Both are an absence of evidence, and neither is a grant.
         classified.push({
           code: "harness_capabilities_unverified",
-          detail: `no harness attestation supplied for: ${required.join(", ")}`,
+          detail: `no readable harness attestation supplied for: ${requiredHarness.join(", ")}`,
           hardNo: false,
         });
       } else {
-        const missing = required.filter((capability) => !attested.includes(capability));
+        const missing = requiredHarness.filter(
+          (capability) => !attestedHarness.includes(capability),
+        );
         if (missing.length > 0) {
           // The caller stated what it has and it does not cover the role: a definite no.
           classified.push({
