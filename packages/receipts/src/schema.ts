@@ -25,6 +25,31 @@ function issue(path: string, code: string, message: string): ValidationIssue {
   return { path, code, message };
 }
 
+/**
+ * The final states on which `verdict: null` is permitted: execution ended
+ * without an artifact for a verifier to assess. On every other final state a
+ * null verdict is a receipt claiming an outcome while declining to say what a
+ * verifier concluded, and is refused (FR-6.4).
+ *
+ * WAITING belongs here for the same reason the other three do, and its absence
+ * was a hazard rather than an omission. A run that paused for approval has
+ * produced nothing a verifier has assessed; requiring a verdict on it would
+ * force the receipt to state a conclusion no verifier reached, which is the
+ * precise false-completion this vocabulary exists to prevent. Note the two
+ * halves are COUPLED: WAITING only became a writable finalState when the
+ * receipts validator stopped inlining its own terminal-state list and imported
+ * the canonical TERMINAL_STATES (#37). Before that, a WAITING receipt was
+ * refused at /finalState and this rule could never be reached.
+ */
+function permitsNullVerdict(finalState: unknown): boolean {
+  return (
+    finalState === "WAITING"
+    || finalState === "BLOCKED"
+    || finalState === "FAILED"
+    || finalState === "CANCELLED"
+  );
+}
+
 function validateActor(raw: unknown, path: string, issues: ValidationIssue[]): void {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     issues.push(issue(path, "invalid_actor", "an actor is an object"));
@@ -115,8 +140,8 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
     }
   }
 
-  if (record.receiptVersion !== 2) {
-    issues.push(issue("/receiptVersion", "invalid_schema_version", "receipt schema is version 2"));
+  if (record.receiptVersion !== 3) {
+    issues.push(issue("/receiptVersion", "invalid_schema_version", "receipt schema is version 3"));
   }
 
   for (const field of ["receiptId", "runId"] as const) {
@@ -182,8 +207,30 @@ export function validateReceipt(input: unknown): ValidationResult<Receipt> {
     }
   }
 
-  if (!isVerdictStatus(record.verdict)) {
-    issues.push(issue("/verdict", "invalid_verdict", "verdict must be a valid verdict status"));
+  if (record.verdict === null) {
+    // A null verdict is the claim "there was nothing to assess". A receipt
+    // that lists artifacts is contradicting that claim in the same record:
+    // something was produced, so a verifier had something to say.
+    if (Array.isArray(record.artifactsProduced) && record.artifactsProduced.length > 0) {
+      issues.push(
+        issue(
+          "/verdict",
+          "artifacts_without_verdict",
+          "verdict is null but artifactsProduced is non-empty; an artifact exists, so a verifier must have spoken",
+        ),
+      );
+    }
+    if (!permitsNullVerdict(record.finalState)) {
+      issues.push(
+        issue(
+          "/verdict",
+          "verdict_required",
+          "a receipt whose run produced an artifact must say what a verifier concluded; null is permitted only on WAITING, BLOCKED, FAILED or CANCELLED",
+        ),
+      );
+    }
+  } else if (!isVerdictStatus(record.verdict)) {
+    issues.push(issue("/verdict", "invalid_verdict", "verdict must be a valid verdict status or null"));
   }
 
   if (typeof record.spend !== "number" || !Number.isSafeInteger(record.spend) || record.spend < 0) {
@@ -324,12 +371,19 @@ export function validateCorrection(input: unknown): ValidationResult<Correction>
 
 export const RECEIPT_SCHEMA_META: SchemaMeta = {
   id: "vinci.receipt",
-  version: 2,
+  /**
+   * 3: `verdict` widened to `VerdictStatus | null`, null permitted only on
+   * WAITING, BLOCKED, FAILED and CANCELLED final states. Widening a required
+   * field's type is not additive under a frozen policy — a version 2 reader given null
+   * would refuse a record a version 3 writer considers valid — so the version
+   * bumps rather than the change riding under the old number.
+   */
+  version: 3,
   compatibility: "frozen",
   unknownFields: "preserve",
   malformedData: "fail-closed",
   migration:
-    "version 1 receipts are rejected; missing historical attention measurements cannot be inferred",
+    "version 1 and 2 receipts are rejected. Every version 2 record is a valid version 3 record once receiptVersion reads 3 and the digest is recomputed (the digest covers receiptVersion); because re-digesting invalidates the signature, only the original signer can migrate a signed receipt, and an unsigned one migrates mechanically",
 };
 
 export const VERIFICATION_STATUS_SCHEMA_META: SchemaMeta = {

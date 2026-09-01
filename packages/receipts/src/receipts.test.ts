@@ -22,7 +22,7 @@ const COMPLETED_AT = "2026-08-23T12:00:12.345Z";
 
 function unsignedReceipt(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    receiptVersion: 2,
+    receiptVersion: 3,
     receiptId: "receipt-1",
     runId: "run-1",
     objective: "Update the dependency lockfile",
@@ -131,7 +131,7 @@ describe("canonicalization", () => {
 
 describe("receipt digest coverage", () => {
   const mutations: Readonly<Record<(typeof RECEIPT_COVERED_FIELDS)[number], unknown>> = {
-    receiptVersion: 3,
+    receiptVersion: 4,
     receiptId: "receipt-2",
     runId: "run-2",
     objective: "A different objective",
@@ -264,7 +264,9 @@ describe("receipt validation", () => {
     // The receipt used to hand-roll its own verdict list (VERIFIED_FAIL, UNVERIFIED) that
     // disagreed with the canonical VerdictStatus its own field is typed with. Pinned.
     ["legacy verdict vocabulary", () => unsignedReceipt({ verdict: "VERIFIED_FAIL" })],
-    ["wrong receipt version", () => unsignedReceipt({ receiptVersion: 1 })],
+    ["receipt version 1", () => unsignedReceipt({ receiptVersion: 1 })],
+    ["receipt version 2", () => unsignedReceipt({ receiptVersion: 2 })],
+    ["non-null non-status verdict", () => unsignedReceipt({ verdict: undefined })],
     [
       "signed zero attention count",
       () => unsignedReceipt({ humanAttention: { seconds: -0, interruptions: 0, decisions: 0, escalations: 0 } }),
@@ -292,6 +294,133 @@ describe("receipt validation", () => {
       ),
     });
     expect(validateReceipt(candidate).ok).toBe(false);
+  });
+});
+
+describe("verdict: null is a statement about execution, not a missing verdict", () => {
+  // Version 2 required a three-member verdict on every receipt, including a
+  // FAILED run's. That forced a verifier's word onto work that never existed.
+  // Version 3 permits null exactly where execution ended with nothing to
+  // assess, and nowhere else.
+  it.each(["WAITING", "BLOCKED", "FAILED", "CANCELLED"] as const)(
+    "accepts verdict: null on a %s receipt that produced no artifacts",
+    (finalState) => {
+      const candidate = unsignedReceipt({ finalState, verdict: null, artifactsProduced: [] });
+      candidate.digest = receiptDigest(candidate as never);
+      const result = validateReceipt(candidate);
+      expect(result.ok, JSON.stringify(result)).toBe(true);
+      if (result.ok) expect(result.value.verdict).toBeNull();
+    },
+  );
+
+  it.each(["DONE", "DONE_UNVERIFIED"] as const)(
+    "rejects verdict: null on a %s receipt — an artifact exists, so a verifier must have spoken",
+    (finalState) => {
+      const candidate = unsignedReceipt({ finalState, verdict: null });
+      candidate.digest = receiptDigest(candidate as never);
+      const result = validateReceipt(candidate);
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.issues.map((i) => i.code)).toContain("verdict_required");
+    },
+  );
+
+  it.each(["WAITING", "BLOCKED", "FAILED", "CANCELLED"] as const)(
+    "rejects verdict: null on a %s receipt that lists artifacts (artifacts_without_verdict)",
+    (finalState) => {
+      const candidate = unsignedReceipt({ finalState, verdict: null, artifactsProduced: ["artifact:partial"] });
+      candidate.digest = receiptDigest(candidate as never);
+      const result = validateReceipt(candidate);
+      expect(result.ok).toBe(false);
+      expect(result.ok === false && result.issues.map((i) => i.code)).toContain("artifacts_without_verdict");
+    },
+  );
+
+  it("still accepts a real verdict on every final state, so null is an option and not a requirement", () => {
+    for (const finalState of ["DONE", "DONE_UNVERIFIED", "WAITING", "BLOCKED", "FAILED", "CANCELLED"] as const) {
+      expect(receipt({ finalState, verdict: "BLOCKED" }).verdict).toBe("BLOCKED");
+    }
+  });
+
+  // 🔴 THE COUPLING, NAMED. WAITING joining the null-permitted set is only
+  // meaningful because the receipts validator stopped inlining its own
+  // terminal-state list and imported the canonical TERMINAL_STATES (#37).
+  // Before that, a WAITING receipt was refused at /finalState and this rule
+  // was unreachable -- the guard would have existed and answered nothing.
+  //
+  // This asserts the two halves hold TOGETHER: WAITING must be a writable
+  // finalState AND null must be permitted on it. It fails if either half is
+  // reverted, which is the point -- the halves are not independently correct.
+  it("permits a WAITING receipt with a null verdict, reaching the verdict rule and not an earlier one", () => {
+    const candidate = unsignedReceipt({
+      finalState: "WAITING", verdict: null, artifactsProduced: [],
+    });
+    candidate.digest = receiptDigest(candidate as never);
+    const result = validateReceipt(candidate);
+
+    // If the terminal-state half regressed, this fails at /finalState with
+    // invalid_state -- a DIFFERENT mechanism from the one under test. Naming
+    // the path distinguishes "the verdict rule accepted it" from "some other
+    // guard refused it first".
+    const finalStateIssues = result.ok
+      ? []
+      : result.issues.filter((i) => i.path === "/finalState");
+    expect(finalStateIssues, "WAITING must be a writable finalState (the #37 half)").toEqual([]);
+
+    const verdictIssues = result.ok
+      ? []
+      : result.issues.filter((i) => i.path === "/verdict");
+    expect(verdictIssues, "null must be permitted on WAITING (the S2 half)").toEqual([]);
+
+    expect(result.ok, JSON.stringify(result)).toBe(true);
+  });
+
+  it("still refuses a null verdict on a state outside the permitted set", () => {
+    // Anti-vacuity for the rule above: if permitsNullVerdict returned true for
+    // everything, every assertion in this block would pass while the rule
+    // guarded nothing.
+    const candidate = unsignedReceipt({
+      finalState: "DONE", verdict: null, artifactsProduced: [],
+    });
+    candidate.digest = receiptDigest(candidate as never);
+    const result = validateReceipt(candidate);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.issues.map((i) => i.code)).toContain("verdict_required");
+  });
+
+  it("covers the null in the digest: null and a status do not hash alike", () => {
+    const withNull = unsignedReceipt({ finalState: "FAILED", verdict: null, artifactsProduced: [] });
+    const withStatus = unsignedReceipt({ finalState: "FAILED", verdict: "BLOCKED", artifactsProduced: [] });
+    expect(receiptDigest(withNull as never)).not.toBe(receiptDigest(withStatus as never));
+    // And the null survives validation with its digest intact.
+    withNull.digest = receiptDigest(withNull as never);
+    const result = validateReceipt(withNull);
+    expect(result.ok).toBe(true);
+    if (result.ok) expect(receiptDigest({ ...result.value, digest: "0".repeat(64) })).toBe(withNull.digest);
+  });
+
+  it("cannot be forged into a pass by re-labelling: null with finalState rewritten to DONE fails the digest AND the rule", () => {
+    const candidate = unsignedReceipt({ finalState: "FAILED", verdict: null, artifactsProduced: [] });
+    candidate.digest = receiptDigest(candidate as never);
+    const result = validateReceipt({ ...candidate, finalState: "DONE" });
+    expect(result.ok).toBe(false);
+    const codes = result.ok === false ? result.issues.map((i) => i.code) : [];
+    expect(codes).toContain("digest_mismatch");
+    expect(codes).toContain("verdict_required");
+  });
+
+  it("counts a null-verdict receipt's attention without counting it as an outcome", () => {
+    const failed = receipt({
+      receiptId: "receipt-failed",
+      finalState: "FAILED",
+      verdict: null,
+      artifactsProduced: [],
+      humanAttention: { seconds: 40, interruptions: 1, decisions: 1, escalations: 0 },
+    });
+    expect(attentionPerVerifiedOutcome([failed])).toEqual({
+      verifiedOutcomes: 0,
+      humanSeconds: 40,
+      secondsPerVerifiedOutcome: null,
+    });
   });
 });
 
@@ -434,7 +563,7 @@ describe("schema metadata", () => {
       expect(() => assertSchemaMetaComplete(meta)).not.toThrow();
     }
     expect(RECEIPT_SCHEMA_META.unknownFields).toBe("preserve");
-    expect(RECEIPT_SCHEMA_META.version).toBe(2);
+    expect(RECEIPT_SCHEMA_META.version).toBe(3);
     expect(VERIFICATION_STATUS_SCHEMA_META.unknownFields).toBe("reject");
   });
 });
