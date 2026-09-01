@@ -164,7 +164,8 @@ under a policy, the attempt describes a work-order execution under a lease —
 and because the receipt vocabulary is what `vinci-code` persists today.
 
 The one place they touch is the receipt's `verdict`, which from schema v3 may
-be `null` exactly when `finalState` is `BLOCKED`, `FAILED` or `CANCELLED` AND
+be `null` exactly when `finalState` is `WAITING`, `BLOCKED`, `FAILED` or
+`CANCELLED` AND
 `artifactsProduced` is empty: execution ended with nothing for the assurance
 axis to assess. A null verdict beside a non-empty artifact list is refused
 (`artifacts_without_verdict`) — the record would be contradicting itself. A
