@@ -1315,8 +1315,13 @@ describe("role selection", () => {
       "fortissimo-fireworks",
     ]);
 
-    // Rights are now declared, so every lane is eligible for review work.
-    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([
+    // Unevidenced capability claims have been removed: repository_editing and
+    // evidence_citation. adversarial-reviewer requires evidence_citation, so it
+    // is now ineligible on all endpoints. This is the correct partition, not a
+    // regression — the registry moved toward honesty.
+    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([]);
+    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([
       "forte-deepinfra",
       "forte-fireworks",
       "vision-deepinfra",
@@ -1324,9 +1329,6 @@ describe("role selection", () => {
       "mezzo-deepinfra",
       "fortissimo-fireworks",
     ]);
-    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([]);
-
-    expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([]);
 
     expect(endpointIds(selections["cloud-worker"].eligible)).toEqual([
       "forte-deepinfra",
@@ -1338,6 +1340,19 @@ describe("role selection", () => {
     ]);
     expect(endpointIds(selections["cloud-worker"].unevaluable)).toEqual([]);
     expect(endpointIds(selections["cloud-worker"].ineligible)).toEqual([]);
+
+    // teacher-trajectory-producer requires evidence_citation, which was removed
+    // due to lack of evidence, so all endpoints are now ineligible.
+    expect(endpointIds(selections["teacher-trajectory-producer"].eligible)).toEqual([]);
+    expect(endpointIds(selections["teacher-trajectory-producer"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["teacher-trajectory-producer"].ineligible)).toEqual([
+      "forte-deepinfra",
+      "forte-fireworks",
+      "vision-deepinfra",
+      "vision-openrouter",
+      "mezzo-deepinfra",
+      "fortissimo-fireworks",
+    ]);
   });
 
   it("keeps each partition disjoint and accounts for every endpoint", () => {
@@ -1396,13 +1411,15 @@ describe("role selection", () => {
     if (role && endpoint) {
       const result = matchEndpointToRole(role, endpoint, now);
 
-      // The verdict follows the declared facts, not the lane name. Retention is
-      // now declared (vinci-chat enforces ZDR on every serving path), so the
-      // only remaining failure is the real one: this lane does not declare
-      // long_horizon_recovery. That is a capability gap, not a rights gap, and
-      // no terms-of-service reading can close it.
+      // The verdict follows the declared facts. Since unevidenced capabilities
+      // have been removed, mle-implementation-worker now fails on TWO capability
+      // gaps: repository_editing and long_horizon_recovery. Both are missing,
+      // and the test collects every reason.
       expect(result.verdict).toBe("ineligible");
-      expect(result.reasons.map(({ code }) => code)).toEqual(["capability_missing"]);
+      expect(result.reasons.map(({ code }) => code)).toEqual([
+        "capability_missing",
+        "capability_missing",
+      ]);
     }
   });
 
@@ -1422,14 +1439,23 @@ describe("role selection", () => {
     expect(declared).toBeDefined();
 
     if (role && declared) {
-      // Identical to a lane that IS eligible, except training rights are unknown.
-      const undeclared = {
+      // The registry endpoint no longer qualifies: teacher-trajectory-producer
+      // requires evidence_citation, which is not declared. Create a fixture that
+      // WOULD be eligible (if it declared all required capabilities), to verify
+      // the rights-undeclared check still fires.
+      const withCapabilities = {
         ...declared,
-        endpointId: "fixture-rights-undeclared",
-        rights: { ...declared.rights, trainingAllowed: { kind: "unknown" } },
+        endpointId: "fixture-rights-eligible-capable",
+        declaredCapabilities: ["evidence_citation"],
       } as unknown as ModelEndpointSpec;
 
-      expect(matchEndpointToRole(role, declared, now).verdict).toBe("eligible");
+      const undeclared = {
+        ...withCapabilities,
+        endpointId: "fixture-rights-undeclared",
+        rights: { ...withCapabilities.rights, trainingAllowed: { kind: "unknown" } },
+      } as unknown as ModelEndpointSpec;
+
+      expect(matchEndpointToRole(role, withCapabilities, now).verdict).toBe("eligible");
 
       const result = matchEndpointToRole(role, undeclared, now);
       expect(result.verdict).toBe("unevaluable");
