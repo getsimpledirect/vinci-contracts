@@ -4,6 +4,7 @@ import {
   hasField,
   isActorKind,
   isCanonicalTimestamp,
+  isTerminalState,
   isVerdictStatus,
   ok,
   toPlainRecord,
@@ -22,10 +23,6 @@ const DIGEST_PATTERN = /^[0-9a-f]{64}$/;
 
 function issue(path: string, code: string, message: string): ValidationIssue {
   return { path, code, message };
-}
-
-function isTerminalState(value: unknown): value is string {
-  return typeof value === "string" && ["DONE", "DONE_UNVERIFIED", "BLOCKED", "FAILED", "CANCELLED"].includes(value);
 }
 
 function validateActor(raw: unknown, path: string, issues: ValidationIssue[]): void {
