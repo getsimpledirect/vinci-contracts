@@ -373,8 +373,8 @@ export const RECEIPT_SCHEMA_META: SchemaMeta = {
   id: "vinci.receipt",
   /**
    * 3: `verdict` widened to `VerdictStatus | null`, null permitted only on
-   * BLOCKED, FAILED and CANCELLED final states. Widening a required field's
-   * type is not additive under a frozen policy — a version 2 reader given null
+   * WAITING, BLOCKED, FAILED and CANCELLED final states. Widening a required
+   * field's type is not additive under a frozen policy — a version 2 reader given null
    * would refuse a record a version 3 writer considers valid — so the version
    * bumps rather than the change riding under the old number.
    */
