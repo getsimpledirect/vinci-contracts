@@ -133,7 +133,8 @@ const validRole = () => ({
   schemaVersion: 1,
   roleId: "repository-agent",
   taskClass: "repository-edit",
-  requiredCapabilities: ["repository_editing", "evidence_citation"],
+  requiredCapabilities: ["structured_tool_use"],
+  requiredHarnessCapabilities: ["repository_editing", "evidence_citation"],
   minimumContextTokens: 64_000,
   riskClass: "medium",
   dataPolicy: {
@@ -160,7 +161,7 @@ const endpointCommon = () => ({
     contextLimit: 128_000,
     toolSupport: true,
   },
-  declaredCapabilities: ["repository_editing", "evidence_citation"],
+  declaredCapabilities: ["structured_tool_use"],
   credentials: {
     source: { kind: "managed-credential", credentialId: "credential-1" },
   },
@@ -621,7 +622,7 @@ describe("matchEndpointToRole defensive validation", () => {
   });
 
   it("reads bounded capability arrays by index without trusting their iterator", () => {
-    const capabilities = new Proxy(["repository_editing", "evidence_citation"], {
+    const capabilities = new Proxy(["structured_tool_use"], {
       get(target, property, receiver) {
         if (property === Symbol.iterator) throw new Error("must not use caller iterator");
         return Reflect.get(target, property, receiver);
@@ -1304,30 +1305,31 @@ describe("role selection", () => {
       VINCI_ROLES.map((role) => [role.roleId, selectForRole(role, VINCI_ENDPOINTS, now)]),
     );
 
-    expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([]);
-    expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([]);
-    expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
+    expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([
       "forte-deepinfra",
       "forte-fireworks",
-      "vision-deepinfra",
-      "vision-openrouter",
       "mezzo-deepinfra",
       "fortissimo-fireworks",
     ]);
-
-    // Unevidenced capability claims have been removed: repository_editing and
-    // evidence_citation. adversarial-reviewer requires evidence_citation, so it
-    // is now ineligible on all endpoints. This is the correct partition, not a
-    // regression — the registry moved toward honesty.
-    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([]);
-    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([]);
-    expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([
-      "forte-deepinfra",
-      "forte-fireworks",
+    expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
       "vision-deepinfra",
       "vision-openrouter",
+    ]);
+
+    // After splitting endpoint and harness capabilities, adversarial-reviewer
+    // requires only structured_tool_use from the endpoint (evidence_citation is
+    // a harness capability). Endpoints that declare structured_tool_use are eligible.
+    expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([
+      "forte-deepinfra",
+      "forte-fireworks",
       "mezzo-deepinfra",
       "fortissimo-fireworks",
+    ]);
+    expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([
+      "vision-deepinfra",
+      "vision-openrouter",
     ]);
 
     expect(endpointIds(selections["cloud-worker"].eligible)).toEqual([
@@ -1341,11 +1343,10 @@ describe("role selection", () => {
     expect(endpointIds(selections["cloud-worker"].unevaluable)).toEqual([]);
     expect(endpointIds(selections["cloud-worker"].ineligible)).toEqual([]);
 
-    // teacher-trajectory-producer requires evidence_citation, which was removed
-    // due to lack of evidence, so all endpoints are now ineligible.
-    expect(endpointIds(selections["teacher-trajectory-producer"].eligible)).toEqual([]);
-    expect(endpointIds(selections["teacher-trajectory-producer"].unevaluable)).toEqual([]);
-    expect(endpointIds(selections["teacher-trajectory-producer"].ineligible)).toEqual([
+    // After splitting endpoint and harness capabilities, teacher-trajectory-producer
+    // requires no endpoint capabilities (evidence_citation is a harness capability).
+    // All endpoints are now eligible.
+    expect(endpointIds(selections["teacher-trajectory-producer"].eligible)).toEqual([
       "forte-deepinfra",
       "forte-fireworks",
       "vision-deepinfra",
@@ -1353,6 +1354,8 @@ describe("role selection", () => {
       "mezzo-deepinfra",
       "fortissimo-fireworks",
     ]);
+    expect(endpointIds(selections["teacher-trajectory-producer"].unevaluable)).toEqual([]);
+    expect(endpointIds(selections["teacher-trajectory-producer"].ineligible)).toEqual([]);
   });
 
   it("keeps each partition disjoint and accounts for every endpoint", () => {
@@ -1411,15 +1414,12 @@ describe("role selection", () => {
     if (role && endpoint) {
       const result = matchEndpointToRole(role, endpoint, now);
 
-      // The verdict follows the declared facts. Since unevidenced capabilities
-      // have been removed, mle-implementation-worker now fails on TWO capability
-      // gaps: repository_editing and long_horizon_recovery. Both are missing,
-      // and the test collects every reason.
-      expect(result.verdict).toBe("ineligible");
-      expect(result.reasons.map(({ code }) => code)).toEqual([
-        "capability_missing",
-        "capability_missing",
-      ]);
+      // The verdict follows the declared facts. After separating endpoint and
+      // harness capabilities, mle-implementation-worker requires only
+      // structured_tool_use from the endpoint. All endpoints declare it, so
+      // this endpoint is now eligible.
+      expect(result.verdict).toBe("eligible");
+      expect(result.reasons).toEqual([]);
     }
   });
 
@@ -1439,14 +1439,13 @@ describe("role selection", () => {
     expect(declared).toBeDefined();
 
     if (role && declared) {
-      // The registry endpoint no longer qualifies: teacher-trajectory-producer
-      // requires evidence_citation, which is not declared. Create a fixture that
-      // WOULD be eligible (if it declared all required capabilities), to verify
-      // the rights-undeclared check still fires.
+      // After separating endpoint and harness capabilities, teacher-trajectory-producer
+      // requires no endpoint capabilities (evidence_citation is now a harness capability).
+      // Create a fixture that is eligible to verify the rights-undeclared check still fires.
       const withCapabilities = {
         ...declared,
         endpointId: "fixture-rights-eligible-capable",
-        declaredCapabilities: ["evidence_citation"],
+        declaredCapabilities: [],
       } as unknown as ModelEndpointSpec;
 
       const undeclared = {

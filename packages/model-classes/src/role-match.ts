@@ -5,10 +5,10 @@ import {
 } from "@getsimpledirect/vinci-contracts";
 import type { ModelEndpointSpec } from "./endpoint.ts";
 import {
-  REQUIRED_CAPABILITIES,
+  ENDPOINT_CAPABILITIES,
   ROLE_RISK_CLASSES,
+  type EndpointCapability,
   type ModelRoleSpec,
-  type RequiredCapability,
 } from "./role.ts";
 
 export const MATCH_VERDICTS = ["eligible", "ineligible", "unevaluable"] as const;
@@ -77,28 +77,28 @@ function isExplicitBoolean(
 }
 
 /** Snapshot and validate a hostile-reachable capability array without using its iterator. */
-function snapshotCapabilities(value: unknown): readonly RequiredCapability[] | undefined {
+function snapshotCapabilities(value: unknown): readonly EndpointCapability[] | undefined {
   if (!Array.isArray(value)) return undefined;
   const length = value.length;
   if (!Number.isSafeInteger(length) || length < 0 || length > MAX_CAPABILITY_DECLARATIONS) {
     return undefined;
   }
 
-  const snapshot: RequiredCapability[] = [];
+  const snapshot: EndpointCapability[] = [];
   for (let index = 0; index < length; index += 1) {
     const capability = value[index];
     if (
       typeof capability !== "string" ||
-      !REQUIRED_CAPABILITIES.includes(capability as RequiredCapability)
+      !ENDPOINT_CAPABILITIES.includes(capability as EndpointCapability)
     ) {
       return undefined;
     }
-    snapshot.push(capability as RequiredCapability);
+    snapshot.push(capability as EndpointCapability);
   }
   return snapshot;
 }
 
-function missingCapability(capability: RequiredCapability): ClassifiedReason {
+function missingCapability(capability: EndpointCapability): ClassifiedReason {
   return {
     code: "capability_missing",
     detail: `endpoint did not declare required capability: ${capability}`,
@@ -107,9 +107,11 @@ function missingCapability(capability: RequiredCapability): ClassifiedReason {
 }
 
 /**
- * qualityPolicy and economicPolicy are ranking thresholds applied by a router
- * against measured performance, not eligibility preconditions, and are
- * deliberately not read here.
+ * qualityPolicy, economicPolicy, and requiredHarnessCapabilities are ranking thresholds
+ * or system-level requirements applied by a router against measured performance or
+ * harness-provided capabilities, not eligibility preconditions, and are deliberately
+ * not read here. A harness must ensure requiredHarnessCapabilities are available
+ * separately; the endpoint matcher cannot provide them.
  */
 export function matchEndpointToRole(
   role: ModelRoleSpec,
@@ -199,7 +201,7 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "role.requiredCapabilities is not a bounded array of known capabilities",
+            detail: "role.requiredCapabilities is not a bounded array of known endpoint capabilities",
           },
         ],
       };
@@ -276,7 +278,7 @@ export function matchEndpointToRole(
         reasons: [
           {
             code: "input_not_evaluable",
-            detail: "endpoint.declaredCapabilities is not a bounded array of known capabilities",
+            detail: "endpoint.declaredCapabilities is not a bounded array of known endpoint capabilities",
           },
         ],
       };
