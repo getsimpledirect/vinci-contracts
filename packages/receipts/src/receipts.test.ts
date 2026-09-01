@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertSchemaMetaComplete, type ReceiptId, type RunId } from "@getsimpledirect/vinci-contracts";
+import { TERMINAL_STATES, assertSchemaMetaComplete, type ReceiptId, type RunId } from "@getsimpledirect/vinci-contracts";
 import {
   CORRECTION_SCHEMA_META,
   RECEIPT_COVERED_FIELDS,
@@ -55,6 +55,49 @@ function unsignedReceipt(overrides: Record<string, unknown> = {}): Record<string
     ...overrides,
   };
 }
+
+// 🔴 DRIFT REGRESSION. receipts inlined its own 5-element terminal-state array and
+// omitted WAITING, so a run ending WAITING_FOR_APPROVAL or WAITING_FOR_USER (both
+// map onto WAITING in contracts) could not have a receipt written at all. The
+// package already depended on @getsimpledirect/vinci-contracts, so the copy bought
+// nothing.
+//
+// This enumerates the WHOLE canonical vocabulary rather than asserting the one
+// value that happened to be missing. A test naming only WAITING would pass again
+// the next time a DIFFERENT state is added to contracts and not mirrored here --
+// which is the failure that actually occurred, one identifier at a time.
+// `receipt()` throws when the fixture does not validate, so it cannot carry a case
+// whose validity is the thing under test. This builds and digests without asserting ok.
+function digested(overrides: Record<string, unknown>): Record<string, unknown> {
+  const candidate = unsignedReceipt(overrides);
+  candidate.digest = receiptDigest(candidate as unknown as Receipt);
+  return candidate;
+}
+
+describe("finalState accepts exactly the canonical terminal vocabulary", () => {
+  for (const state of TERMINAL_STATES) {
+    it(`accepts ${state}`, () => {
+      const result = validateReceipt(digested({ finalState: state }));
+      // validateReceipt is a discriminated union: `issues` exists only on the failure arm.
+      const finalStateIssues = result.ok
+        ? []
+        : result.issues.filter((issue) => issue.path === "/finalState");
+      expect(finalStateIssues, `${state} is in contracts TERMINAL_STATES but receipts rejected it`).toEqual([]);
+    });
+  }
+
+  // Anti-vacuity: if every string were accepted the loop above would pass while
+  // proving nothing about the vocabulary.
+  it("still rejects a state outside the vocabulary", () => {
+    const result = validateReceipt(digested({ finalState: "TOTALLY_NOT_A_STATE" }));
+    expect(result.ok).toBe(false);
+    expect(
+      result.ok
+        ? false
+        : result.issues.some((issue) => issue.path === "/finalState" && issue.code === "invalid_state"),
+    ).toBe(true);
+  });
+});
 
 function receipt(overrides: Record<string, unknown> = {}): Receipt {
   const candidate = unsignedReceipt(overrides);
