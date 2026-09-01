@@ -8,6 +8,7 @@ import {
   ENDPOINT_CAPABILITIES,
   ROLE_RISK_CLASSES,
   type EndpointCapability,
+  type HarnessCapability,
   type ModelRoleSpec,
 } from "./role.ts";
 
@@ -28,6 +29,7 @@ export type MatchReasonCode =
   | "retention_undeclared"
   | "protected_data_not_approved"
   | "protected_data_approval_undeclared"
+  | "harness_capabilities_unverified"
   | "input_not_evaluable";
 
 export type MatchReason = {
@@ -107,16 +109,33 @@ function missingCapability(capability: EndpointCapability): ClassifiedReason {
 }
 
 /**
- * qualityPolicy, economicPolicy, and requiredHarnessCapabilities are ranking thresholds
- * or system-level requirements applied by a router against measured performance or
- * harness-provided capabilities, not eligibility preconditions, and are deliberately
- * not read here. A harness must ensure requiredHarnessCapabilities are available
- * separately; the endpoint matcher cannot provide them.
+ * qualityPolicy and economicPolicy are ranking thresholds applied by a router against
+ * measured performance, not eligibility preconditions, and are deliberately not read here.
+ *
+ * requiredHarnessCapabilities IS read, and it can only ever WITHHOLD eligibility. An
+ * inference endpoint structurally cannot supply a harness capability such as
+ * `repository_editing`, so this function is not in a position to confirm one is available.
+ * It therefore refuses to return `eligible` for any role that requires one, and reports
+ * `harness_capabilities_unverified`. A harness that has actually established these
+ * capabilities may treat that verdict as satisfied; nothing else may.
+ *
+ * The field was previously written by the registry and read by nobody, which made it an
+ * inert guard: a constraint that existed in the record and in no execution path. It was
+ * harmless only because every real lane is currently `unevaluable` for the unrelated
+ * reason that its weights digest is unknown. Once artifact identity lands, an unread
+ * requirement would have become a silently dropped one.
  */
 export function matchEndpointToRole(
   role: ModelRoleSpec,
   endpoint: ModelEndpointSpec,
   now: Timestamp,
+  /**
+   * Harness capabilities the CALLER has actually established. Omitting it is not a
+   * claim that none are needed -- it means nothing has been established, so any role
+   * requiring one resolves to `unevaluable`. Passing a list that does not cover the
+   * requirement is a definite failure and resolves to `ineligible`.
+   */
+  attestedHarnessCapabilities?: readonly HarnessCapability[],
 ): MatchResult {
   try {
     // DEFENSIVE VALIDATION PREAMBLE
@@ -165,6 +184,7 @@ export function matchEndpointToRole(
     // Read all potentially-dangerous fields exactly once into locals
     const roleId = (role as Record<string, unknown>).roleId;
     const requiredCapabilities = (role as Record<string, unknown>).requiredCapabilities;
+    const requiredHarnessCapabilities = (role as Record<string, unknown>).requiredHarnessCapabilities;
     const minimumContextTokens = (role as Record<string, unknown>).minimumContextTokens;
     const riskClass = (role as Record<string, unknown>).riskClass;
     const dataPolicy = (role as Record<string, unknown>).dataPolicy;
@@ -526,6 +546,40 @@ export function matchEndpointToRole(
         detail: `endpoint is not valid until ${validFrom}`,
         hardNo: true,
       });
+    }
+
+    // An undeclared fact must never grant a permission, so an absent or malformed
+    // requiredHarnessCapabilities withholds eligibility rather than defaulting to
+    // "none required".
+    if (!Array.isArray(requiredHarnessCapabilities)) {
+      classified.push({
+        code: "harness_capabilities_unverified",
+        detail: "role did not declare requiredHarnessCapabilities",
+        hardNo: false,
+      });
+    } else if (requiredHarnessCapabilities.length > 0) {
+      const attested = Array.isArray(attestedHarnessCapabilities)
+        ? attestedHarnessCapabilities.map((capability) => String(capability))
+        : null;
+      const required = requiredHarnessCapabilities.map((capability) => String(capability));
+      if (attested === null) {
+        // Nothing established. An absence of evidence, not evidence of failure.
+        classified.push({
+          code: "harness_capabilities_unverified",
+          detail: `no harness attestation supplied for: ${required.join(", ")}`,
+          hardNo: false,
+        });
+      } else {
+        const missing = required.filter((capability) => !attested.includes(capability));
+        if (missing.length > 0) {
+          // The caller stated what it has and it does not cover the role: a definite no.
+          classified.push({
+            code: "harness_capabilities_unverified",
+            detail: `harness attestation is missing: ${missing.join(", ")}`,
+            hardNo: true,
+          });
+        }
+      }
     }
 
     const verdict: MatchVerdict = classified.some(({ hardNo }) => hardNo)
