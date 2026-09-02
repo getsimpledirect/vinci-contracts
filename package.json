@@ -12,7 +12,7 @@
     "build": "tsc --build",
     "test": "vitest run",
     "lint": "eslint packages --max-warnings=0",
-    "typecheck": "tsc --build packages/contracts/tsconfig.json packages/policy/tsconfig.json packages/evidence/tsconfig.json packages/approvals/tsconfig.json packages/device-auth/tsconfig.json packages/model-classes/tsconfig.json packages/session-stream/tsconfig.json packages/worker-capabilities/tsconfig.json --dry",
+    "typecheck": "tsc --build packages/contracts/tsconfig.json packages/policy/tsconfig.json packages/evidence/tsconfig.json packages/approvals/tsconfig.json packages/device-auth/tsconfig.json packages/model-classes/tsconfig.json packages/session-stream/tsconfig.json packages/worker-capabilities/tsconfig.json packages/run/tsconfig.json --dry",
     "check:graph": "node scripts/check-dependency-graph.mjs",
     "gate": "node scripts/gate.mjs",
     "check:pack": "node scripts/check-consumer-install.mjs",

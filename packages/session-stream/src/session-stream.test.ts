@@ -318,8 +318,11 @@ describe("sequence semantics", () => {
 
 describe("durable and ephemeral envelopes are mutually exclusive", () => {
   const runEvent = {
-    // Run-events schema 3 adds a literal tenant binding to every durable event.
-    schemaVersion: 3,
+    // Run-events schema 3 added a literal tenant binding to every durable event;
+    // schema 4 (IR-00) added the governed-run event types. The fixture tracks
+    // the CURRENT version because validateRunEvent must accept it (asserted
+    // below) for the mutual-exclusion check to be reaching the right object.
+    schemaVersion: 4,
     eventId: "event-1",
     runId: "run-1",
     organizationId: null,
