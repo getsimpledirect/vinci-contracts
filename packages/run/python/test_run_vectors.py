@@ -30,9 +30,31 @@ EXPECTED_VECTORS = [
     "environment-1-cloud",
     "harness-attestation-1-pass",
     "harness-attestation-2-expired",
+    "harness-attestation-3-pinned-checkout",
+    "harness-attestation-4-working-tree",
     "human-correction-1",
     "run-1-created",
 ]
+
+# The digests, pinned IN SOURCE as well as in each vector's digest.txt.
+#
+# digest.txt is written by vectors/generate.mjs, so comparing against it alone
+# cannot distinguish "the vectors are unchanged" from "the generator was re-run
+# and the fixture moved" — the regenerated file agrees with the regenerated
+# fixture by construction. These literals are the second, independent pin, and
+# src/vectors.test.ts pins the identical values from the other language: a
+# regeneration must be typed into both, which is what makes it a deliberate act.
+PINNED_DIGESTS = {
+    "agent-1-minimal": "e77779f93275b68148c6a6bdccad2000fe14bda4c345f06760cf9bd9d441b89b",
+    "context-manifest-1-trust": "367ff605647abc9c288560f69aff398227124837016145c0b14d6615aa78a1d5",
+    "environment-1-cloud": "03904cc6ece8e357e7926a3b4f959dbf43eac9738650aa2b14559c8c745d10dd",
+    "harness-attestation-1-pass": "c8f4412a5a75d879d17a7681091d9982ae5b482591fcc234995265adbd89a2e7",
+    "harness-attestation-2-expired": "f0d008c6aee8a08dc29f5d1b4978da8a0ca8a770bd42069e98efa4c1d1957cbe",
+    "harness-attestation-3-pinned-checkout": "7e7869a0c516cad5b284883ca7006ff4add3bb9e56db070ba322a6225525c96f",
+    "harness-attestation-4-working-tree": "85ebce77a803049d00fd961115bb69070e82a4077130ee8a6b943ef3ea1b036d",
+    "human-correction-1": "e7e3e8ed30427461d7a238c301e7ddc49232f161eac1bbf320fe75b764b08f80",
+    "run-1-created": "6dc08c3b38320c898bcd2ecac37167ebc75b5d3c1e0775d1d5f34f95b9d54866",
+}
 
 # The 24 event types run-events v4 adds, pinned as a literal so a type deleted
 # from the vocabulary cannot vanish from the expectation at the same time.
@@ -97,8 +119,12 @@ class GoldenVectors(unittest.TestCase):
     def _dirs(self):
         return sorted(d for d in os.listdir(VECTORS) if os.path.isdir(os.path.join(VECTORS, d)))
 
-    def test_the_committed_vectors_are_exactly_the_expected_seven(self):
+    def test_the_committed_vectors_are_exactly_the_expected_nine(self):
         self.assertEqual(self._dirs(), EXPECTED_VECTORS)
+        # A pin map missing an entry would silently stop pinning that vector,
+        # and nine distinct fixtures must have nine distinct identities.
+        self.assertEqual(sorted(PINNED_DIGESTS), sorted(EXPECTED_VECTORS))
+        self.assertEqual(len(set(PINNED_DIGESTS.values())), len(EXPECTED_VECTORS))
 
     def test_canonical_bytes_and_digest_match_node(self):
         for d in self._dirs():
@@ -112,6 +138,8 @@ class GoldenVectors(unittest.TestCase):
                     expected_digest = f.read().strip()
                 self.assertEqual(canonicalize(value).encode("utf-8"), expected_bytes)
                 self.assertEqual(digest(value), expected_digest)
+                # The source-side pin, the same literal the Node test carries.
+                self.assertEqual(expected_digest, PINNED_DIGESTS[d])
 
     def test_one_flipped_character_changes_the_bytes_and_the_digest(self):
         """The connected-instrument control, in Python.

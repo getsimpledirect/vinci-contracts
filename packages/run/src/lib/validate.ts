@@ -60,6 +60,19 @@ export function isRefText(value: unknown): value is string {
   return isNonBlankText(value) && (value as string).length <= 512;
 }
 
+/**
+ * A git object id: exactly 40 lowercase hex characters.
+ *
+ * Distinct from `isDigest` (64 hex, SHA-256) on purpose. A commit or tree id is
+ * a SHA-1 object name, and accepting either width would let a 64-hex digest of
+ * anything at all pass where a commit id is required — the field would then
+ * assert more than the check verifies. Git's SHA-256 object format is a schema
+ * version bump with its own migration, not a widened regex here.
+ */
+export function isGitObjectId(value: unknown): value is string {
+  return typeof value === "string" && /^[0-9a-f]{40}$/.test(value);
+}
+
 /** Is `value` a member of the closed `members` set? */
 export function isEnumMember(value: unknown, members: readonly string[]): value is string {
   return typeof value === "string" && (members as readonly string[]).includes(value);

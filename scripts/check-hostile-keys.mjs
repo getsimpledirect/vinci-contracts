@@ -688,20 +688,43 @@ const AUTHORITY_GUARDS = [
     control: (fn) => {
       const D = "a".repeat(64);
       const attestation = {
-        schemaVersion: 1, attestationId: "att-1", runtimeBuild: "worker@1.2.3", environmentDigest: D,
+        schemaVersion: 2, attestationId: "att-1", runtimeBuild: "worker@1.2.3", environmentDigest: D,
         workerPrincipalId: "principal-1",
         capabilities: [
-          { id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "installed_worker" },
-          { id: "shell_execution", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "source_checkout" },
+          { id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "installed_package" },
+          { id: "shell_execution", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "working_tree" },
         ],
         createdAt: "2026-08-23T00:00:00.000Z", expiresAt: "2026-08-24T00:00:00.000Z",
         issuedBy: { kind: "worker", workerId: "w-1" },
       };
+      // A pinned checkout — what a production worker actually is — establishes
+      // its capability, which v1 made impossible and is the whole point of the
+      // v2 axis. Kept as a separate record so the mixed one above still shows
+      // a working_tree entry contributing nothing beside an attestable one.
+      const pinned = {
+        ...attestation,
+        capabilities: [{
+          id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D,
+          observedEntrypoint: "pinned_checkout",
+          checkoutPin: { commitId: "0".repeat(39) + "1", treeId: "f".repeat(39) + "e" },
+        }],
+      };
+      // A pinned_checkout WITHOUT its pin evidence is invalid, so it grants
+      // nothing: the label alone never counts.
+      const unpinned = {
+        ...attestation,
+        capabilities: [{
+          id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D,
+          observedEntrypoint: "pinned_checkout",
+        }],
+      };
       // Establishes the capability while valid; establishes NOTHING once
-      // expired; and never counts a capability proven on a source checkout.
+      // expired; and never counts a capability observed on a working tree.
       const live = fn(attestation, "2026-08-23T12:00:00.000Z");
       const expired = fn(attestation, "2026-08-25T00:00:00.000Z");
-      return live.length === 1 && live[0] === "repository_editing" && expired.length === 0;
+      return live.length === 1 && live[0] === "repository_editing" && expired.length === 0
+        && fn(pinned, "2026-08-23T12:00:00.000Z").length === 1
+        && fn(unpinned, "2026-08-23T12:00:00.000Z").length === 0;
     },
   },
   {
@@ -711,9 +734,9 @@ const AUTHORITY_GUARDS = [
     call: (fn, hostile) => {
       const D = "a".repeat(64);
       return fn({
-        schemaVersion: 1, attestationId: "att-1", runtimeBuild: "worker@1.2.3", environmentDigest: D,
+        schemaVersion: 2, attestationId: "att-1", runtimeBuild: "worker@1.2.3", environmentDigest: D,
         workerPrincipalId: "principal-1",
-        capabilities: [{ id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "installed_worker" }],
+        capabilities: [{ id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "installed_package" }],
         createdAt: "2026-08-23T00:00:00.000Z", expiresAt: "2026-08-24T00:00:00.000Z",
         issuedBy: { kind: "worker", workerId: "w-1" },
       }, hostile).length > 0;
@@ -721,9 +744,9 @@ const AUTHORITY_GUARDS = [
     control: (fn) => {
       const D = "a".repeat(64);
       const attestation = {
-        schemaVersion: 1, attestationId: "att-1", runtimeBuild: "worker@1.2.3", environmentDigest: D,
+        schemaVersion: 2, attestationId: "att-1", runtimeBuild: "worker@1.2.3", environmentDigest: D,
         workerPrincipalId: "principal-1",
-        capabilities: [{ id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "installed_worker" }],
+        capabilities: [{ id: "repository_editing", version: 1, status: "PASS", selfTestDigest: D, observedEntrypoint: "installed_package" }],
         createdAt: "2026-08-23T00:00:00.000Z", expiresAt: "2026-08-24T00:00:00.000Z",
         issuedBy: { kind: "worker", workerId: "w-1" },
       };

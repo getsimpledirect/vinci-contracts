@@ -108,8 +108,16 @@ const manifest = (): Record<string, unknown> => ({
   excluded: [{ ref: "history://other-program", reason: "unrelated_program_history" }],
 });
 
+// A well-formed pin: two git object ids, 40 lowercase hex each. `COMMIT_ID` is
+// what production already announces as `worker_build`; `TREE_ID` is what
+// `git write-tree` produced over the tree as observed, and an auditor holding
+// the repository recomputes `git rev-parse <COMMIT_ID>^{tree}` to check it.
+const COMMIT_ID = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d";
+const TREE_ID = "f9e8d7c6b5a4938271605f4e3d2c1b0a99887766";
+const pin = () => ({ commitId: COMMIT_ID, treeId: TREE_ID });
+
 const attestation = (): Record<string, unknown> => ({
-  schemaVersion: 1,
+  schemaVersion: 2,
   attestationId: "att-1",
   runtimeBuild: "worker@1.2.3",
   environmentDigest: DIGEST,
@@ -120,7 +128,7 @@ const attestation = (): Record<string, unknown> => ({
       version: 1,
       status: "PASS",
       selfTestDigest: DIGEST,
-      observedEntrypoint: "installed_worker",
+      observedEntrypoint: "installed_package",
     },
   ],
   createdAt: AT,
@@ -244,7 +252,7 @@ const endpoint = {
 // ---------------------------------------------------------------------------
 
 describe("schema meta", () => {
-  it("every exported meta answers all six questions and is frozen/reject/fail-closed at v1", () => {
+  it("every exported meta answers all six questions and is frozen/reject/fail-closed", () => {
     for (const meta of [
       AGENT_SCHEMA_META,
       ENVIRONMENT_SCHEMA_META,
@@ -254,13 +262,34 @@ describe("schema meta", () => {
       HUMAN_CORRECTION_SCHEMA_META,
     ]) {
       expect(() => assertSchemaMetaComplete(meta)).not.toThrow();
-      expect(meta.version).toBe(1);
       expect(meta.compatibility).toBe("frozen");
       expect(meta.unknownFields).toBe("reject");
       expect(meta.malformedData).toBe("fail-closed");
+    }
+    // Version and migration are checked as a PAIR, not as a constant. Five of
+    // these are still v1 with nothing to migrate from; the attestation is v2
+    // because the entrypoint vocabulary changed under a frozen policy, and
+    // `assertSchemaMetaComplete` already refuses `migration: "none"` above v1 —
+    // so the assertion below is what stops a future bump from carrying a
+    // migration string that says nothing, and what stops v1 from acquiring a
+    // migration it does not need.
+    for (const meta of [
+      AGENT_SCHEMA_META,
+      ENVIRONMENT_SCHEMA_META,
+      RUN_SCHEMA_META,
+      CONTEXT_MANIFEST_SCHEMA_META,
+      HUMAN_CORRECTION_SCHEMA_META,
+    ]) {
+      expect(meta.version).toBe(1);
       expect(meta.migration).toBe("none");
     }
+    expect(HARNESS_ATTESTATION_SCHEMA_META.version).toBe(2);
+    expect(HARNESS_ATTESTATION_SCHEMA_META.migration).not.toBe("none");
+    // The migration states what happens to a v1 record rather than merely
+    // being non-empty: refusal, and why the record cannot be up-converted.
+    expect(HARNESS_ATTESTATION_SCHEMA_META.migration).toContain("refuses a v1 record on schemaVersion");
     expect(
+
       [
         AGENT_SCHEMA_META, ENVIRONMENT_SCHEMA_META, RUN_SCHEMA_META,
         CONTEXT_MANIFEST_SCHEMA_META, HARNESS_ATTESTATION_SCHEMA_META, HUMAN_CORRECTION_SCHEMA_META,
@@ -351,6 +380,96 @@ describe("closed sets and fail-closed scalars", () => {
     expect(
       codesOf(validateHarnessAttestation({ ...attestation(), issuedBy: { kind: "worker", workerId: "w-1", independent: true } })),
     ).toEqual(["invalid_actor"]);
+  });
+  it("harness attestation: observedEntrypoint is the v2 identity vocabulary, and the v1 words are gone", () => {
+    const withEntrypoint = (observedEntrypoint: unknown, extra: Record<string, unknown> = {}) =>
+      validateHarnessAttestation({
+        ...attestation(),
+        capabilities: [
+          {
+            id: "repository_editing", version: 1, status: "PASS", selfTestDigest: DIGEST,
+            observedEntrypoint, ...extra,
+          },
+        ],
+      });
+    // Positive control: all three v2 members are accepted through this exact
+    // entry point, so the refusals below are the vocabulary answering rather
+    // than the fixture being broken for an unrelated reason.
+    expect(withEntrypoint("installed_package").ok).toBe(true);
+    expect(withEntrypoint("pinned_checkout", { checkoutPin: pin() }).ok).toBe(true);
+    expect(withEntrypoint("working_tree").ok).toBe(true);
+    // The v1 words are not silently tolerated: a v1 producer is refused at the
+    // vocabulary as well as at schemaVersion.
+    expect(codesOf(withEntrypoint("installed_worker"))).toEqual(["unknown_entrypoint"]);
+    expect(codesOf(withEntrypoint("source_checkout"))).toEqual(["unknown_entrypoint"]);
+    expect(codesOf(withEntrypoint(""))).toEqual(["unknown_entrypoint"]);
+  });
+  it("harness attestation: a v1 record is refused on schemaVersion rather than up-converted", () => {
+    // The migration this bump declares, executed. The v1 record below is
+    // otherwise the shape v1 accepted, so the ONLY thing refusing it is the
+    // version — and nothing in the result resembles an up-conversion.
+    const v1 = {
+      ...attestation(),
+      schemaVersion: 1,
+      capabilities: [
+        { id: "repository_editing", version: 1, status: "PASS", selfTestDigest: DIGEST, observedEntrypoint: "installed_worker" },
+      ],
+    };
+    expect(codesOf(validateHarnessAttestation(v1)).sort()).toEqual(["invalid_schema_version", "unknown_entrypoint"]);
+    expect(codesOf(validateHarnessAttestation({ ...attestation(), schemaVersion: 1 }))).toEqual([
+      "invalid_schema_version",
+    ]);
+  });
+  it("harness attestation: a pinned_checkout without well-formed pin evidence is INVALID", () => {
+    const pinned = (checkoutPin: unknown, present = true) =>
+      validateHarnessAttestation({
+        ...attestation(),
+        capabilities: [
+          {
+            id: "repository_editing", version: 1, status: "PASS", selfTestDigest: DIGEST,
+            observedEntrypoint: "pinned_checkout",
+            ...(present ? { checkoutPin } : {}),
+          },
+        ],
+      });
+    // Positive control: the same entry WITH the evidence validates.
+    expect(pinned(pin()).ok).toBe(true);
+    // Absent, null, and non-object all fail as the same missing-evidence code,
+    // at the pin's own path.
+    expect(codesOf(pinned(undefined, false))).toEqual(["missing_checkout_pin"]);
+    expect(codesOf(pinned(null))).toEqual(["missing_checkout_pin"]);
+    expect(codesOf(pinned("clean"))).toEqual(["missing_checkout_pin"]);
+    expect(codesOf(pinned([COMMIT_ID, TREE_ID]))).toEqual(["missing_checkout_pin"]);
+    const missing = pinned(null);
+    if (!missing.ok) expect(missing.issues[0]?.path).toBe("/capabilities/0/checkoutPin");
+    // Half a pin is not a pin, and each half names its own code.
+    expect(codesOf(pinned({ commitId: COMMIT_ID }))).toEqual(["invalid_tree_id"]);
+    expect(codesOf(pinned({ treeId: TREE_ID }))).toEqual(["invalid_commit_id"]);
+    // A boolean claim is exactly what this field replaced, and it is refused
+    // as an unknown field rather than quietly ignored beside a real pin.
+    expect(codesOf(pinned({ ...pin(), clean: true }))).toEqual(["unknown_field"]);
+    // Ids are 40 lowercase hex: not a 64-hex digest, not uppercase, not prose.
+    expect(codesOf(pinned({ commitId: DIGEST, treeId: TREE_ID }))).toEqual(["invalid_commit_id"]);
+    expect(codesOf(pinned({ commitId: COMMIT_ID.toUpperCase(), treeId: TREE_ID }))).toEqual(["invalid_commit_id"]);
+    expect(codesOf(pinned({ commitId: COMMIT_ID, treeId: "HEAD" }))).toEqual(["invalid_tree_id"]);
+    expect(codesOf(pinned({ commitId: COMMIT_ID, treeId: `${TREE_ID}0` }))).toEqual(["invalid_tree_id"]);
+    expect(codesOf(pinned({ commitId: 0, treeId: TREE_ID }))).toEqual(["invalid_commit_id"]);
+  });
+  it("harness attestation: a pin on an entrypoint that has no checkout is refused, not ignored", () => {
+    const withPin = (observedEntrypoint: string) =>
+      validateHarnessAttestation({
+        ...attestation(),
+        capabilities: [
+          {
+            id: "repository_editing", version: 1, status: "PASS", selfTestDigest: DIGEST,
+            observedEntrypoint, checkoutPin: pin(),
+          },
+        ],
+      });
+    // A working_tree entry carrying a pin reads to a human as pinned and is
+    // not; an installed_package has no checkout for a pin to describe.
+    expect(codesOf(withPin("working_tree"))).toEqual(["checkout_pin_not_applicable"]);
+    expect(codesOf(withPin("installed_package"))).toEqual(["checkout_pin_not_applicable"]);
   });
   it("human correction: correctionType is a closed set and eventSequence starts at 1", () => {
     expect(codesOf(validateHumanCorrection({ ...correction(), correctionType: "typo" }))).toEqual(["unknown_correction_type"]);
@@ -473,7 +592,7 @@ describe("attestedHarnessCapabilities", () => {
     return mustBeValid(validateHarnessAttestation({ ...base, capabilities: [capability] }));
   };
 
-  it("positive: PASS + installed_worker + fresh yields [\"repository_editing\"] and makes the matcher eligible", () => {
+  it("positive: PASS + installed_package + fresh yields [\"repository_editing\"] and makes the matcher eligible", () => {
     const list = attestedHarnessCapabilities(mustBeValid(validateHarnessAttestation(attestation())), NOW);
     expect(list).toEqual(["repository_editing"]);
     const verdict = matchEndpointToRole(roleRequiringRepositoryEditing, endpoint, NOW, list);
@@ -488,11 +607,37 @@ describe("attestedHarnessCapabilities", () => {
     expect(unattested.reasons.map((r) => r.code)).toEqual(["harness_capabilities_unverified"]);
   });
 
+  it("positive: PASS + pinned_checkout with valid pin evidence does the same — the case v1 made impossible", () => {
+    // This is the shape a production worker actually has: a clean tree at an
+    // exact commit under /opt, deployed by fetch + checkout --detach. Under v1
+    // it was `source_checkout` and established NOTHING, so every role
+    // requiring a harness capability stayed unevaluable forever. Same entry
+    // point, same matcher, same role as the installed_package case above.
+    const pinned = mustBeValid(
+      validateHarnessAttestation({
+        ...attestation(),
+        capabilities: [
+          {
+            id: "repository_editing", version: 1, status: "PASS", selfTestDigest: DIGEST,
+            observedEntrypoint: "pinned_checkout", checkoutPin: pin(),
+          },
+        ],
+      }),
+    );
+    const list = attestedHarnessCapabilities(pinned, NOW);
+    expect(list).toEqual(["repository_editing"]);
+    const verdict = matchEndpointToRole(roleRequiringRepositoryEditing, endpoint, NOW, list);
+    expect(verdict.verdict).toBe("eligible");
+    expect(verdict.reasons).toEqual([]);
+  });
+
   const negatives: ReadonlyArray<[string, () => HarnessAttestation, string]> = [
     ["status FAIL", () => withCapability({ status: "FAIL" }), NOW],
     ["expired (expiresAt == now)", () => mustBeValid(validateHarnessAttestation(attestation())), LATER],
     ["expired (expiresAt < now)", () => mustBeValid(validateHarnessAttestation(attestation())), "2026-09-01T00:00:00.000Z"],
-    ["observed on source_checkout", () => withCapability({ observedEntrypoint: "source_checkout" }), NOW],
+    // The axis the repair turns on: a working tree is never attestable,
+    // however the bytes arrived and whoever put them there.
+    ["observed on working_tree", () => withCapability({ observedEntrypoint: "working_tree" }), NOW],
   ];
   for (const [label, build, now] of negatives) {
     it(`negative: ${label} returns [] and the matcher withholds eligibility with harness_capabilities_unverified`, () => {
@@ -507,10 +652,74 @@ describe("attestedHarnessCapabilities", () => {
     });
   }
 
+  it("a working_tree entry establishes nothing even beside an attestable one", () => {
+    // A mixed attestation is the realistic hostile shape: one honest pinned
+    // entry and one from whatever tree happened to be lying around. Only the
+    // pinned capability survives, so the entrypoint is evaluated PER ENTRY and
+    // not once for the record.
+    const mixed = mustBeValid(
+      validateHarnessAttestation({
+        ...attestation(),
+        capabilities: [
+          {
+            id: "repository_editing", version: 1, status: "PASS", selfTestDigest: DIGEST,
+            observedEntrypoint: "pinned_checkout", checkoutPin: pin(),
+          },
+          {
+            id: "shell_execution", version: 1, status: "PASS", selfTestDigest: OTHER_DIGEST,
+            observedEntrypoint: "working_tree",
+          },
+        ],
+      }),
+    );
+    expect(attestedHarnessCapabilities(mixed, NOW)).toEqual(["repository_editing"]);
+  });
+
+  it("a pinned_checkout missing its pin evidence is INVALID, not merely uncapable", () => {
+    // The distinction the issue code exists to make. `attestedHarnessCapabilities`
+    // answers [] for both a working_tree entry and an unpinned one, so the
+    // empty list alone cannot tell them apart — validation is where the
+    // difference is visible, and this asserts it at the validator rather than
+    // inferring it from the matcher's silence.
+    const unpinned = {
+      ...attestation(),
+      capabilities: [
+        {
+          id: "repository_editing", version: 1, status: "PASS", selfTestDigest: DIGEST,
+          observedEntrypoint: "pinned_checkout",
+        },
+      ],
+    };
+    const result = validateHarnessAttestation(unpinned);
+    expect(result.ok).toBe(false);
+    expect(codesOf(result)).toEqual(["missing_checkout_pin"]);
+    // And it establishes nothing, by the invalid-record path rather than by
+    // the entrypoint path — the whole record is refused, so a valid sibling
+    // capability in the same record would not survive either.
+    expect(attestedHarnessCapabilities(unpinned as unknown as HarnessAttestation, NOW)).toEqual([]);
+    const verdict = matchEndpointToRole(roleRequiringRepositoryEditing, endpoint, NOW, []);
+    expect(verdict.verdict).toBe("ineligible");
+    expect(verdict.reasons.map((r) => r.code)).toEqual(["harness_capabilities_unverified"]);
+    // Positive control through the same entry point: adding ONLY the pin makes
+    // the identical record valid and capable, so the refusal above is the pin
+    // requirement answering and nothing else.
+    const pinnedCapability = { ...unpinned.capabilities[0], checkoutPin: pin() };
+    const repaired = mustBeValid(validateHarnessAttestation({ ...unpinned, capabilities: [pinnedCapability] }));
+    expect(attestedHarnessCapabilities(repaired, NOW)).toEqual(["repository_editing"]);
+  });
+
   it("SKIPPED and an id outside HARNESS_CAPABILITIES contribute nothing; duplicates collapse", () => {
     expect(attestedHarnessCapabilities(withCapability({ status: "SKIPPED" }), NOW)).toEqual([]);
     expect(attestedHarnessCapabilities(withCapability({ id: "structured_tool_use" }), NOW)).toEqual([]);
     expect(attestedHarnessCapabilities(withCapability({ id: "vision" }), NOW)).toEqual([]);
+    // A pinned_checkout is not a bypass for the other conditions: the status
+    // gate still answers on an attestable entrypoint.
+    expect(
+      attestedHarnessCapabilities(
+        withCapability({ status: "SKIPPED", observedEntrypoint: "pinned_checkout", checkoutPin: pin() }),
+        NOW,
+      ),
+    ).toEqual([]);
   });
   it("an invalid attestation object or a non-canonical `now` yields [] rather than a grant", () => {
     const tampered = { ...attestation(), capabilities: "all" } as unknown as HarnessAttestation;
