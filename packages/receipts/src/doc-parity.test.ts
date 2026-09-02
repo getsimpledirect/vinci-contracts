@@ -164,6 +164,44 @@ describe("the documented null-verdict rule matches the enforced one", () => {
     ).toBeNull();
   });
 
+  it("excludes a wrong-vocabulary token that sits INSIDE the rule span", () => {
+    // 🔴 THE FILTER THIS COVERS. The parser passes every backticked ALL-CAPS
+    // token it finds through the canonical TERMINAL_STATES set. Removing that
+    // filter left all 75 controls green, because the REAL document happens to
+    // name only terminal states inside the span -- the guard was real, load
+    // bearing, and reached by nothing.
+    //
+    // The realistic drift is an editor mentioning an execution state while
+    // explaining the rule. `RUNNING` is a genuine RUN_STATES member and is NOT
+    // a TerminalState, so it is the wrong vocabulary appearing in exactly the
+    // place the anchors admit: between `null` and `artifactsProduced`.
+    const doc = [
+      "The receipt's `verdict` may",
+      "be `null` exactly when `finalState` is `WAITING`, `BLOCKED`, `FAILED` or",
+      "`CANCELLED` (never while the run is still `RUNNING`, which is an execution",
+      "state and not a terminal one) AND",
+      "`artifactsProduced` is empty: execution ended with nothing to assess.",
+    ].join("\n");
+
+    const parsed = documentedNullVerdictStates(doc);
+    expect(parsed).not.toBeNull();
+    const named = parsed as Set<string>;
+
+    expect(
+      named.has("RUNNING"),
+      `NULL_VERDICT_DOC_VOCABULARY: the parser admitted "RUNNING" into the ` +
+        `documented null-verdict set. It is a RUN_STATES member, not a ` +
+        `TerminalState, so every backticked token in the span is being read as ` +
+        `a final state and the canonical TERMINAL_STATES filter is not applied.`,
+    ).toBe(false);
+
+    // Positive half: filtering out the intruder must not cost the real states.
+    expect(
+      [...named].sort(),
+      "the four intended states must survive the filter",
+    ).toEqual(["BLOCKED", "CANCELLED", "FAILED", "WAITING"]);
+  });
+
   it("is not fooled by the DONE mention later in the same paragraph", () => {
     // The real document names `DONE` and `DONE_UNVERIFIED` a sentence after the
     // rule, as states that may NOT carry a null verdict. Parsing the whole
