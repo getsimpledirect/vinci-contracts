@@ -41,7 +41,30 @@ export const MAX_PATH_ROOT_LENGTH = 1024;
 export const PATH_ROOT_REFUSALS = [
   "empty", "absolute", "root_scope", "dot_segment", "dotdot_segment",
   "empty_segment", "backslash", "nul", "too_long",
+  "wildcard", "control_char", "bidi_control", "edge_space",
 ] as const;
+
+/**
+ * Characters refused by EXPLICIT CODE POINT rather than by a library predicate.
+ *
+ * This grammar is mirrored byte for byte by vendored Python, and `trim()` and
+ * `str.strip()` do NOT agree on what counts as whitespace. Calling either one
+ * would make the two implementations disagree about a grant's validity in
+ * exactly the silent way path-grant-cases.json exists to prevent. So the sets
+ * are enumerated, and both sides can implement the same list.
+ */
+const EDGE_SPACES = new Set([
+  "\u0020", // SPACE
+  "\u0009", // TAB
+  "\u00a0", // NO-BREAK SPACE   -- renders as a space
+  "\u200b", // ZERO WIDTH SPACE -- renders as nothing
+]);
+
+/** Bidi overrides/isolates: they reorder how the REST of the root displays. */
+const BIDI_CONTROLS = new Set([
+  "\u202a", "\u202b", "\u202c", "\u202d", "\u202e",
+  "\u2066", "\u2067", "\u2068", "\u2069",
+]);
 export type PathRootRefusal = (typeof PATH_ROOT_REFUSALS)[number];
 
 export type PathRoot = {
@@ -64,12 +87,34 @@ export function parsePathRoot(root: unknown): PathRootParse {
   if (root.startsWith("/")) return { ok: false, reason: "absolute" };
   if (root === ".") return { ok: false, reason: "root_scope" };
 
+  // A grant is READ AND APPROVED BY A PERSON -- a work order carries an
+  // attentionBudget and a requester -- so a root that does not look like what
+  // it is defeats the point of stating authority positively. These refusals
+  // only ever narrow what a grant can say.
+  for (const character of root) {
+    const code = character.codePointAt(0) ?? 0;
+    if (code < 0x20 || code === 0x7f) return { ok: false, reason: "control_char" };
+    if (BIDI_CONTROLS.has(character)) return { ok: false, reason: "bidi_control" };
+  }
+
+  // `*` is a wildcard in the branch: grammar and would be a LITERAL filename
+  // here. One token, two meanings, in one grant vocabulary: an author who
+  // writes path:src/* means "everything under src" and would otherwise get a
+  // valid grant for one file that almost certainly does not exist, failing far
+  // away as path_not_granted. Refused so the mistake is named where it is made.
+  if (root.includes("*")) return { ok: false, reason: "wildcard" };
+
   const directory = root.endsWith("/");
   const segments = (directory ? root.slice(0, -1) : root).split("/");
   for (const segment of segments) {
     if (segment === "") return { ok: false, reason: "empty_segment" };
     if (segment === ".") return { ok: false, reason: "dot_segment" };
     if (segment === "..") return { ok: false, reason: "dotdot_segment" };
+    const first = [...segment][0] as string;
+    const last = [...segment][[...segment].length - 1] as string;
+    if (EDGE_SPACES.has(first) || EDGE_SPACES.has(last)) {
+      return { ok: false, reason: "edge_space" };
+    }
   }
   return { ok: true, value: { root, kind: directory ? "directory" : "file" } };
 }
@@ -96,6 +141,10 @@ export function describePathRootRefusal(reason: PathRootRefusal): string {
     case "backslash": return "a path root uses \"/\" only; no backslash";
     case "nul": return "a path root contains no NUL";
     case "too_long": return `a path root is at most ${MAX_PATH_ROOT_LENGTH} characters`;
+    case "wildcard": return "\"*\" is a wildcard in branch: but would be a literal filename here; grant a directory with a trailing \"/\", e.g. path:src/";
+    case "control_char": return "a path root contains no control characters";
+    case "bidi_control": return "a path root contains no bidirectional override characters; they reorder how the rest of the root displays to the person approving it";
+    case "edge_space": return "a path root segment neither begins nor ends with a space, tab, no-break space, or zero-width space";
   }
 }
 

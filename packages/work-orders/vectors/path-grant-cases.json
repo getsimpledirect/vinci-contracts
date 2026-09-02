@@ -1,5 +1,5 @@
 {
-  "_": "Shared golden cases for the path: grant grammar. src/path-grant.test.ts reads this file; vinci-gpu-control's vendored Python grammar mirrors these exact rules and must agree case for case. Add cases; never edit or remove one. Cases carrying whitespace, C0 controls, and non-ASCII spellings are cross-checked: every verdict here was confirmed identical in the TypeScript grammar and the vendored Python mirror before being pinned. NFC and NFD spellings of one filename are DISTINCT roots -- neither side normalises, so a grant in one spelling does not cover a child in the other (fail-closed).",
+  "_": "Shared case file: the TypeScript grammar and the vendored Python mirror in vinci-gpu-control BOTH read this, so neither can drift. Refusals for control characters, bidi overrides, edge spaces and wildcards are stated by EXPLICIT CODE POINT, never by trim()/str.strip(), because those two do not agree on what counts as whitespace and the disagreement would be silent. NFC and NFD spellings of one filename remain DISTINCT accepted roots: neither side normalises, so a grant in one spelling does not cover a child in the other (fail-closed).",
   "accepted": [
     {
       "token": "path:src/",
@@ -32,48 +32,6 @@
       "kind": "directory"
     },
     {
-      "token": "path:src/ ",
-      "root": "src/ ",
-      "kind": "file",
-      "why": "trailing space is part of the name, not trimmed"
-    },
-    {
-      "token": "path: src/",
-      "root": " src/",
-      "kind": "directory",
-      "why": "leading space is part of the name, not trimmed"
-    },
-    {
-      "token": "path:src/\tx",
-      "root": "src/\tx",
-      "kind": "file",
-      "why": "TAB inside a segment"
-    },
-    {
-      "token": "path:src/\rx",
-      "root": "src/\rx",
-      "kind": "file",
-      "why": "CR inside a segment"
-    },
-    {
-      "token": "path:src/\nx",
-      "root": "src/\nx",
-      "kind": "file",
-      "why": "LF inside a segment"
-    },
-    {
-      "token": "path:src/ x",
-      "root": "src/ x",
-      "kind": "file",
-      "why": "NO-BREAK SPACE is not ASCII space"
-    },
-    {
-      "token": "path:src/x​",
-      "root": "src/x​",
-      "kind": "file",
-      "why": "ZERO WIDTH SPACE is invisible but significant"
-    },
-    {
       "token": "path:src/café/",
       "root": "src/café/",
       "kind": "directory",
@@ -84,12 +42,6 @@
       "root": "src/café/",
       "kind": "directory",
       "why": "NFD: e + combining acute -- a DISTINCT root from the NFC spelling above; neither side normalises"
-    },
-    {
-      "token": "path:src/‮evil",
-      "root": "src/‮evil",
-      "kind": "file",
-      "why": "RIGHT-TO-LEFT OVERRIDE renders misleadingly but is one more character"
     }
   ],
   "refused": [
@@ -156,6 +108,61 @@
     {
       "token": "path:\u0000",
       "reason": "nul"
+    },
+    {
+      "token": "path:src/ ",
+      "reason": "edge_space",
+      "why": "trailing space is part of the name, not trimmed"
+    },
+    {
+      "token": "path: src/",
+      "reason": "edge_space",
+      "why": "leading space is part of the name, not trimmed"
+    },
+    {
+      "token": "path:src/\tx",
+      "reason": "control_char",
+      "why": "TAB inside a segment"
+    },
+    {
+      "token": "path:src/\rx",
+      "reason": "control_char",
+      "why": "CR inside a segment"
+    },
+    {
+      "token": "path:src/\nx",
+      "reason": "control_char",
+      "why": "LF inside a segment"
+    },
+    {
+      "token": "path:src/ x",
+      "reason": "edge_space",
+      "why": "NO-BREAK SPACE is not ASCII space"
+    },
+    {
+      "token": "path:src/x​",
+      "reason": "edge_space",
+      "why": "ZERO WIDTH SPACE is invisible but significant"
+    },
+    {
+      "token": "path:src/‮evil",
+      "reason": "bidi_control",
+      "why": "RIGHT-TO-LEFT OVERRIDE renders misleadingly but is one more character"
+    },
+    {
+      "token": "path:src/*",
+      "reason": "wildcard",
+      "why": "reads as a branch:-style wildcard; here it would be a literal filename"
+    },
+    {
+      "token": "path:*",
+      "reason": "wildcard",
+      "why": "same, at the root"
+    },
+    {
+      "token": "path:src/**",
+      "reason": "wildcard",
+      "why": "no glob syntax in this grammar at all"
     }
   ],
   "monotonicity": [
