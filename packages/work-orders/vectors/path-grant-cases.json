@@ -1,5 +1,5 @@
 {
-  "_": "Shared case file: the TypeScript grammar and the vendored Python mirror in vinci-gpu-control BOTH read this, so neither can drift. Refusals for control characters, bidi overrides, edge spaces and wildcards are stated by EXPLICIT CODE POINT, never by trim()/str.strip(), because those two do not agree on what counts as whitespace and the disagreement would be silent. NFC and NFD spellings of one filename remain DISTINCT accepted roots: neither side normalises, so a grant in one spelling does not cover a child in the other (fail-closed).",
+  "_": "Shared case file: the TypeScript grammar and the vendored Python mirror in vinci-gpu-control BOTH read this, so neither can drift. Length means Unicode code points, not UTF-16 code units. Refusals for control characters, bidi overrides, edge spaces and wildcards are stated by EXPLICIT CODE POINT, never by trim()/str.strip(), because those two do not agree on what counts as whitespace and the disagreement would be silent. NFC and NFD spellings of one filename remain DISTINCT accepted roots: neither side normalises, so a grant in one spelling does not cover a child in the other (fail-closed).",
   "accepted": [
     {
       "token": "path:src/",
@@ -163,6 +163,34 @@
       "token": "path:src/**",
       "reason": "wildcard",
       "why": "no glob syntax in this grammar at all"
+    }
+  ],
+  "lengthBoundaries": [
+    {
+      "codePoint": "a",
+      "count": 1024,
+      "accepted": true,
+      "why": "the documented maximum is accepted"
+    },
+    {
+      "codePoint": "a",
+      "count": 1025,
+      "accepted": false,
+      "reason": "too_long",
+      "why": "one Unicode code point over the documented maximum is refused"
+    },
+    {
+      "codePoint": "😀",
+      "count": 1024,
+      "accepted": true,
+      "why": "an astral character is one Unicode code point but two UTF-16 code units"
+    },
+    {
+      "codePoint": "😀",
+      "count": 1025,
+      "accepted": false,
+      "reason": "too_long",
+      "why": "both language implementations refuse the same astral-code-point boundary"
     }
   ],
   "monotonicity": [

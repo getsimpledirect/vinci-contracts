@@ -59,7 +59,13 @@ A bare `branch:*` (or `branch:/*`) grant is an **error on the order side** (`gra
 | `path:src//x.ts` | `empty_segment` |
 | `path:a\b` | `backslash` — `/` only |
 | a root containing NUL | `nul` |
-| a root over 1024 characters | `too_long` |
+| a root over 1024 Unicode code points | `too_long` |
+
+The length cap is a semantic bound on the path spelling shared by the
+TypeScript declarer and Python enforcer, not a byte or in-memory-size limit.
+Unicode code points are counted explicitly so astral
+characters consume one position in both languages; separate transport and
+filesystem limits remain responsible for resource bounds.
 
 The grammar **never normalises**: `path:a/../b` is refused, not read as `path:b`, because a grant that has to be cleaned before it can be read is a grant two implementations can clean differently. Exported: `parsePathGrant(token)` / `parsePathRoot(root)` (typed `PathRootRefusal`), `pathRootCovers(parent, child)`, `PATH_GRANT_PREFIX`, `PATH_ROOT_REFUSALS`.
 

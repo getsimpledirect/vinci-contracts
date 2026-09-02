@@ -28,6 +28,12 @@ import { validOrder, validSpec } from "./fixtures.test-helpers.ts";
 type Cases = {
   readonly accepted: ReadonlyArray<{ token: string; root: string; kind: "directory" | "file" }>;
   readonly refused: ReadonlyArray<{ token: string; reason: PathRootRefusal }>;
+  readonly lengthBoundaries: ReadonlyArray<{
+    codePoint: string;
+    count: number;
+    accepted: boolean;
+    reason?: PathRootRefusal;
+  }>;
   readonly monotonicity: ReadonlyArray<{ parent: string; child: string; covers: boolean }>;
 };
 const cases: Cases = JSON.parse(
@@ -59,9 +65,11 @@ describe("path: grant grammar (shared cases)", () => {
   it("the shared file exercises the five refusals the contract names, plus every typed reason", () => {
     const tokens = cases.refused.map((c) => c.token);
     expect(tokens).toEqual(expect.arrayContaining(["path:.", "path:/etc", "path:a/../b", "path:a\\b", "path:"]));
-    const reasons = new Set(cases.refused.map((c) => c.reason));
+    const reasons = new Set([
+      ...cases.refused.map((c) => c.reason),
+      ...cases.lengthBoundaries.flatMap((c) => c.reason === undefined ? [] : [c.reason]),
+    ]);
     for (const reason of PATH_ROOT_REFUSALS) {
-      if (reason === "too_long") continue; // pinned below; a 1025-character token does not belong in a JSON file
       expect(reasons.has(reason), reason).toBe(true);
     }
   });
@@ -88,10 +96,17 @@ describe("path: grant grammar (shared cases)", () => {
     });
   }
 
-  it("refuses a root longer than 1024 characters, and accepts one of exactly 1024", () => {
-    expect(parsePathRoot("a".repeat(1024))).toEqual({ ok: true, value: { root: "a".repeat(1024), kind: "file" } });
-    expect(parsePathRoot("a".repeat(1025))).toEqual({ ok: false, reason: "too_long" });
-  });
+  for (const { codePoint, count, accepted, reason } of cases.lengthBoundaries) {
+    it(`${accepted ? "accepts" : "refuses"} ${count} copies of ${JSON.stringify(codePoint)} at the shared length boundary`, () => {
+      expect([...codePoint]).toHaveLength(1);
+      const root = codePoint.repeat(count);
+      expect(parsePathRoot(root)).toEqual(
+        accepted
+          ? { ok: true, value: { root, kind: "file" } }
+          : { ok: false, reason },
+      );
+    });
+  }
 
   it("never normalises: the refused token is refused, not rewritten", () => {
     // "a/../b" would normalise to "b", which the order below DOES grant. It is

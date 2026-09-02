@@ -27,7 +27,8 @@
  *   - has an empty segment ("a//b")                (empty_segment)
  *   - contains a backslash                         (backslash)
  *   - contains a NUL                               (nul)
- *   - is longer than MAX_PATH_ROOT_LENGTH          (too_long)
+ *   - is longer than MAX_PATH_ROOT_LENGTH Unicode
+ *     code points                                  (too_long)
  *
  * The grammar is deliberately not a normaliser: "a/../b" is refused, not
  * rewritten to "b". A grant that has to be cleaned before it can be read is a
@@ -81,7 +82,14 @@ export type PathRootParse =
 /** Parse the `<root>` part of a `path:` grant. Never throws; never normalises. */
 export function parsePathRoot(root: unknown): PathRootParse {
   if (typeof root !== "string" || root.length === 0) return { ok: false, reason: "empty" };
-  if (root.length > MAX_PATH_ROOT_LENGTH) return { ok: false, reason: "too_long" };
+  // JavaScript String.length counts UTF-16 code units while Python len()
+  // counts Unicode code points. This grammar is mirrored in Python, so count
+  // code points explicitly and stop as soon as the limit is exceeded.
+  let codePointLength = 0;
+  for (const _character of root) {
+    codePointLength += 1;
+    if (codePointLength > MAX_PATH_ROOT_LENGTH) return { ok: false, reason: "too_long" };
+  }
   if (root.includes("\0")) return { ok: false, reason: "nul" };
   if (root.includes("\\")) return { ok: false, reason: "backslash" };
   if (root.startsWith("/")) return { ok: false, reason: "absolute" };
@@ -140,7 +148,7 @@ export function describePathRootRefusal(reason: PathRootRefusal): string {
     case "empty_segment": return "a path root is normalised; no empty segment (\"//\")";
     case "backslash": return "a path root uses \"/\" only; no backslash";
     case "nul": return "a path root contains no NUL";
-    case "too_long": return `a path root is at most ${MAX_PATH_ROOT_LENGTH} characters`;
+    case "too_long": return `a path root is at most ${MAX_PATH_ROOT_LENGTH} Unicode code points`;
     case "wildcard": return "\"*\" is a wildcard in branch: but would be a literal filename here; grant a directory with a trailing \"/\", e.g. path:src/";
     case "control_char": return "a path root contains no control characters";
     case "bidi_control": return "a path root contains no bidirectional override characters; they reorder how the rest of the root displays to the person approving it";
