@@ -905,6 +905,12 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-policy.assertSchemaMetaComplete": "build-time assertion, not runtime input",
   "@getsimpledirect/vinci-policy.evaluatePolicyDecision": "structured policy evaluator; fail-closed hostile inputs are pinned by its unit suite",
   "@getsimpledirect/vinci-run-events.payloadSpecIsComplete": "build-time assertion over OUR spec",
+  // NULLARY. Both take no arguments, so there is no hostile input to probe:
+  // they read RUN_EVENT_TYPES and PAYLOAD_FIELDS — this package's own frozen
+  // declarations — and return a projection of them. Nothing a caller supplies
+  // reaches either one, and neither decides anything.
+  "@getsimpledirect/vinci-run-events.vocabularyVector": "nullary projection of OUR frozen vocabulary; no caller input reaches it",
+  "@getsimpledirect/vinci-run-events.emitVocabularyVector": "nullary encoder of vocabularyVector's output; the committed vector's bytes are pinned by vocabulary-vector.test.ts",
   "@getsimpledirect/vinci-evidence.blamesSubmittedWork": "enum membership over FAILURE_OWNERS",
   "@getsimpledirect/vinci-evidence.verdictAssessmentFor": "constructor; its output is validated",
   "@getsimpledirect/vinci-receipts.receiptDigest": "encoder over an already-validated record",
