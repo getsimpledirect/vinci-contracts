@@ -187,6 +187,7 @@ import {
   validateModelEndpointSpec,
 } from "@getsimpledirect/vinci-model-classes";
 import { validateSessionBinding, REMOTE_PROTOCOL_VERSION, SESSION_BINDING_SCHEMA_META } from "@getsimpledirect/vinci-remote-protocol";
+import { checkValidatedExecutionSpecWithinOrder } from "@getsimpledirect/vinci-work-orders/dist/within-order.js";
 
 const level: RiskLevel = RISK_LEVELS[0];
 if (level !== "critical") throw new Error("RISK_LEVELS is not ordered most-severe-first");
@@ -210,6 +211,43 @@ const skewed = validateSessionBinding({
   hostDeviceId: "dev-1", policyId: "pol-1", policyVersion: 1, retentionClass: "zdr_0d",
 });
 if (skewed.ok) throw new Error("protocol skew was accepted by an installed build");
+
+// The comparison helper is package-private by convention, but this package has
+// no exports map and ships dist/, so a consumer can deep-import it. It must not
+// turn a malformed path into success merely because its documented caller is
+// supposed to validate first. Both directions execute the packed JavaScript.
+const deepOrder = {
+  expiresAt: "2026-08-24T12:00:00.000Z",
+  grantedAuthority: [
+    "repo:github.com/getsimpledirect/vinci-contracts",
+    "branch:feat/*",
+    "promotion:pull_request",
+    "path:src/",
+  ],
+};
+const deepSpec = {
+  resourceBounds: { deadline: "2026-08-23T14:00:00.000Z" },
+  tools: [],
+  repository: { host: "github.com", owner: "getsimpledirect", name: "vinci-contracts" },
+  targetBranch: "feat/installed-probe",
+  promotion: "pull_request",
+  paths: ["src/index.ts"],
+};
+if (!checkValidatedExecutionSpecWithinOrder(deepSpec as never, deepOrder as never).ok) {
+  throw new Error("the installed deep helper refused a covered path");
+}
+const malformedDeepPath = checkValidatedExecutionSpecWithinOrder(
+  { ...deepSpec, paths: ["../../etc/shadow"] } as never,
+  deepOrder as never,
+);
+if (!("issues" in malformedDeepPath)) {
+  throw new Error("the installed deep helper widened authority for a malformed path");
+}
+if (!malformedDeepPath.issues.some(
+  (candidate) => candidate.path === "/paths/0" && candidate.code === "path_grant_dotdot_segment",
+)) {
+  throw new Error("the installed deep helper returned the wrong malformed-path refusal");
+}
 
 // The Model Role ABI must DECIDE from outside the workspace, not merely import.
 // This is the check 0.2.0 would have failed: it shipped eight of sixteen

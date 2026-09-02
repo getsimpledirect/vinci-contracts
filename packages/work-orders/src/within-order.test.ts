@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { bindExecutionSpec, checkExecutionSpecWithinOrder, type ExecutionSpec, type WorkOrder } from "./index.ts";
+import { checkValidatedExecutionSpecWithinOrder } from "./within-order.ts";
 import { validOrder, validSpec } from "./fixtures.test-helpers.ts";
 
 const codes = (spec: ExecutionSpec, order: WorkOrder): string[] => {
@@ -78,6 +79,25 @@ describe("checkExecutionSpecWithinOrder: execution authority ⊆ contract author
     const r = checkExecutionSpecWithinOrder(validSpec(), { ...validOrder(), acceptanceCriteria: [] });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.issues[0]?.path).toBe("/order/acceptanceCriteria");
+  });
+
+  it("the validation-bypassing helper still refuses a malformed path instead of widening authority", () => {
+    const order = { ...validOrder(), grantedAuthority: [...validOrder().grantedAuthority, "path:src/"] };
+    const reachable = checkValidatedExecutionSpecWithinOrder(
+      { ...validSpec(order), paths: ["src/index.ts"] },
+      order,
+    );
+    expect(reachable.ok).toBe(true);
+
+    const malformed = checkValidatedExecutionSpecWithinOrder(
+      { ...validSpec(order), paths: ["../../etc/shadow"] },
+      order,
+    );
+    expect(malformed.ok).toBe(false);
+    if (!malformed.ok) {
+      expect(malformed.issues.map((i) => `${i.path}:${i.code}`))
+        .toEqual(["/paths/0:path_grant_dotdot_segment"]);
+    }
   });
 });
 

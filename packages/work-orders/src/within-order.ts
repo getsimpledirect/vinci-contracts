@@ -88,7 +88,9 @@ export function checkExecutionSpecWithinOrder(spec: ExecutionSpec, order: WorkOr
 /**
  * The comparison alone, for callers that have ALREADY validated both records
  * through validateExecutionSpec / validateWorkOrder (bindExecutionSpec has).
- * Not exported from the package: a caller outside it cannot prove it validated.
+ * Not exported from the package index. The package still ships dist/ without
+ * an exports map, so a deep import can reach this helper; unexpected malformed
+ * paths therefore fail closed even though normal callers validate first.
  */
 export function checkValidatedExecutionSpecWithinOrder(s: ExecutionSpec, o: WorkOrder): ValidationResult<WithinOrder> {
   const issues: ValidationIssue[] = [];
@@ -138,7 +140,11 @@ export function checkValidatedExecutionSpecWithinOrder(s: ExecutionSpec, o: Work
   }
   (s.paths ?? []).forEach((raw, i) => {
     const parsed = parsePathRoot(raw);
-    if (!parsed.ok) return; // unreachable after validateExecutionSpec; never widen on a parse failure
+    if (!parsed.ok) {
+      issues.push(issue(`/paths/${i}`, `path_grant_${parsed.reason}`,
+        `path root is malformed (${parsed.reason}); an invalid root never widens write authority`));
+      return;
+    }
     const child = parsed.value;
     if (!grantedRoots.some((parent) => pathRootCovers(parent, child))) {
       issues.push(issue(`/paths/${i}`, "path_not_granted",
