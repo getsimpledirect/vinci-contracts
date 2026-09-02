@@ -6,6 +6,7 @@ import {
   type ValidationResult,
 } from "@getsimpledirect/vinci-contracts";
 import { validateExecutionSpec, type ExecutionSpec } from "./execution-spec.ts";
+import { parsePathGrant, parsePathRoot, pathRootCovers, type PathRoot } from "./path-grant.ts";
 import { validateWorkOrder, type WorkOrder } from "./work-order.ts";
 
 /**
@@ -33,6 +34,14 @@ import { validateWorkOrder, type WorkOrder } from "./work-order.ts";
  *   branch:<prefix>/*              any branch whose name starts with "<prefix>/"
  *                                  (a single trailing "/*"; no other wildcard)
  *   promotion:pull_request         the spec may open a pull request
+ *   path:<root>                    WRITE SCOPE. "<root>/" grants that directory
+ *                                  and everything under it; "<root>" without the
+ *                                  slash grants exactly that file. Relative and
+ *                                  normalised only (path-grant.ts); the root of
+ *                                  the repository is not expressible, so no
+ *                                  path: grant means NO write scope — the spec's
+ *                                  `paths` must be ⊆ the order's path: grants,
+ *                                  and a worker with none may write nothing.
  *
  * `scope` is NOT machine-checked. It says in words what the order covers; the
  * repo: and branch: grants are its machine-readable projection, and an order
@@ -43,7 +52,7 @@ import { validateWorkOrder, type WorkOrder } from "./work-order.ts";
  * run that may continue past the grant's expiry is running without one.
  */
 
-export const GRANT_PREFIXES = ["tool:", "repo:", "branch:", "promotion:"] as const;
+export const GRANT_PREFIXES = ["tool:", "repo:", "branch:", "promotion:", "path:"] as const;
 
 export type WithinOrder = { readonly within: true };
 
@@ -79,7 +88,9 @@ export function checkExecutionSpecWithinOrder(spec: ExecutionSpec, order: WorkOr
 /**
  * The comparison alone, for callers that have ALREADY validated both records
  * through validateExecutionSpec / validateWorkOrder (bindExecutionSpec has).
- * Not exported from the package: a caller outside it cannot prove it validated.
+ * Not exported from the package index. The package still ships dist/ without
+ * an exports map, so a deep import can reach this helper; unexpected malformed
+ * paths therefore fail closed even though normal callers validate first.
  */
 export function checkValidatedExecutionSpecWithinOrder(s: ExecutionSpec, o: WorkOrder): ValidationResult<WithinOrder> {
   const issues: ValidationIssue[] = [];
@@ -116,6 +127,30 @@ export function checkValidatedExecutionSpecWithinOrder(s: ExecutionSpec, o: Work
   if (s.promotion === "pull_request" && !grants.has("promotion:pull_request")) {
     issues.push(issue("/promotion", "promotion_not_granted", 'the order does not grant "promotion:pull_request"'));
   }
+  // Write scope: every spec path root must sit at or under SOME path: grant
+  // of the order. Both sides validated already, so every token parses; a
+  // parent file grant admits only the identical file, a parent directory
+  // grant admits itself and anything nested under it. No path: grants on the
+  // order and a non-empty `paths` on the spec is the plain case of asking
+  // for a write scope nobody granted.
+  const grantedRoots: PathRoot[] = [];
+  for (const grant of grants) {
+    const parsed = parsePathGrant(grant);
+    if (parsed !== null && parsed.ok) grantedRoots.push(parsed.value);
+  }
+  (s.paths ?? []).forEach((raw, i) => {
+    const parsed = parsePathRoot(raw);
+    if (!parsed.ok) {
+      issues.push(issue(`/paths/${i}`, `path_grant_${parsed.reason}`,
+        `path root is malformed (${parsed.reason}); an invalid root never widens write authority`));
+      return;
+    }
+    const child = parsed.value;
+    if (!grantedRoots.some((parent) => pathRootCovers(parent, child))) {
+      issues.push(issue(`/paths/${i}`, "path_not_granted",
+        `no "path:" grant of the order covers "${child.root}" (a file grant admits only that file; a directory grant admits what is under it)`));
+    }
+  });
 
   if (issues.length > 0) return fail(issues);
   return ok({ within: true });

@@ -14,6 +14,7 @@ import {
   type ValidationResult,
 } from "@getsimpledirect/vinci-contracts";
 import { sha256Hex, workOrderDigest } from "./digest.ts";
+import { describePathRootRefusal, parsePathRoot } from "./path-grant.ts";
 import { validateWorkOrder, type WorkOrder } from "./work-order.ts";
 import { checkValidatedExecutionSpecWithinOrder } from "./within-order.ts";
 
@@ -65,6 +66,18 @@ export type ExecutionSpec = {
   readonly resourceBounds: ResourceBounds;
   /** Tool names the worker may use. Anything absent is not granted. */
   readonly tools: readonly string[];
+  /**
+   * WRITE SCOPE: the path roots the worker may write under, each in the
+   * `<root>` form of a `path:<root>` grant (trailing "/" = that directory and
+   * everything below it; otherwise exactly that file). Every entry must be
+   * covered by a `path:` grant on the order (checkExecutionSpecWithinOrder).
+   *
+   * Optional and FAIL-CLOSED: absent or empty means the run may write
+   * NOTHING. The repository root is not expressible here or on the order, so
+   * a run's write scope is always an enumerated list. The Governor refuses a
+   * write claim that no entry covers.
+   */
+  readonly paths?: readonly string[];
   /** Inputs the worker is given, each pinned by content digest. */
   readonly inputArtifacts: readonly InputArtifact[];
   /**
@@ -148,7 +161,7 @@ export type ExecutionPromotion = (typeof EXECUTION_PROMOTIONS)[number];
 
 const SPEC_FIELDS = [
   "schemaVersion", "workOrderId", "workOrderDigest", "repository", "baseRef", "baseCommit",
-  "targetBranch", "modelClass", "provider", "resourceBounds", "tools", "inputArtifacts",
+  "targetBranch", "modelClass", "provider", "resourceBounds", "tools", "paths", "inputArtifacts",
   "requiredCapabilities", "output", "evidence", "promotion", "issuedAt",
 ] as const;
 const MAX_LIST = 100;
@@ -299,6 +312,28 @@ export function validateExecutionSpec(input: unknown): ValidationResult<Executio
   }
 
   validateStringList(record.tools, "/tools", issues, isNonBlankText, "invalid_tool", "a tool name is non-blank text");
+  // Optional: absent is the fail-closed "may write nothing". Present, every
+  // entry is a path root under the path-grant.ts grammar, each refusal typed.
+  if (Object.hasOwn(record, "paths")) {
+    if (!Array.isArray(record.paths)) {
+      issues.push(issue("/paths", "invalid_type", "paths, when present, is an array of path roots"));
+    } else if (record.paths.length > MAX_LIST) {
+      issues.push(issue("/paths", "too_many", `at most ${MAX_LIST} entries`));
+    } else {
+      const seen = new Set<string>();
+      record.paths.forEach((raw, i) => {
+        const parsed = parsePathRoot(raw);
+        if (!parsed.ok) {
+          issues.push(issue(`/paths/${i}`, `path_grant_${parsed.reason}`, describePathRootRefusal(parsed.reason)));
+          return;
+        }
+        if (seen.has(parsed.value.root)) {
+          issues.push(issue(`/paths/${i}`, "duplicate_entry", "an entry is listed twice"));
+        }
+        seen.add(parsed.value.root);
+      });
+    }
+  }
   validateStringList(
     record.requiredCapabilities, "/requiredCapabilities", issues,
     (v) => typeof v === "string" && CAPABILITY_PATTERN.test(v),
