@@ -1,9 +1,16 @@
 /**
- * Provider identifiers are closed because vinci-platform already enforces
- * exactly this set at its routing boundary. Expanding it requires a deliberate
- * platform contract change rather than an accidental pass-through string.
+ * Provider identifiers are closed so provider is a decided value rather than an
+ * accidental pass-through string. Widening is deliberate. The prior claim that
+ * vinci-platform enforces this set was checked and found stale.
  */
-export const MODEL_PROVIDERS = ["openai", "anthropic", "openrouter"] as const;
+export const MODEL_PROVIDERS = [
+  "openai",
+  "anthropic",
+  "aws-bedrock",
+  "deepinfra",
+  "openrouter",
+  "fireworks",
+] as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
 
 /**

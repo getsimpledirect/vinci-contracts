@@ -338,6 +338,51 @@ const AUTHORITY_GUARDS = [
       && fn({ kind: "issued", staled: false, status: "VERIFIED_PASS" }) !== undefined,
   },
   {
+    // The only path to the Worker's COMPLETED. A hostile triple must reach
+    // null (still live / not a triple) or UNVERIFIED, never COMPLETED — and
+    // never throw. A yes here is any non-null return, which is deliberately
+    // strict: UNVERIFIED for a hostile object would also count as a yes, so
+    // the guard must return null for anything that is not a real triple.
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "deriveLegacyTerminal",
+    label: "deriveLegacyTerminal(triple)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) =>
+      fn({ execution: "ARTIFACT_PRODUCED", assurance: "VERIFIED_PASS", promotion: "APPLIED", evidence: "VERIFIED" }) === "COMPLETED"
+      && fn({ execution: "ARTIFACT_PRODUCED", assurance: "SELF_CHECKED", promotion: "APPLIED", evidence: "VERIFIED" }) === "UNVERIFIED"
+      && fn({ execution: "RUNNING", assurance: "NOT_EVALUATED", promotion: "NOT_ELIGIBLE", evidence: "NOT_ATTEMPTED" }) === null,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "isOutcomeTriple",
+    label: "isOutcomeTriple(value)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) =>
+      fn({ execution: "RUNNING", assurance: "NOT_EVALUATED", promotion: "NOT_ELIGIBLE", evidence: "NOT_ATTEMPTED" }) === true
+      && fn({ execution: "RUNNING", assurance: "RUNNING", promotion: "NOT_ELIGIBLE", evidence: "NOT_ATTEMPTED" }) === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "canTransition",
+    label: "canTransition(dimension, 'PENDING', 'LEASED')",
+    call: (fn, hostile) => fn(hostile, "PENDING", "LEASED"),
+    control: (fn) => fn("execution", "PENDING", "LEASED") === true && fn("execution", "PENDING", "RUNNING") === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "canTransition",
+    label: "canTransition('execution', from, 'LEASED')",
+    call: (fn, hostile) => fn("execution", hostile, "LEASED"),
+    control: (fn) => fn("execution", "PENDING", "LEASED") === true && fn("execution", "RUNNING", "LEASED") === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-contracts",
+    export: "canTransition",
+    label: "canTransition('execution', 'PENDING', to)",
+    call: (fn, hostile) => fn("execution", "PENDING", hostile),
+    control: (fn) => fn("execution", "PENDING", "LEASED") === true && fn("execution", "PENDING", "FAILED") === false,
+  },
+  {
     pkg: "@getsimpledirect/vinci-work-orders",
     export: "pathRootCovers",
     label: "pathRootCovers(hostileParent, child)",
@@ -463,6 +508,171 @@ const AUTHORITY_GUARDS = [
       fn("VERIFIED_PASS", [{ status: "supported" }]) === true
       && fn("BLOCKED", [{ status: "supported" }]) === true,
   },
+  {
+    pkg: "@getsimpledirect/vinci-model-classes",
+    export: "matchEndpointToRole",
+    label: "matchEndpointToRole(hostile role, endpoint, now)",
+    call: (fn, hostile) => fn(hostile, {
+      schemaVersion: 1,
+      endpointId: "test-ep",
+      capabilityProfile: { capabilities: ["text"], contextLimit: 128000, toolSupport: true },
+      declaredCapabilities: ["structured_tool_use"],
+      credentials: { source: { kind: "managed-credential", credentialId: "test-c" } },
+      inferenceIsExternal: { kind: "known", value: true },
+      approvedForProtectedData: { kind: "known", value: true },
+      rights: {
+        trainingAllowed: { kind: "known", value: true },
+        evaluationAllowed: { kind: "known", value: true },
+        redistributionAllowed: { kind: "known", value: false },
+        outputRetainedByProvider: { kind: "known", value: false },
+        policySnapshotDigest: { kind: "known", value: "test-digest" }
+      },
+      validFrom: "2026-08-01T00:00:00.000Z",
+      expiresAt: "2027-08-01T00:00:00.000Z",
+      sourceClass: "vinci_pretrained",
+      weightsDigest: { kind: "known", value: "test-weights" },
+      tokenizerDigest: { kind: "known", value: "test-tok" },
+      architectureDigest: { kind: "known", value: "test-arch" },
+      servingImageDigest: { kind: "known", value: "test-image" },
+      quantizationDigest: { kind: "unknown" }
+    }, "2026-08-26T12:00:00.000Z").verdict === "eligible",
+    control: (fn) => {
+      const validRole = {
+        schemaVersion: 1,
+        roleId: "test-role",
+        taskClass: "test",
+        requiredCapabilities: ["structured_tool_use"],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 64000,
+        riskClass: "low",
+        dataPolicy: {
+          externalProviderAllowed: true,
+          outputRetentionAllowed: false,
+          processesProtectedData: false
+        },
+        qualityPolicy: { minimumVerifiedSuccessRate: 0.9, maximumFalseClaimRate: 0.02 },
+        economicPolicy: { maximumCostPerVerifiedSuccessUsd: 3.5, maximumP95WallSeconds: 120 },
+        fallbackRoleIds: []
+      };
+      const ep = {
+        schemaVersion: 1,
+        endpointId: "test-ep",
+        capabilityProfile: { capabilities: ["text"], contextLimit: 128000, toolSupport: true },
+        declaredCapabilities: ["structured_tool_use"],
+        credentials: { source: { kind: "managed-credential", credentialId: "test-c" } },
+        inferenceIsExternal: { kind: "known", value: true },
+        approvedForProtectedData: { kind: "known", value: true },
+        rights: {
+          trainingAllowed: { kind: "known", value: true },
+          evaluationAllowed: { kind: "known", value: true },
+          redistributionAllowed: { kind: "known", value: false },
+          outputRetainedByProvider: { kind: "known", value: false },
+          policySnapshotDigest: { kind: "known", value: "test-digest" }
+        },
+        validFrom: "2026-08-01T00:00:00.000Z",
+        expiresAt: "2027-08-01T00:00:00.000Z",
+        sourceClass: "vinci_pretrained",
+        weightsDigest: { kind: "known", value: "test-weights" },
+        tokenizerDigest: { kind: "known", value: "test-tok" },
+        architectureDigest: { kind: "known", value: "test-arch" },
+        servingImageDigest: { kind: "known", value: "test-image" },
+        quantizationDigest: { kind: "unknown" }
+      };
+      return fn(validRole, ep, "2026-08-26T12:00:00.000Z").verdict === "eligible"
+        && fn({ ...validRole, requiredCapabilities: ["vision"] }, ep, "2026-08-26T12:00:00.000Z").verdict === "ineligible"
+        && fn({ ...validRole, requiredCapabilities: ["unknown-capability"] }, ep, "2026-08-26T12:00:00.000Z").verdict === "unevaluable"
+        && fn({ ...validRole, requiredCapabilities: "invalid" }, ep, "2026-08-26T12:00:00.000Z").verdict === "unevaluable";
+    }
+  },
+  {
+    pkg: "@getsimpledirect/vinci-model-classes",
+    export: "matchEndpointToRole",
+    label: "matchEndpointToRole(role, hostile endpoint, now)",
+    call: (fn, hostile) => fn({
+      schemaVersion: 1,
+      roleId: "test-role",
+      taskClass: "test",
+      requiredCapabilities: ["structured_tool_use"],
+        requiredHarnessCapabilities: [],
+      minimumContextTokens: 64000,
+      riskClass: "low",
+      dataPolicy: {
+        externalProviderAllowed: true,
+        outputRetentionAllowed: false,
+        processesProtectedData: false
+      },
+      qualityPolicy: { minimumVerifiedSuccessRate: 0.9, maximumFalseClaimRate: 0.02 },
+      economicPolicy: { maximumCostPerVerifiedSuccessUsd: 3.5, maximumP95WallSeconds: 120 },
+      fallbackRoleIds: []
+    }, hostile, "2026-08-26T12:00:00.000Z").verdict === "eligible",
+    control: (fn) => {
+      const validRole = {
+        schemaVersion: 1,
+        roleId: "test-role",
+        taskClass: "test",
+        requiredCapabilities: ["structured_tool_use"],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 64000,
+        riskClass: "low",
+        dataPolicy: {
+          externalProviderAllowed: true,
+          outputRetentionAllowed: false,
+          processesProtectedData: false
+        },
+        qualityPolicy: { minimumVerifiedSuccessRate: 0.9, maximumFalseClaimRate: 0.02 },
+        economicPolicy: { maximumCostPerVerifiedSuccessUsd: 3.5, maximumP95WallSeconds: 120 },
+        fallbackRoleIds: []
+      };
+      const ep = {
+        schemaVersion: 1,
+        endpointId: "test-ep",
+        capabilityProfile: { capabilities: ["text"], contextLimit: 128000, toolSupport: true },
+        declaredCapabilities: ["structured_tool_use"],
+        credentials: { source: { kind: "managed-credential", credentialId: "test-c" } },
+        inferenceIsExternal: { kind: "known", value: true },
+        approvedForProtectedData: { kind: "known", value: true },
+        rights: {
+          trainingAllowed: { kind: "known", value: true },
+          evaluationAllowed: { kind: "known", value: true },
+          redistributionAllowed: { kind: "known", value: false },
+          outputRetainedByProvider: { kind: "known", value: false },
+          policySnapshotDigest: { kind: "known", value: "test-digest" }
+        },
+        validFrom: "2026-08-01T00:00:00.000Z",
+        expiresAt: "2027-08-01T00:00:00.000Z",
+        sourceClass: "vinci_pretrained",
+        weightsDigest: { kind: "known", value: "test-weights" },
+        tokenizerDigest: { kind: "known", value: "test-tok" },
+        architectureDigest: { kind: "known", value: "test-arch" },
+        servingImageDigest: { kind: "known", value: "test-image" },
+        quantizationDigest: { kind: "unknown" }
+      };
+      return fn(validRole, ep, "2026-08-26T12:00:00.000Z").verdict === "eligible"
+        && fn(validRole, { ...ep, declaredCapabilities: [] }, "2026-08-26T12:00:00.000Z").verdict === "ineligible"
+        && fn(validRole, { ...ep, declaredCapabilities: "invalid" }, "2026-08-26T12:00:00.000Z").verdict === "unevaluable";
+    }
+  },
+
+  { pkg: "@getsimpledirect/vinci-model-classes", export: "selectForRole", label: "selectForRole(hostile role, valid endpoints, now)", call: (fn, hostile) => fn(hostile, [], "2026-08-26T12:00:00.000Z").eligible.length > 0, control: (fn) => fn({ schemaVersion: 1, roleId: "r", taskClass: "t", requiredCapabilities: [],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 1000, riskClass: "low", dataPolicy: { externalProviderAllowed: true, outputRetentionAllowed: true, processesProtectedData: false }, qualityPolicy: { minimumVerifiedSuccessRate: 0.5, maximumFalseClaimRate: 0.1 }, economicPolicy: { maximumCostPerVerifiedSuccessUsd: 1.0, maximumP95WallSeconds: 10 }, fallbackRoleIds: [] }, [{ schemaVersion: 1, endpointId: "e", capabilityProfile: { capabilities: ["text"], contextLimit: 200000, toolSupport: true }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: true }, rights: { trainingAllowed: { kind: "known", value: true }, evaluationAllowed: { kind: "known", value: true }, redistributionAllowed: { kind: "known", value: true }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2020-01-01T00:00:00.000Z", expiresAt: null, sourceClass: "vinci_pretrained", weightsDigest: { kind: "known", value: "w" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }], "2026-08-26T12:00:00.000Z").eligible.length > 0 && fn({ schemaVersion: 1, roleId: "r", taskClass: "t", requiredCapabilities: [],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 1000, riskClass: "low", dataPolicy: { externalProviderAllowed: true, outputRetentionAllowed: false, processesProtectedData: false }, qualityPolicy: { minimumVerifiedSuccessRate: 0.5, maximumFalseClaimRate: 0.1 }, economicPolicy: { maximumCostPerVerifiedSuccessUsd: 1.0, maximumP95WallSeconds: 10 }, fallbackRoleIds: [] }, [{ schemaVersion: 1, endpointId: "e", capabilityProfile: { capabilities: ["text"], contextLimit: 200000, toolSupport: true }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: true }, rights: { trainingAllowed: { kind: "known", value: true }, evaluationAllowed: { kind: "known", value: true }, redistributionAllowed: { kind: "known", value: true }, outputRetainedByProvider: { kind: "known", value: true }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2020-01-01T00:00:00.000Z", expiresAt: null, sourceClass: "vinci_pretrained", weightsDigest: "w", tokenizerDigest: "t", architectureDigest: "a", servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }], "2026-08-26T12:00:00.000Z").eligible.length === 0 && fn({ schemaVersion: 1, roleId: "r", taskClass: "t", requiredCapabilities: [],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 1000, riskClass: "low", dataPolicy: { externalProviderAllowed: true, outputRetentionAllowed: false, processesProtectedData: false }, qualityPolicy: { minimumVerifiedSuccessRate: 0.5, maximumFalseClaimRate: 0.1 }, economicPolicy: { maximumCostPerVerifiedSuccessUsd: 1.0, maximumP95WallSeconds: 10 }, fallbackRoleIds: [] }, [{ schemaVersion: 1, endpointId: "e", capabilityProfile: { capabilities: ["text"], contextLimit: 200000, toolSupport: true }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: true }, rights: { trainingAllowed: { kind: "known", value: true }, evaluationAllowed: { kind: "known", value: true }, redistributionAllowed: { kind: "known", value: true }, outputRetainedByProvider: { kind: "known", value: true }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2020-01-01T00:00:00.000Z", expiresAt: null, sourceClass: "vinci_pretrained", weightsDigest: "w", tokenizerDigest: "t", architectureDigest: "a", servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }], "2026-08-26T12:00:00.000Z").ineligible.length === 1 },
+  { pkg: "@getsimpledirect/vinci-model-classes", export: "selectForRole", label: "selectForRole(valid role, hostile endpoints, now)", call: (fn, hostile) => fn({ schemaVersion: 1, roleId: "r", taskClass: "t", requiredCapabilities: [],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 1000, riskClass: "low", dataPolicy: { externalProviderAllowed: true, outputRetentionAllowed: false, processesProtectedData: false }, qualityPolicy: { minimumVerifiedSuccessRate: 0.5, maximumFalseClaimRate: 0.1 }, economicPolicy: { maximumCostPerVerifiedSuccessUsd: 1.0, maximumP95WallSeconds: 10 }, fallbackRoleIds: [] }, hostile, "2026-08-26T12:00:00.000Z").eligible.length > 0, control: (fn) => fn({ schemaVersion: 1, roleId: "r", taskClass: "t", requiredCapabilities: [],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 1000, riskClass: "low", dataPolicy: { externalProviderAllowed: true, outputRetentionAllowed: true, processesProtectedData: false }, qualityPolicy: { minimumVerifiedSuccessRate: 0.5, maximumFalseClaimRate: 0.1 }, economicPolicy: { maximumCostPerVerifiedSuccessUsd: 1.0, maximumP95WallSeconds: 10 }, fallbackRoleIds: [] }, [{ schemaVersion: 1, endpointId: "e", capabilityProfile: { capabilities: ["text"], contextLimit: 200000, toolSupport: true }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: true }, rights: { trainingAllowed: { kind: "known", value: true }, evaluationAllowed: { kind: "known", value: true }, redistributionAllowed: { kind: "known", value: true }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2020-01-01T00:00:00.000Z", expiresAt: null, sourceClass: "vinci_pretrained", weightsDigest: { kind: "known", value: "w" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }], "2026-08-26T12:00:00.000Z").eligible.length > 0 && fn({ schemaVersion: 1, roleId: "r", taskClass: "t", requiredCapabilities: [],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 1000, riskClass: "low", dataPolicy: { externalProviderAllowed: true, outputRetentionAllowed: false, processesProtectedData: false }, qualityPolicy: { minimumVerifiedSuccessRate: 0.5, maximumFalseClaimRate: 0.1 }, economicPolicy: { maximumCostPerVerifiedSuccessUsd: 1.0, maximumP95WallSeconds: 10 }, fallbackRoleIds: [] }, [{ schemaVersion: 1, endpointId: "e", capabilityProfile: { capabilities: ["text"], contextLimit: 200000, toolSupport: true }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: true }, rights: { trainingAllowed: { kind: "known", value: true }, evaluationAllowed: { kind: "known", value: true }, redistributionAllowed: { kind: "known", value: true }, outputRetainedByProvider: { kind: "known", value: true }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2020-01-01T00:00:00.000Z", expiresAt: null, sourceClass: "vinci_pretrained", weightsDigest: "w", tokenizerDigest: "t", architectureDigest: "a", servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }], "2026-08-26T12:00:00.000Z").eligible.length === 0 && fn({ schemaVersion: 1, roleId: "r", taskClass: "t", requiredCapabilities: [],
+        requiredHarnessCapabilities: [],
+        minimumContextTokens: 1000, riskClass: "low", dataPolicy: { externalProviderAllowed: true, outputRetentionAllowed: false, processesProtectedData: false }, qualityPolicy: { minimumVerifiedSuccessRate: 0.5, maximumFalseClaimRate: 0.1 }, economicPolicy: { maximumCostPerVerifiedSuccessUsd: 1.0, maximumP95WallSeconds: 10 }, fallbackRoleIds: [] }, [{ schemaVersion: 1, endpointId: "e", capabilityProfile: { capabilities: ["text"], contextLimit: 200000, toolSupport: true }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: true }, rights: { trainingAllowed: { kind: "known", value: true }, evaluationAllowed: { kind: "known", value: true }, redistributionAllowed: { kind: "known", value: true }, outputRetainedByProvider: { kind: "known", value: true }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2020-01-01T00:00:00.000Z", expiresAt: null, sourceClass: "vinci_pretrained", weightsDigest: "w", tokenizerDigest: "t", architectureDigest: "a", servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }], "2026-08-26T12:00:00.000Z").ineligible.length === 1 },
+  { pkg: "@getsimpledirect/vinci-model-classes", export: "violatesIndependence", label: "violatesIndependence(hostile producer, valid reviewer)", call: (fn, hostile) => fn(hostile, { schemaVersion: 1, endpointId: "v", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "w" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }) === false, control: (fn) => fn({ schemaVersion: 1, endpointId: "a", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "w" }, tokenizerDigest: { kind: "known", value: "ta" }, architectureDigest: { kind: "known", value: "aa" }, servingImageDigest: { kind: "known", value: "ia" }, quantizationDigest: { kind: "unknown" } }, { schemaVersion: 1, endpointId: "b", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "wb" }, tokenizerDigest: { kind: "known", value: "ta" }, architectureDigest: { kind: "known", value: "aa" }, servingImageDigest: { kind: "known", value: "ia" }, quantizationDigest: { kind: "unknown" } }) === false },
+  { pkg: "@getsimpledirect/vinci-model-classes", export: "violatesIndependence", label: "violatesIndependence(valid producer, hostile reviewer)", call: (fn, hostile) => fn({ schemaVersion: 1, endpointId: "p", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "w" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }, hostile) === false, control: (fn) => fn({ schemaVersion: 1, endpointId: "p", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "wp" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }, { schemaVersion: 1, endpointId: "r", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "wr" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }) === false && fn({ schemaVersion: 1, endpointId: "p", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "wp" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }, { schemaVersion: 1, endpointId: "p", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "wp" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }) === true && fn({ schemaVersion: 1, endpointId: "p", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "wshared" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }, { schemaVersion: 1, endpointId: "r", capabilityProfile: { capabilities: ["text"], contextLimit: 1000, toolSupport: false }, declaredCapabilities: [], credentials: { source: { kind: "managed-credential", credentialId: "c" } }, inferenceIsExternal: { kind: "known", value: false }, approvedForProtectedData: { kind: "known", value: false }, rights: { trainingAllowed: { kind: "known", value: false }, evaluationAllowed: { kind: "known", value: false }, redistributionAllowed: { kind: "known", value: false }, outputRetainedByProvider: { kind: "known", value: false }, policySnapshotDigest: { kind: "known", value: "d" } }, validFrom: "2026-01-01T00:00:00.000Z", expiresAt: "2027-01-01T00:00:00.000Z", sourceClass: "vinci_pretrained", serving: { kind: "vinci_hosted" }, weightsDigest: { kind: "known", value: "wshared" }, tokenizerDigest: { kind: "known", value: "t" }, architectureDigest: { kind: "known", value: "a" }, servingImageDigest: { kind: "known", value: "i" }, quantizationDigest: { kind: "unknown" } }) === true }
+
+
 ];
 
 /**
@@ -508,6 +718,11 @@ const REQUIRED_GUARDS = [
   "isEffectiveDeliveryState(state)",
   "isOrganizationWorkspace(value)",
   "terminalStateOfVerification(value)",
+  "deriveLegacyTerminal(triple)",
+  "isOutcomeTriple(value)",
+  "canTransition(dimension, 'PENDING', 'LEASED')",
+  "canTransition('execution', from, 'LEASED')",
+  "canTransition('execution', 'PENDING', to)",
   "plainActor(actor)",
   "actorFieldsAreConsistent(actor)",
   "countsAgainstSubmittedWork(outcome)",
@@ -519,6 +734,8 @@ const REQUIRED_GUARDS = [
   "mayRequireDecision(budget, hostileSpend)",
   "statusIsSupportedBy('VERIFIED_PASS', results)",
   "statusIsSupportedBy(status, [supported])",
+  "matchEndpointToRole(hostile role, endpoint, now)",
+  "matchEndpointToRole(role, hostile endpoint, now)",
 ];
 
 
@@ -529,6 +746,7 @@ const REQUIRED_GUARDS = [
  * the gate rather than silently going unexamined.
  */
 const NOT_AUTHORITY_GUARDS = {
+  "@getsimpledirect/vinci-model-classes.endpointById": "pure lookup: finds an entry by id in a frozen array and returns it or undefined. It grants nothing — the record it returns is itself subject to matchEndpointToRole, which IS probed, so a hostile id can at most retrieve a declaration that must still pass the guard",
   "@getsimpledirect/vinci-device-auth.decodeCanonicalBase64Url": "pure encoding predicate: returns the decoded bytes of canonical unpadded base64url or undefined; grants nothing",
   "@getsimpledirect/vinci-approvals.applyApprovalDecision": "state transition over an already-validated decision",
   "@getsimpledirect/vinci-approvals.createApprovalDecision": "constructor; its output is validated",
@@ -605,6 +823,13 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-contracts.isTerminal": "enum membership",
   "@getsimpledirect/vinci-contracts.isTerminalState": "enum membership",
   "@getsimpledirect/vinci-contracts.isVerdictStatus": "enum membership",
+  "@getsimpledirect/vinci-contracts.isExecutionState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isAssuranceState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isPromotionState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isEvidenceState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isWorkerTerminalState": "enum membership",
+  "@getsimpledirect/vinci-contracts.isStateDimension": "enum membership",
+  "@getsimpledirect/vinci-contracts.legalTransitionsFrom": "enumeration helper: returns a (possibly empty) list of successor states, never a decision; canTransition is the probed guard over the same table",
   "@getsimpledirect/vinci-contracts.isConsequentialActionClass": "enum membership",
   "@getsimpledirect/vinci-policy.isAutonomyRung": "enum membership",
   "@getsimpledirect/vinci-policy.compareAutonomyRungs": "ordinal comparison over typed enum members; not a permission",
@@ -638,6 +863,8 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-worker-capabilities.derivedTrustLevel": "derivation over an already-validated capability matrix",
   "@getsimpledirect/vinci-worker-capabilities.permittedRemoteCommands": "UI projection over an already-validated capability matrix",
   "@getsimpledirect/vinci-worker-capabilities.trustLevelLabel": "total label lookup over the trust vocabulary",
+  "@getsimpledirect/vinci-model-classes.endpointById": "pure lookup by id over a frozen array; returns a record or undefined; grants nothing",
+  "@getsimpledirect/vinci-model-classes.roleById": "pure lookup by id over a frozen array; returns a record or undefined; grants nothing",
 };
 
 /**

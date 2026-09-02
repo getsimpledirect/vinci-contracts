@@ -29,6 +29,7 @@ const STEPS = [
   ["dependency graph", "node scripts/check-dependency-graph.mjs"],
   ["SchemaMeta conformance", "node scripts/check-schema-meta.mjs"],
   ["hostile-key conformance", "node scripts/check-hostile-keys.mjs"],
+  ["rights-gap reason mapping", "node scripts/check-rights-gap-mapping.mjs"],
   ["duplicate vocabularies", "node scripts/check-duplicate-vocabularies.mjs"],
   ["lockstep versions", "node scripts/check-lockstep-versions.mjs"],
   ["no stray scripts", "node scripts/check-no-stray-scripts.mjs"],

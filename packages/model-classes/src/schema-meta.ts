@@ -27,3 +27,21 @@ export const RESIDENCY_RECORD_SCHEMA_META = {
   id: "vinci.model-residency",
   ...ADDITIVE_PRESERVING_SCHEMA,
 } as const satisfies SchemaMeta;
+
+export const MODEL_ROLE_SPEC_SCHEMA_META = {
+  id: "vinci.model-role",
+  version: 1,
+  compatibility: "additive-only",
+  unknownFields: "preserve",
+  malformedData: "fail-closed",
+  migration: "none",
+} as const satisfies SchemaMeta;
+
+export const MODEL_ENDPOINT_SPEC_SCHEMA_META = {
+  id: "vinci.model-endpoint",
+  version: 1,
+  compatibility: "additive-only",
+  unknownFields: "preserve",
+  malformedData: "fail-closed",
+  migration: "none",
+} as const satisfies SchemaMeta;

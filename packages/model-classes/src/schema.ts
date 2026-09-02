@@ -99,6 +99,41 @@ function strictObjectValue(
   }
   return result;
 }
+/**
+ * Policy/restriction subtrees are prohibitive lists: an unrecognized restriction
+ * must be rejected, not preserved. Unlike fields representing additional
+ * information (where unknown fields can forward-compatible), restrictions are
+ * active constraints. Silently dropping an unknown restriction is a security
+ * failure: it means the restriction was declared but never enforced.
+ */
+function strictPolicyValue(
+  value: unknown,
+  path: string,
+  knownFields: readonly string[],
+  issues: ValidationIssue[],
+): JsonObject | undefined {
+  if (value === undefined) {
+    addIssue(issues, path, "required_field", `${path.slice(path.lastIndexOf("/") + 1)} is required`);
+    return undefined;
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    addIssue(issues, path, "invalid_type", "expected an object");
+    return undefined;
+  }
+  const result = value as JsonObject;
+  const known = new Set(knownFields);
+  for (const field of Object.keys(result)) {
+    if (known.has(field)) continue;
+    addIssue(
+      issues,
+      pointer(path, field),
+      "unexpected_field",
+      "unrecognised restriction field; restrictions are active constraints and an unknown restriction must not be silently dropped",
+    );
+  }
+  return result;
+}
+
 
 function requiredString(value: unknown, path: string, issues: ValidationIssue[]): value is string {
   if (value === undefined) {
@@ -811,4 +846,648 @@ export function validateResidencyRecord(input: unknown): ValidationResult<Reside
 
   if (issues.length > 0) return fail(issues);
   return ok(input as ResidencyRecord, unknownFields);
+}
+
+function validateNumberInRange(
+  value: unknown,
+  path: string,
+  min: number,
+  max: number,
+  issues: ValidationIssue[],
+): value is number {
+  if (typeof value !== "number") {
+    addIssue(issues, path, "invalid_type", "expected a number");
+    return false;
+  }
+  if (value < min || value > max) {
+    addIssue(
+      issues,
+      path,
+      "invalid_number",
+      `expected a number in range [${min}, ${max}]`,
+    );
+    return false;
+  }
+  return true;
+}
+
+function validatePositiveNumber(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): value is number {
+  if (typeof value !== "number") {
+    addIssue(issues, path, "invalid_type", "expected a number");
+    return false;
+  }
+  if (value <= 0) {
+    addIssue(issues, path, "invalid_number", "expected a positive number");
+    return false;
+  }
+  return true;
+}
+
+function validateArrayOfEnums<const T extends readonly string[]>(
+  value: unknown,
+  values: T,
+  path: string,
+  issues: ValidationIssue[],
+): value is T[number][] {
+  if (!Array.isArray(value)) {
+    addIssue(
+      issues,
+      path,
+      value === undefined ? "required_field" : "invalid_type",
+      value === undefined ? `${path.slice(path.lastIndexOf("/") + 1)} is required` : "expected an array",
+    );
+    return false;
+  }
+  let valid = true;
+  value.forEach((item, index) => {
+    if (!enumValue(item, values, pointer(path, String(index)), issues)) {
+      valid = false;
+    }
+  });
+  return valid;
+}
+
+function validateDataPolicy(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  _unknownFields: UnknownFields,
+): void {
+  const object = strictPolicyValue(
+    value,
+    path,
+    ["externalProviderAllowed", "outputRetentionAllowed", "processesProtectedData"],
+    issues,
+  );
+  if (!object) return;
+  requiredBoolean(object.externalProviderAllowed, `${path}/externalProviderAllowed`, issues);
+  requiredBoolean(object.outputRetentionAllowed, `${path}/outputRetentionAllowed`, issues);
+  requiredBoolean(object.processesProtectedData, `${path}/processesProtectedData`, issues);
+}
+
+function validateQualityPolicy(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  _unknownFields: UnknownFields,
+): void {
+  const object = strictPolicyValue(
+    value,
+    path,
+    ["minimumVerifiedSuccessRate", "maximumFalseClaimRate"],
+    issues,
+  );
+  if (!object) return;
+  validateNumberInRange(
+    object.minimumVerifiedSuccessRate,
+    `${path}/minimumVerifiedSuccessRate`,
+    0,
+    1,
+    issues,
+  );
+  validateNumberInRange(
+    object.maximumFalseClaimRate,
+    `${path}/maximumFalseClaimRate`,
+    0,
+    1,
+    issues,
+  );
+}
+
+function validateEconomicPolicy(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  _unknownFields: UnknownFields,
+): void {
+  const object = strictPolicyValue(
+    value,
+    path,
+    ["maximumCostPerVerifiedSuccessUsd", "maximumP95WallSeconds"],
+    issues,
+  );
+  if (!object) return;
+  validatePositiveNumber(
+    object.maximumCostPerVerifiedSuccessUsd,
+    `${path}/maximumCostPerVerifiedSuccessUsd`,
+    issues,
+  );
+  validatePositiveNumber(object.maximumP95WallSeconds, `${path}/maximumP95WallSeconds`, issues);
+}
+
+/**
+ * RequiredCapability to ModelCapability mapping for validation.
+ * Ensures declaredCapabilities are representable in capabilityProfile.capabilities.
+ *
+ * Mapping:
+ * - structured_tool_use -> {tool_use, structured_output}
+ * - repository_editing -> {tool_use}
+ * - long_horizon_recovery -> {} (no direct model capability requirement)
+ * - evidence_citation -> {} (no direct model capability requirement)
+ * - vision -> {vision}
+ * - audio -> {audio}
+ *
+ * For RequiredCapabilities without direct ModelCapability mappings
+ * (long_horizon_recovery, evidence_citation), any capabilityProfile is acceptable
+ * as long as it's valid. These represent high-level role requirements orthogonal
+ * to the model's declared feature set.
+ */
+const REQUIRED_TO_MODEL_CAPABILITY_MAP: Record<string, readonly string[]> = {
+  structured_tool_use: ["tool_use", "structured_output"],
+  repository_editing: ["tool_use"],
+  long_horizon_recovery: [],
+  evidence_citation: [],
+  vision: ["vision"],
+  audio: ["audio"],
+};
+
+function validateDeclaredCapabilitiesAgainstProfile(
+  declaredCapabilities: unknown,
+  capabilityProfile: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  if (!Array.isArray(declaredCapabilities)) return; // already validated
+  if (typeof capabilityProfile !== "object" || capabilityProfile === null) return; // already validated
+
+  const profileObj = capabilityProfile as Record<string, unknown>;
+  if (!Array.isArray(profileObj.capabilities)) return; // already validated
+
+  const profileCapabilities = new Set(profileObj.capabilities as string[]);
+
+  for (const declaredCap of declaredCapabilities) {
+    if (typeof declaredCap !== "string") continue;
+    const requiredModelCaps = REQUIRED_TO_MODEL_CAPABILITY_MAP[declaredCap] || [];
+    
+    if (requiredModelCaps.length > 0) {
+      const hasAny = requiredModelCaps.some((modelCap) => profileCapabilities.has(modelCap));
+      if (!hasAny) {
+        addIssue(
+          issues,
+          `${path}/declaredCapabilities`,
+          "capability_missing",
+          `declared capability ${declaredCap} requires one of [${requiredModelCaps.join(", ")}] in capabilityProfile.capabilities`,
+        );
+      }
+    }
+  }
+}
+
+import type { ModelRoleSpec } from "./role.ts";
+import type { ModelEndpointSpec } from "./endpoint.ts";
+import { ROLE_RISK_CLASSES, REQUIRED_CAPABILITIES } from "./role.ts";
+import { ENDPOINT_SOURCE_CLASSES, ENDPOINT_SERVING_KINDS } from "./endpoint.ts";
+
+export function validateModelRoleSpec(input: unknown): ValidationResult<ModelRoleSpec> {
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
+  const issues: ValidationIssue[] = [];
+  const unknownFields: UnknownFields = {};
+  const object = objectValue(
+    input,
+    "",
+    [
+      "schemaVersion",
+      "roleId",
+      "taskClass",
+      "requiredCapabilities",
+      "minimumContextTokens",
+      "riskClass",
+      "dataPolicy",
+      "qualityPolicy",
+      "economicPolicy",
+      "fallbackRoleIds",
+    ],
+    issues,
+    unknownFields,
+  );
+  if (!object) return fail(issues);
+  literalOne(object.schemaVersion, "/schemaVersion", issues);
+  identifier(object.roleId, "/roleId", issues);
+  identifier(object.taskClass, "/taskClass", issues);
+
+  if (!Array.isArray(object.requiredCapabilities)) {
+    addIssue(
+      issues,
+      "/requiredCapabilities",
+      object.requiredCapabilities === undefined ? "required_field" : "invalid_type",
+      object.requiredCapabilities === undefined
+        ? "requiredCapabilities is required"
+        : "expected an array",
+    );
+  } else {
+    object.requiredCapabilities.forEach((cap, index) => {
+      enumValue(
+        cap,
+        REQUIRED_CAPABILITIES,
+        pointer("/requiredCapabilities", String(index)),
+        issues,
+      );
+    });
+  }
+
+  positiveInteger(object.minimumContextTokens, "/minimumContextTokens", issues);
+  enumValue(object.riskClass, ROLE_RISK_CLASSES, "/riskClass", issues);
+  validateDataPolicy(object.dataPolicy, "/dataPolicy", issues, unknownFields);
+  validateQualityPolicy(object.qualityPolicy, "/qualityPolicy", issues, unknownFields);
+  validateEconomicPolicy(object.economicPolicy, "/economicPolicy", issues, unknownFields);
+
+  if (!Array.isArray(object.fallbackRoleIds)) {
+    addIssue(
+      issues,
+      "/fallbackRoleIds",
+      object.fallbackRoleIds === undefined ? "required_field" : "invalid_type",
+      object.fallbackRoleIds === undefined ? "fallbackRoleIds is required" : "expected an array",
+    );
+  } else {
+    object.fallbackRoleIds.forEach((id, index) => {
+      identifier(id, pointer("/fallbackRoleIds", String(index)), issues);
+    });
+  }
+
+  if (issues.length > 0) return fail(issues);
+  return ok(input as ModelRoleSpec, unknownFields);
+}
+
+function validateEndpointRights(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  unknownFields: UnknownFields,
+): void {
+  const object = objectValue(
+    value,
+    path,
+    [
+      "trainingAllowed",
+      "evaluationAllowed",
+      "redistributionAllowed",
+      "outputRetainedByProvider",
+      "policySnapshotDigest",
+    ],
+    issues,
+    unknownFields,
+  );
+  if (!object) return;
+  validateExplicitValue(object.trainingAllowed, `${path}/trainingAllowed`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  validateExplicitValue(object.evaluationAllowed, `${path}/evaluationAllowed`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  validateExplicitValue(object.redistributionAllowed, `${path}/redistributionAllowed`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  validateExplicitValue(object.outputRetainedByProvider, `${path}/outputRetainedByProvider`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  validateExplicitValue(object.policySnapshotDigest, `${path}/policySnapshotDigest`, issues, unknownFields, (known, knownPath) => {
+    requiredString(known, knownPath, issues);
+  });
+}
+
+function validateServing(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  unknownFields: UnknownFields,
+): void {
+  const object = objectValue(
+    value,
+    path,
+    ["kind", "provider", "model", "modelRevision", "jurisdiction"],
+    issues,
+    unknownFields,
+  );
+  if (!object) return;
+  if (!enumValue(object.kind, ENDPOINT_SERVING_KINDS, `${path}/kind`, issues)) return;
+
+  if (object.kind === "vinci_hosted") {
+    rejectPresentField(object, "provider", path, issues, "vinci_hosted serving does not carry provider");
+    rejectPresentField(object, "model", path, issues, "vinci_hosted serving does not carry model");
+    rejectPresentField(object, "modelRevision", path, issues, "vinci_hosted serving does not carry modelRevision");
+    rejectPresentField(object, "jurisdiction", path, issues, "vinci_hosted serving does not carry jurisdiction");
+  } else {
+    enumValue(object.provider, MODEL_PROVIDERS, `${path}/provider`, issues);
+    requiredString(object.model, `${path}/model`, issues);
+    validateExplicitString(object.modelRevision, `${path}/modelRevision`, issues, unknownFields);
+    validateExplicitLocation(object.jurisdiction, `${path}/jurisdiction`, issues, unknownFields);
+  }
+}
+
+function validateFrontierApiEndpoint(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  unknownFields: UnknownFields,
+): void {
+  const object = objectValue(
+    value,
+    path,
+    [
+      "schemaVersion",
+      "endpointId",
+      "sourceClass",
+      "capabilityProfile",
+      "declaredCapabilities",
+      "credentials",
+      "inferenceIsExternal",
+      "approvedForProtectedData",
+      "rights",
+      "validFrom",
+      "expiresAt",
+      "serving",
+      "servedArtifact",
+    ],
+    issues,
+    unknownFields,
+  );
+  if (!object) return;
+  literalOne(object.schemaVersion, `${path}/schemaVersion`, issues);
+  identifier(object.endpointId, `${path}/endpointId`, issues);
+  validateCapabilityProfile(object.capabilityProfile, `${path}/capabilityProfile`, issues, unknownFields);
+  validateArrayOfEnums(
+    object.declaredCapabilities,
+    REQUIRED_CAPABILITIES,
+    `${path}/declaredCapabilities`,
+    issues,
+  );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
+    issues,
+  );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
+    issues,
+  );
+  validateCredentialsObject(object.credentials, `${path}/credentials`, issues);
+  validateEndpointRights(object.rights, `${path}/rights`, issues, unknownFields);
+  validateExplicitValue(object.inferenceIsExternal, `${path}/inferenceIsExternal`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  validateExplicitValue(object.approvedForProtectedData, `${path}/approvedForProtectedData`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  timestamp(object.validFrom, `${path}/validFrom`, issues);
+  if (object.expiresAt === undefined) {
+    addIssue(issues, `${path}/expiresAt`, "required_field", "expiresAt is required");
+  } else if (object.expiresAt !== null && !isCanonicalTimestamp(object.expiresAt)) {
+    addIssue(issues, `${path}/expiresAt`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
+  }
+  validateServing(object.serving, `${path}/serving`, issues, unknownFields);
+  validateExplicitValue(
+    object.servedArtifact,
+    `${path}/servedArtifact`,
+    issues,
+    unknownFields,
+    (known, knownPath) => {
+      const artifact = objectValue(
+        known,
+        knownPath,
+        ["kind", "value"],
+        issues,
+        unknownFields,
+      );
+      if (!artifact) return;
+      if (
+        !enumValue(
+          artifact.kind,
+          ["digest", "proprietary"] as const,
+          `${knownPath}/kind`,
+          issues,
+        )
+      ) return;
+      if (artifact.kind === "digest") {
+        requiredString(artifact.value, `${knownPath}/value`, issues);
+      } else if (Object.hasOwn(artifact, "value")) {
+        addIssue(
+          issues,
+          `${knownPath}/value`,
+          "unexpected_field",
+          "a proprietary artifact does not carry a digest value",
+        );
+      }
+    },
+  );
+}
+
+function validateDigestIdentifiedEndpoint(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  unknownFields: UnknownFields,
+): void {
+  const object = objectValue(
+    value,
+    path,
+    [
+      "schemaVersion",
+      "endpointId",
+      "sourceClass",
+      "capabilityProfile",
+      "declaredCapabilities",
+      "credentials",
+      "inferenceIsExternal",
+      "approvedForProtectedData",
+      "rights",
+      "validFrom",
+      "expiresAt",
+      "weightsDigest",
+      "tokenizerDigest",
+      "architectureDigest",
+      "servingImageDigest",
+      "quantizationDigest",
+      "serving",
+    ],
+    issues,
+    unknownFields,
+  );
+  if (!object) return;
+  literalOne(object.schemaVersion, `${path}/schemaVersion`, issues);
+  identifier(object.endpointId, `${path}/endpointId`, issues);
+  validateCapabilityProfile(object.capabilityProfile, `${path}/capabilityProfile`, issues, unknownFields);
+  validateArrayOfEnums(
+    object.declaredCapabilities,
+    REQUIRED_CAPABILITIES,
+    `${path}/declaredCapabilities`,
+    issues,
+  );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
+    issues,
+  );
+  validateDeclaredCapabilitiesAgainstProfile(
+    object.declaredCapabilities,
+    object.capabilityProfile,
+    path,
+    issues,
+  );
+  validateCredentialsObject(object.credentials, `${path}/credentials`, issues);
+  validateEndpointRights(object.rights, `${path}/rights`, issues, unknownFields);
+  validateExplicitValue(object.inferenceIsExternal, `${path}/inferenceIsExternal`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  validateExplicitValue(object.approvedForProtectedData, `${path}/approvedForProtectedData`, issues, unknownFields, (known, knownPath) => {
+    requiredBoolean(known, knownPath, issues);
+  });
+  timestamp(object.validFrom, `${path}/validFrom`, issues);
+  if (object.expiresAt === undefined) {
+    addIssue(issues, `${path}/expiresAt`, "required_field", "expiresAt is required");
+  } else if (object.expiresAt !== null && !isCanonicalTimestamp(object.expiresAt)) {
+    addIssue(issues, `${path}/expiresAt`, "invalid_timestamp", "expected ISO-8601 UTC with millisecond precision, e.g. 2026-08-23T12:00:00.000Z");
+  }
+  validateExplicitValue(object.weightsDigest, `${path}/weightsDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
+  validateExplicitValue(object.tokenizerDigest, `${path}/tokenizerDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
+  validateExplicitValue(object.architectureDigest, `${path}/architectureDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
+  validateExplicitValue(object.servingImageDigest, `${path}/servingImageDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
+  validateExplicitValue(object.quantizationDigest, `${path}/quantizationDigest`, issues, unknownFields, (known, knownPath) => {
+    identifier(known, knownPath, issues);
+  });
+  validateServing(object.serving, `${path}/serving`, issues, unknownFields);
+}
+
+function validateCredentialsObject(
+  value: unknown,
+  path: string,
+  issues: ValidationIssue[],
+): void {
+  const object = strictObjectValue(value, path, ["source"], issues);
+  if (!object) return;
+  const source = strictObjectValue(
+    object.source,
+    `${path}/source`,
+    ["kind", "credentialId", "variableName"],
+    issues,
+  );
+  if (!source) return;
+  if (
+    !enumValue(
+      source.kind,
+      ["managed-credential", "environment-variable"] as const,
+      `${path}/source/kind`,
+      issues,
+    )
+  )
+    return;
+  if (source.kind === "managed-credential") {
+    requiredString(source.credentialId, `${path}/source/credentialId`, issues);
+    if (Object.hasOwn(source, "variableName")) {
+      addIssue(
+        issues,
+        `${path}/source/variableName`,
+        "unexpected_field",
+        "managed credentials use a credentialId reference only",
+      );
+    }
+  } else {
+    requiredString(source.variableName, `${path}/source/variableName`, issues);
+    if (Object.hasOwn(source, "credentialId")) {
+      addIssue(
+        issues,
+        `${path}/source/credentialId`,
+        "unexpected_field",
+        "environment credentials use a variableName reference only",
+      );
+    }
+  }
+}
+
+export function validateModelEndpointSpec(input: unknown): ValidationResult<ModelEndpointSpec> {
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  input = plain.value;
+  const issues: ValidationIssue[] = [];
+  const unknownFields: UnknownFields = {};
+  const object = objectValue(
+    input,
+    "",
+    [
+      "schemaVersion",
+      "endpointId",
+      "sourceClass",
+      "capabilityProfile",
+      "declaredCapabilities",
+      "credentials",
+      "inferenceIsExternal",
+      "approvedForProtectedData",
+      "rights",
+      "validFrom",
+      "expiresAt",
+      "provider",
+      "model",
+      "modelRevision",
+      "jurisdiction",
+      "weightsDigest",
+      "tokenizerDigest",
+      "architectureDigest",
+      "servingImageDigest",
+      "quantizationDigest",
+      "servedArtifact",
+    ],
+    issues,
+    unknownFields,
+  );
+  if (!object) return fail(issues);
+
+  if (!enumValue(object.sourceClass, ENDPOINT_SOURCE_CLASSES, "/sourceClass", issues)) {
+    return fail(issues);
+  }
+
+  if (object.sourceClass === "frontier_api") {
+    for (const field of [
+      "weightsDigest",
+      "tokenizerDigest",
+      "architectureDigest",
+      "servingImageDigest",
+      "quantizationDigest",
+    ]) {
+      rejectPresentField(
+        object,
+        field,
+        "",
+        issues,
+        "frontier_api endpoints do not carry local identity digests",
+      );
+    }
+    validateFrontierApiEndpoint(input, "", issues, unknownFields);
+  } else {
+    for (const field of [
+      "provider",
+      "model",
+      "modelRevision",
+      "jurisdiction",
+      "servedArtifact",
+    ]) {
+      rejectPresentField(
+        object,
+        field,
+        "",
+        issues,
+        "digest-identified endpoints do not carry frontier provider fields",
+      );
+    }
+    validateDigestIdentifiedEndpoint(input, "", issues, unknownFields);
+  }
+
+  if (issues.length > 0) return fail(issues);
+  return ok(input as ModelEndpointSpec, unknownFields);
 }
