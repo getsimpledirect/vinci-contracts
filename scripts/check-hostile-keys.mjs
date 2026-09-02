@@ -339,6 +339,26 @@ const AUTHORITY_GUARDS = [
   },
   {
     pkg: "@getsimpledirect/vinci-work-orders",
+    export: "pathRootCovers",
+    label: "pathRootCovers(hostileParent, child)",
+    call: (fn, hostile) => fn(hostile, { root: "src/x.ts", kind: "file" }),
+    control: (fn) =>
+      fn({ root: "src/", kind: "directory" }, { root: "src/x.ts", kind: "file" }) === true
+      && fn({ root: "src/x.ts", kind: "file" }, { root: "src/", kind: "directory" }) === false
+      // A hand-built empty root would cover everything through startsWith("").
+      && fn({ root: "", kind: "directory" }, { root: "src/x.ts", kind: "file" }) === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-work-orders",
+    export: "pathRootCovers",
+    label: "pathRootCovers(parent, hostileChild)",
+    call: (fn, hostile) => fn({ root: "src/", kind: "directory" }, hostile),
+    control: (fn) =>
+      fn({ root: "src/", kind: "directory" }, { root: "src/", kind: "directory" }) === true
+      && fn({ root: "src/", kind: "directory" }, { root: "docs/", kind: "directory" }) === false,
+  },
+  {
+    pkg: "@getsimpledirect/vinci-work-orders",
     export: "mayInterrupt",
     label: "mayInterrupt(budget, spend)",
     call: (fn, hostile) => fn(hostile, { workOrderId: "wo-1", interruptionsUsed: 0, decisionsUsed: 0 }),
@@ -552,6 +572,9 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-work-orders.workOrderDigest": "encoder over a record it validates first; throws on an invalid one",
   "@getsimpledirect/vinci-work-orders.executionSpecDigest": "encoder over a record it validates first; throws on an invalid one",
   "@getsimpledirect/vinci-work-orders.isPlainBranchName": "pure string/regex predicate",
+  "@getsimpledirect/vinci-work-orders.parsePathRoot": "returns a typed parse result, not a boolean; pure string grammar, refuses every non-string as empty",
+  "@getsimpledirect/vinci-work-orders.parsePathGrant": "returns a typed parse result or null, not a boolean; pure string grammar over parsePathRoot",
+  "@getsimpledirect/vinci-work-orders.describePathRootRefusal": "total function from a refusal reason to its message",
   "@getsimpledirect/vinci-work-orders.sha256Hex": "pure hash of a string",
   "@getsimpledirect/vinci-work-orders.checkExecutionSpecWithinOrder": "returns a ValidationResult, not a boolean; validates both inputs through the probed validators before comparing grants",
   "@getsimpledirect/vinci-work-orders.bindExecutionSpec": "returns a ValidationResult, not a boolean; both inputs go through the probed validators (validateExecutionSpec, validateWorkOrder) before any comparison",

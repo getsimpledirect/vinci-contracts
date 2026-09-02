@@ -17,6 +17,7 @@ import {
   type ValidationResult,
 } from "@getsimpledirect/vinci-contracts";
 import { validateAttentionBudget, type AttentionBudget } from "./attention.ts";
+import { describePathRootRefusal, parsePathGrant } from "./path-grant.ts";
 
 /**
  * A bounded grant of authority to do a specific piece of work.
@@ -58,7 +59,12 @@ export type WorkOrder = {
   readonly scope: string;
   /** Fixed before work begins. Non-empty. */
   readonly acceptanceCriteria: readonly AcceptanceCriterion[];
-  /** Stated positively: anything absent is not granted. */
+  /**
+   * Stated positively: anything absent is not granted. Free text, except that
+   * a grant with a machine-readable prefix (see within-order.ts) is parsed,
+   * and a `path:<root>` grant that does not parse makes the order invalid.
+   * No `path:` grant means no write scope at all — see path-grant.ts.
+   */
   readonly grantedAuthority: readonly string[];
   readonly attentionBudget: AttentionBudget;
   /** Who asked. Snapshotted through plainActor, so a proxy cannot lie about it. */
@@ -304,6 +310,12 @@ export function validateWorkOrder(input: unknown): ValidationResult<WorkOrder> {
         issues.push(issue(`/grantedAuthority/${i}`, "duplicate_grant", "a grant is listed twice"));
       }
       seenGrants.add(grant);
+      // A malformed path: grant is not prose that covers nothing; it is a
+      // write scope nobody can read, and the order carrying it is malformed.
+      const pathGrant = parsePathGrant(grant);
+      if (pathGrant !== null && !pathGrant.ok) {
+        issues.push(issue(`/grantedAuthority/${i}`, `path_grant_${pathGrant.reason}`, describePathRootRefusal(pathGrant.reason)));
+      }
     });
   }
 
