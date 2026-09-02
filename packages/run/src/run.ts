@@ -10,7 +10,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
 } from "@getsimpledirect/vinci-contracts";
-import type { RunEvent } from "@getsimpledirect/vinci-run-events";
+import { TERMINAL_TIERS, type RunEvent } from "@getsimpledirect/vinci-run-events";
 import { digestValidated } from "./digest.ts";
 import {
   isEnumMember,
@@ -68,7 +68,17 @@ export type VinciRunBudget = {
   readonly maxHumanInterruptions?: number;
 };
 
-export const REQUIRED_TERMINALS = ["NONE", "MERGED", "DEPLOYED", "OBSERVED"] as const;
+/**
+ * The terminal tier a run is REQUIRED to reach, drawn from the same ladder
+ * `run.completed`'s `tierReached` reports.
+ *
+ * Aliased, not re-declared. A second copy of ["NONE","MERGED","DEPLOYED",
+ * "OBSERVED"] would be two vocabularies that look like one until the day they
+ * disagree — and a run whose requirement names a tier no completed event can
+ * report is unsatisfiable by construction. The layer rule permits this import:
+ * run-events is layer 2 and this package is layer 3.
+ */
+export const REQUIRED_TERMINALS = TERMINAL_TIERS;
 export type RequiredTerminal = (typeof REQUIRED_TERMINALS)[number];
 
 export const RUN_STATES = ["CREATED", "RUNNING", "PAUSED", "BLOCKED", "STALLED", "TERMINAL"] as const;
@@ -168,7 +178,13 @@ export function validateRun(input: unknown): ValidationResult<VinciRun> {
   }
 
   if (!isEnumMember(record.requiredTerminal, REQUIRED_TERMINALS)) {
-    issues.push(issue("/requiredTerminal", "unknown_required_terminal", "requiredTerminal must be NONE, MERGED, DEPLOYED, or OBSERVED"));
+    issues.push(
+      issue(
+        "/requiredTerminal",
+        "unknown_required_terminal",
+        `requiredTerminal must come from TERMINAL_TIERS (${REQUIRED_TERMINALS.join(", ")})`,
+      ),
+    );
   }
   if (!isEnumMember(record.state, RUN_STATES)) {
     issues.push(issue("/state", "unknown_run_state", "state must be CREATED, RUNNING, PAUSED, BLOCKED, STALLED, or TERMINAL"));

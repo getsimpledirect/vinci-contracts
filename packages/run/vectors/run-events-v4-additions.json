@@ -1,0 +1,1530 @@
+{
+  "comment": "The 24 event types run-events v4 adds, each with one valid kinded payload and one refused payload, and the exact issue the refusal must carry. Read by packages/run/src/vectors.test.ts. Regenerate deliberately; these are the contract, not a snapshot.",
+  "schemaVersion": 4,
+  "cases": [
+    {
+      "type": "run.stalled",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-1",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 1,
+        "type": "run.stalled",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-1",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "lastEventAt": {
+            "kind": "at",
+            "value": "2026-08-23T00:00:00.000Z"
+          },
+          "stallWindowS": {
+            "kind": "count",
+            "value": 900
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-2",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 2,
+        "type": "run.stalled",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-2",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "lastEventAt": {
+            "kind": "at",
+            "value": "2026-08-23T00:00:00.000Z"
+          },
+          "stallWindowS": {
+            "kind": "count",
+            "value": 900
+          },
+          "note": {
+            "kind": "id",
+            "value": "worker-went-quiet"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/note",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "run.attempt_started",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-3",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 3,
+        "type": "run.attempt_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-3",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attemptId": {
+            "kind": "id",
+            "value": "attempt-2"
+          },
+          "previousAttemptId": {
+            "kind": "id",
+            "value": "attempt-1"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "worker_lost"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-4",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 4,
+        "type": "run.attempt_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-4",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attemptId": {
+            "kind": "id",
+            "value": "attempt-2"
+          },
+          "previousAttemptId": {
+            "kind": "id",
+            "value": "attempt-1"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "the worker went away mid-run"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/reason",
+        "code": "invalid_enum"
+      }
+    },
+    {
+      "type": "agent.turn_started",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-5",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 5,
+        "type": "agent.turn_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-5",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "turnId": {
+            "kind": "id",
+            "value": "turn-1"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-6",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 6,
+        "type": "agent.turn_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-6",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "turnId": {
+            "kind": "id",
+            "value": "turn 1: refactor the validator"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/turnId",
+        "code": "invalid_id"
+      }
+    },
+    {
+      "type": "agent.turn_finished",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-7",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 7,
+        "type": "agent.turn_finished",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-7",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "turnId": {
+            "kind": "id",
+            "value": "turn-1"
+          },
+          "inputTokens": {
+            "kind": "count",
+            "value": 18000
+          },
+          "outputTokens": {
+            "kind": "count",
+            "value": 2400
+          },
+          "costMicrousd": {
+            "kind": "count",
+            "value": 31000
+          },
+          "modelId": {
+            "kind": "id",
+            "value": "claude-fable-5-1"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-8",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 8,
+        "type": "agent.turn_finished",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-8",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "turnId": {
+            "kind": "id",
+            "value": "turn-1"
+          },
+          "inputTokens": {
+            "kind": "count",
+            "value": 18000
+          },
+          "outputTokens": {
+            "kind": "count",
+            "value": 2400
+          },
+          "costMicrousd": {
+            "kind": "count",
+            "value": 31000
+          },
+          "modelId": {
+            "kind": "id",
+            "value": "claude-fable-5-1"
+          },
+          "summary": {
+            "kind": "id",
+            "value": "wrote-the-vector-test"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/summary",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "agent.compaction_started",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-9",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 9,
+        "type": "agent.compaction_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-9",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "reason": {
+            "kind": "enum",
+            "value": "threshold"
+          },
+          "tokens": {
+            "kind": "count",
+            "value": 180000
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-10",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 10,
+        "type": "agent.compaction_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-10",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "reason": {
+            "kind": "enum",
+            "value": "context_was_getting_full"
+          },
+          "tokens": {
+            "kind": "count",
+            "value": 180000
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/reason",
+        "code": "unknown_enum_member"
+      }
+    },
+    {
+      "type": "agent.compaction_finished",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-11",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 11,
+        "type": "agent.compaction_finished",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-11",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "tokens": {
+            "kind": "count",
+            "value": 42000
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-12",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 12,
+        "type": "agent.compaction_finished",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-12",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "tokens": {
+            "kind": "count",
+            "value": -1
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/tokens",
+        "code": "invalid_count"
+      }
+    },
+    {
+      "type": "agent.retry_started",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-13",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 13,
+        "type": "agent.retry_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-13",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attempt": {
+            "kind": "count",
+            "value": 2
+          },
+          "maxAttempts": {
+            "kind": "count",
+            "value": 3
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-14",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 14,
+        "type": "agent.retry_started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-14",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attempt": {
+            "kind": "count",
+            "value": 2
+          },
+          "maxAttempts": {
+            "kind": "count",
+            "value": 3
+          },
+          "reason": {
+            "kind": "id",
+            "value": "provider-529"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/reason",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "agent.retry_finished",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-15",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 15,
+        "type": "agent.retry_finished",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-15",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attempt": {
+            "kind": "count",
+            "value": 2
+          },
+          "success": {
+            "kind": "flag",
+            "value": true
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-16",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 16,
+        "type": "agent.retry_finished",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-16",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attempt": {
+            "kind": "count",
+            "value": 2
+          },
+          "success": {
+            "kind": "flag",
+            "value": "yes"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/success",
+        "code": "invalid_flag"
+      }
+    },
+    {
+      "type": "tool.requested",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-17",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 17,
+        "type": "tool.requested",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-17",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-1"
+          },
+          "toolId": {
+            "kind": "id",
+            "value": "Edit"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-18",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 18,
+        "type": "tool.requested",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-18",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-1"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/toolId",
+        "code": "required_field"
+      }
+    },
+    {
+      "type": "tool.started",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-19",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 19,
+        "type": "tool.started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-19",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-1"
+          },
+          "toolId": {
+            "kind": "id",
+            "value": "Edit"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-20",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 20,
+        "type": "tool.started",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-20",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-1"
+          },
+          "toolId": {
+            "kind": "id",
+            "value": "Edit"
+          },
+          "arguments": {
+            "kind": "id",
+            "value": "packages-run-src-run-ts"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/arguments",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "tool.completed",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-21",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 21,
+        "type": "tool.completed",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-21",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-1"
+          },
+          "toolId": {
+            "kind": "id",
+            "value": "Edit"
+          },
+          "durationMs": {
+            "kind": "count",
+            "value": 120
+          },
+          "outputDigest": {
+            "kind": "digest",
+            "value": "718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-22",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 22,
+        "type": "tool.completed",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-22",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-1"
+          },
+          "toolId": {
+            "kind": "id",
+            "value": "Edit"
+          },
+          "durationMs": {
+            "kind": "count",
+            "value": 120
+          },
+          "outputDigest": {
+            "kind": "digest",
+            "value": "the tool printed the whole file"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/outputDigest",
+        "code": "invalid_digest"
+      }
+    },
+    {
+      "type": "tool.failed",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-23",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 23,
+        "type": "tool.failed",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-23",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-2"
+          },
+          "toolId": {
+            "kind": "id",
+            "value": "Bash"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "timeout"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-24",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 24,
+        "type": "tool.failed",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-24",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-2"
+          },
+          "toolId": {
+            "kind": "id",
+            "value": "Bash"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "timeout"
+          },
+          "stderr": {
+            "kind": "id",
+            "value": "command-not-found"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/stderr",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "tool.confirmation_required",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-25",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 25,
+        "type": "tool.confirmation_required",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-25",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-3"
+          },
+          "approvalId": {
+            "kind": "id",
+            "value": "approval-1"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-26",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 26,
+        "type": "tool.confirmation_required",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-26",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "toolCallId": {
+            "kind": "id",
+            "value": "call-3"
+          },
+          "approvalId": {
+            "kind": "enum",
+            "value": "approval-1"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/approvalId",
+        "code": "wrong_value_kind"
+      }
+    },
+    {
+      "type": "governor.lease_acquired",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-27",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 27,
+        "type": "governor.lease_acquired",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-27",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "leaseId": {
+            "kind": "id",
+            "value": "lease-1"
+          },
+          "expiresAt": {
+            "kind": "at",
+            "value": "2026-08-23T01:00:00.000Z"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-28",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 28,
+        "type": "governor.lease_acquired",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-28",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "leaseId": {
+            "kind": "id",
+            "value": "lease-1"
+          },
+          "expiresAt": {
+            "kind": "at",
+            "value": "2026-08-23"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/expiresAt",
+        "code": "invalid_timestamp"
+      }
+    },
+    {
+      "type": "governor.lease_renewed",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-29",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 29,
+        "type": "governor.lease_renewed",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-29",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "leaseId": {
+            "kind": "id",
+            "value": "lease-1"
+          },
+          "expiresAt": {
+            "kind": "at",
+            "value": "2026-08-23T02:00:00.000Z"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-30",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 30,
+        "type": "governor.lease_renewed",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-30",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "leaseId": {
+            "kind": "id",
+            "value": "lease-1"
+          },
+          "expiresAt": {
+            "kind": "at",
+            "value": "2026-08-23T02:00:00.000Z"
+          },
+          "renewedBy": {
+            "kind": "id",
+            "value": "governor"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/renewedBy",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "governor.lease_lost",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-31",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 31,
+        "type": "governor.lease_lost",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-31",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "leaseId": {
+            "kind": "id",
+            "value": "lease-1"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "expired"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-32",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 32,
+        "type": "governor.lease_lost",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-32",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "leaseId": {
+            "kind": "id",
+            "value": "lease-1"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "preempted"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/reason",
+        "code": "unknown_enum_member"
+      }
+    },
+    {
+      "type": "artifact.persisted",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-33",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 33,
+        "type": "artifact.persisted",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-33",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "artifactId": {
+            "kind": "id",
+            "value": "artifact-1"
+          },
+          "contentDigest": {
+            "kind": "digest",
+            "value": "718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60"
+          },
+          "kind": {
+            "kind": "enum",
+            "value": "code_patch"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-34",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 34,
+        "type": "artifact.persisted",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-34",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "artifactId": {
+            "kind": "id",
+            "value": "artifact-1"
+          },
+          "contentDigest": {
+            "kind": "digest",
+            "value": "718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60"
+          },
+          "kind": {
+            "kind": "enum",
+            "value": "patch"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/kind",
+        "code": "unknown_enum_member"
+      }
+    },
+    {
+      "type": "artifact.verified",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-35",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 35,
+        "type": "artifact.verified",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-35",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "artifactId": {
+            "kind": "id",
+            "value": "artifact-1"
+          },
+          "verifierPrincipalId": {
+            "kind": "id",
+            "value": "principal-verifier-1"
+          },
+          "receiptId": {
+            "kind": "id",
+            "value": "receipt-1"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-36",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 36,
+        "type": "artifact.verified",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-36",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "artifactId": {
+            "kind": "id",
+            "value": "artifact-1"
+          },
+          "verifierPrincipalId": {
+            "kind": "id",
+            "value": "principal-verifier-1"
+          },
+          "receiptId": {
+            "kind": "id",
+            "value": "receipt-1"
+          },
+          "notes": {
+            "kind": "id",
+            "value": "looks-fine-to-me"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/notes",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "approval.expired",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-37",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 37,
+        "type": "approval.expired",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-37",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "approvalId": {
+            "kind": "id",
+            "value": "approval-2"
+          },
+          "defaultApplied": {
+            "kind": "enum",
+            "value": "DENY"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-38",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 38,
+        "type": "approval.expired",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-38",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "approvalId": {
+            "kind": "id",
+            "value": "approval-2"
+          },
+          "defaultApplied": {
+            "kind": "enum",
+            "value": "ALLOW"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/defaultApplied",
+        "code": "unknown_enum_member"
+      }
+    },
+    {
+      "type": "context.loaded",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-39",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 39,
+        "type": "context.loaded",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-39",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "contextManifestDigest": {
+            "kind": "digest",
+            "value": "8293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+          },
+          "entryCount": {
+            "kind": "count",
+            "value": 7
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-40",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 40,
+        "type": "context.loaded",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-40",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "contextManifestDigest": {
+            "kind": "digest",
+            "value": "8293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+          },
+          "entryCount": {
+            "kind": "count",
+            "value": 7
+          },
+          "entries": {
+            "kind": "id",
+            "value": "policy-system-v1"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/entries",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "context.invalidated",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-41",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 41,
+        "type": "context.invalidated",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-41",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "contextManifestDigest": {
+            "kind": "digest",
+            "value": "8293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "stale"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-42",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 42,
+        "type": "context.invalidated",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-42",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "contextManifestDigest": {
+            "kind": "digest",
+            "value": "8293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "the policy changed halfway through the run"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/reason",
+        "code": "invalid_enum"
+      }
+    },
+    {
+      "type": "capability.attested",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-43",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 43,
+        "type": "capability.attested",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-43",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attestationDigest": {
+            "kind": "digest",
+            "value": "718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60"
+          },
+          "capabilityId": {
+            "kind": "id",
+            "value": "repository_editing"
+          },
+          "version": {
+            "kind": "count",
+            "value": 1
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-44",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 44,
+        "type": "capability.attested",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-44",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "attestationDigest": {
+            "kind": "digest",
+            "value": "718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60"
+          },
+          "capabilityId": {
+            "kind": "id",
+            "value": "repository_editing"
+          },
+          "version": {
+            "kind": "count",
+            "value": 1.5
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/version",
+        "code": "invalid_count"
+      }
+    },
+    {
+      "type": "capability.refused",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-45",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 45,
+        "type": "capability.refused",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-45",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "capabilityId": {
+            "kind": "id",
+            "value": "shell_execution"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "not_attested"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-46",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 46,
+        "type": "capability.refused",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-46",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "capabilityId": {
+            "kind": "id",
+            "value": "shell_execution"
+          },
+          "reason": {
+            "kind": "enum",
+            "value": "not_attested"
+          },
+          "message": {
+            "kind": "id",
+            "value": "no-self-test-on-the-installed-worker"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/message",
+        "code": "field_not_allowed"
+      }
+    },
+    {
+      "type": "steer.received",
+      "valid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-47",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 47,
+        "type": "steer.received",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-47",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "steerId": {
+            "kind": "id",
+            "value": "steer-1"
+          },
+          "instructionDigest": {
+            "kind": "digest",
+            "value": "8293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+          },
+          "issuedByPrincipalId": {
+            "kind": "id",
+            "value": "principal-george"
+          }
+        }
+      },
+      "invalid": {
+        "schemaVersion": 4,
+        "eventId": "evt-v4-48",
+        "runId": "run-ir00-1",
+        "organizationId": null,
+        "workspaceId": "workspace-1",
+        "sequence": 48,
+        "type": "steer.received",
+        "actor": {
+          "kind": "worker",
+          "workerId": "worker-1"
+        },
+        "occurredAt": "2026-08-23T00:00:00.000Z",
+        "idempotencyKey": "key-v4-48",
+        "traceId": "trace-ir00-1",
+        "payload": {
+          "steerId": {
+            "kind": "id",
+            "value": "steer-1"
+          },
+          "instructionDigest": {
+            "kind": "digest",
+            "value": "8293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071"
+          },
+          "issuedByPrincipalId": {
+            "kind": "id",
+            "value": "principal-george"
+          },
+          "instruction": {
+            "kind": "id",
+            "value": "stop-and-write-the-vectors"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/instruction",
+        "code": "field_not_allowed"
+      }
+    }
+  ]
+}

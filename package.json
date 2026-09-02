@@ -9,7 +9,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc --build",
+    "build": "tsc --build packages/contracts/tsconfig.json packages/policy/tsconfig.json packages/evidence/tsconfig.json packages/approvals/tsconfig.json packages/device-auth/tsconfig.json packages/model-classes/tsconfig.json packages/receipts/tsconfig.json packages/run-events/tsconfig.json packages/work-orders/tsconfig.json packages/remote-protocol/tsconfig.json packages/run/tsconfig.json packages/session-stream/tsconfig.json packages/worker-capabilities/tsconfig.json",
     "test": "vitest run",
     "lint": "eslint packages --max-warnings=0",
     "typecheck": "tsc --build packages/contracts/tsconfig.json packages/policy/tsconfig.json packages/evidence/tsconfig.json packages/approvals/tsconfig.json packages/device-auth/tsconfig.json packages/model-classes/tsconfig.json packages/session-stream/tsconfig.json packages/worker-capabilities/tsconfig.json packages/run/tsconfig.json --dry",
@@ -17,7 +17,7 @@
     "gate": "node scripts/gate.mjs",
     "check:pack": "node scripts/check-consumer-install.mjs",
     "check:unconsumed": "node scripts/check-unconsumed-exports.mjs",
-    "test:vectors": "python3 -B -m unittest discover -s packages/work-orders/python",
+    "test:vectors": "python3 -B -m unittest discover -s packages/work-orders/python && python3 -B -m unittest discover -s packages/run/python",
     "report:rights": "node scripts/report-rights-gaps.mjs"
   },
   "devDependencies": {

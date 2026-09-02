@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "runId": "run-ir00-1",
+  "workOrderId": "wo-ir00-1",
+  "workOrderDigest": "4f3a06b7d5e48c3f1c3b9a8d7e6f5a4b32cd1e0f9a8b7c6d5e4f3a2b1c0d9e8f",
+  "attemptId": "attempt-1",
+  "agent": { "id": "agent-repo-1", "version": 2 },
+  "environment": {
+    "id": "env-cloud-1",
+    "digest": "3e29f5a6c4d37b2e0b2a8f7c6d5e4f3a21bc0d9e8f7a6b5c4d3e2f1a0b9c8d7e"
+  },
+  "sessionId": null,
+  "contextManifestDigest": null,
+  "harnessAttestationDigest": null,
+  "servicePrincipalId": "principal-worker-1",
+  "budget": {
+    "maxListCostMicrousd": 5000000,
+    "maxCashCostMicrousd": 2000000,
+    "maxRuntimeS": 3600,
+    "maxToolCalls": 200,
+    "maxHumanInterruptions": 2
+  },
+  "requiredTerminal": "MERGED",
+  "state": "CREATED",
+  "createdAt": "2026-08-23T00:00:00.000Z",
+  "startedAt": null,
+  "lastEventAt": null
+}

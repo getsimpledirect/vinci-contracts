@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "runId": "run-ir00-1",
+  "entries": [
+    {
+      "section": "stable_prefix",
+      "ref": "policy://system/v1",
+      "digest": "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f9",
+      "trust": "authoritative"
+    },
+    {
+      "section": "mission",
+      "ref": "work-order://wo-ir00-1",
+      "digest": "1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a",
+      "trust": "ratified"
+    },
+    {
+      "section": "repository",
+      "ref": "repo://github.com/getsimpledirect/vinci-contracts@7d1c23c",
+      "digest": "2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b",
+      "trust": "machine_observed"
+    },
+    {
+      "section": "institutional_state",
+      "ref": "roadmap://decisions/2026-08-30-governor-operating-mandate",
+      "digest": "3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c",
+      "trust": "superseded"
+    },
+    {
+      "section": "memory",
+      "ref": "memory://lane/ir00/summary",
+      "digest": "4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d",
+      "trust": "model_inferred"
+    },
+    {
+      "section": "files",
+      "ref": "file://packages/run/src/run.ts",
+      "digest": "5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e",
+      "trust": "unverified"
+    },
+    {
+      "section": "dynamic",
+      "ref": "web://example.invalid/spec",
+      "digest": "60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f",
+      "trust": "externally_sourced"
+    }
+  ],
+  "excluded": [
+    { "ref": "history://unrelated-program", "reason": "unrelated_program_history" },
+    { "ref": "corpus://restricted-dataset", "reason": "rights_restricted" },
+    { "ref": "policy://system/v0", "reason": "superseded" },
+    { "ref": "transcript://run-ir00-0", "reason": "budget" }
+  ]
+}

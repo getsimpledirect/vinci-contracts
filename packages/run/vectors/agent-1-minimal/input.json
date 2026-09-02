@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "agentId": "agent-repo-1",
+  "version": 2,
+  "modelClass": "repository-agent",
+  "systemPolicyRef": "policy://system/v1",
+  "skills": [
+    { "id": "skill-review", "digest": "1c07d3e4a2b1590c8f0e6d5a4b3c2d1e0f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c" },
+    { "id": "skill-test", "digest": "2d18e4f5b3c26a1d9a1f7e6b5c4d3e2f10ab9c8d7e6f5a4b3c2d1e0f9a8b7c6d" }
+  ],
+  "requiredCapabilities": [
+    { "id": "repository_editing", "version": 1 },
+    { "id": "structured_tool_use", "version": 1 }
+  ],
+  "allowedToolCategories": ["repository", "github_read", "shell"],
+  "permissionPolicyRef": "policy://permissions/v1",
+  "autonomy": [
+    { "capabilityId": "repository_editing", "level": 3 },
+    { "capabilityId": "github_publish_pr", "level": 0 }
+  ]
+}

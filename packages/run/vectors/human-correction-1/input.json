@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "correctionId": "corr-ir00-1",
+  "runId": "run-ir00-1",
+  "eventSequence": 7,
+  "modelId": "claude-fable-5-1",
+  "runtimeBuild": "worker@1.2.3",
+  "contextManifestDigest": "d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6",
+  "correctionType": "scope_creep",
+  "correctedOutcomeDigest": "e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7",
+  "correctedBy": { "kind": "user", "userId": "george" },
+  "recordedAt": "2026-08-23T18:30:00.000Z"
+}

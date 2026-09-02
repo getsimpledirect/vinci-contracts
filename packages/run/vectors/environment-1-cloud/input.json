@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "environmentId": "env-cloud-1",
+  "placement": "vinci_cloud",
+  "imageDigest": "3e29f5a6c4d37b2e0b2a8f7c6d5e4f3a21bc0d9e8f7a6b5c4d3e2f1a0b9c8d7e",
+  "runtimeBuild": "worker@1.2.3",
+  "networkPolicy": {
+    "default": "deny",
+    "allowedCategories": ["model_provider", "github", "approved_tool_broker"]
+  },
+  "filesystem": {
+    "base": "ephemeral",
+    "mounts": ["repository_cache_readonly", "workspace", "artifact_store"]
+  },
+  "resourceLimits": { "cpu": 4, "memoryMb": 8192, "diskMb": 20480, "wallSeconds": 3600 },
+  "secretPolicy": { "source": "platform_vault", "delivery": "run_scoped" }
+}
