@@ -1,42 +1,218 @@
 {
-  "_": "Shared golden cases for the path: grant grammar. src/path-grant.test.ts reads this file; vinci-gpu-control's vendored Python grammar mirrors these exact rules and must agree case for case. Add cases; never edit or remove one.",
+  "_": "Shared golden cases for the path: grant grammar. src/path-grant.test.ts reads this file; vinci-gpu-control's vendored Python grammar mirrors these exact rules and must agree case for case. Add cases; never edit or remove one. Cases carrying whitespace, C0 controls, and non-ASCII spellings are cross-checked: every verdict here was confirmed identical in the TypeScript grammar and the vendored Python mirror before being pinned. NFC and NFD spellings of one filename are DISTINCT roots -- neither side normalises, so a grant in one spelling does not cover a child in the other (fail-closed).",
   "accepted": [
-    { "token": "path:src/", "root": "src/", "kind": "directory" },
-    { "token": "path:src/x.ts", "root": "src/x.ts", "kind": "file" },
-    { "token": "path:docs/README.md", "root": "docs/README.md", "kind": "file" },
-    { "token": "path:a/b/c/", "root": "a/b/c/", "kind": "directory" },
-    { "token": "path:.github/workflows/gate.yml", "root": ".github/workflows/gate.yml", "kind": "file" },
-    { "token": "path:a..b/", "root": "a..b/", "kind": "directory" }
+    {
+      "token": "path:src/",
+      "root": "src/",
+      "kind": "directory"
+    },
+    {
+      "token": "path:src/x.ts",
+      "root": "src/x.ts",
+      "kind": "file"
+    },
+    {
+      "token": "path:docs/README.md",
+      "root": "docs/README.md",
+      "kind": "file"
+    },
+    {
+      "token": "path:a/b/c/",
+      "root": "a/b/c/",
+      "kind": "directory"
+    },
+    {
+      "token": "path:.github/workflows/gate.yml",
+      "root": ".github/workflows/gate.yml",
+      "kind": "file"
+    },
+    {
+      "token": "path:a..b/",
+      "root": "a..b/",
+      "kind": "directory"
+    },
+    {
+      "token": "path:src/ ",
+      "root": "src/ ",
+      "kind": "file",
+      "why": "trailing space is part of the name, not trimmed"
+    },
+    {
+      "token": "path: src/",
+      "root": " src/",
+      "kind": "directory",
+      "why": "leading space is part of the name, not trimmed"
+    },
+    {
+      "token": "path:src/\tx",
+      "root": "src/\tx",
+      "kind": "file",
+      "why": "TAB inside a segment"
+    },
+    {
+      "token": "path:src/\rx",
+      "root": "src/\rx",
+      "kind": "file",
+      "why": "CR inside a segment"
+    },
+    {
+      "token": "path:src/\nx",
+      "root": "src/\nx",
+      "kind": "file",
+      "why": "LF inside a segment"
+    },
+    {
+      "token": "path:src/ x",
+      "root": "src/ x",
+      "kind": "file",
+      "why": "NO-BREAK SPACE is not ASCII space"
+    },
+    {
+      "token": "path:src/x​",
+      "root": "src/x​",
+      "kind": "file",
+      "why": "ZERO WIDTH SPACE is invisible but significant"
+    },
+    {
+      "token": "path:src/café/",
+      "root": "src/café/",
+      "kind": "directory",
+      "why": "NFC: e-acute as one code point"
+    },
+    {
+      "token": "path:src/café/",
+      "root": "src/café/",
+      "kind": "directory",
+      "why": "NFD: e + combining acute -- a DISTINCT root from the NFC spelling above; neither side normalises"
+    },
+    {
+      "token": "path:src/‮evil",
+      "root": "src/‮evil",
+      "kind": "file",
+      "why": "RIGHT-TO-LEFT OVERRIDE renders misleadingly but is one more character"
+    }
   ],
   "refused": [
-    { "token": "path:.", "reason": "root_scope" },
-    { "token": "path:/etc", "reason": "absolute" },
-    { "token": "path:a/../b", "reason": "dotdot_segment" },
-    { "token": "path:a\\b", "reason": "backslash" },
-    { "token": "path:", "reason": "empty" },
-    { "token": "path:/", "reason": "absolute" },
-    { "token": "path:./src/", "reason": "dot_segment" },
-    { "token": "path:src/./x.ts", "reason": "dot_segment" },
-    { "token": "path:..", "reason": "dotdot_segment" },
-    { "token": "path:../src/", "reason": "dotdot_segment" },
-    { "token": "path:src/..", "reason": "dotdot_segment" },
-    { "token": "path:src//x.ts", "reason": "empty_segment" },
-    { "token": "path:src//", "reason": "empty_segment" },
-    { "token": "path:src\\x.ts", "reason": "backslash" },
-    { "token": "path:src/\u0000x", "reason": "nul" },
-    { "token": "path:\u0000", "reason": "nul" }
+    {
+      "token": "path:.",
+      "reason": "root_scope"
+    },
+    {
+      "token": "path:/etc",
+      "reason": "absolute"
+    },
+    {
+      "token": "path:a/../b",
+      "reason": "dotdot_segment"
+    },
+    {
+      "token": "path:a\\b",
+      "reason": "backslash"
+    },
+    {
+      "token": "path:",
+      "reason": "empty"
+    },
+    {
+      "token": "path:/",
+      "reason": "absolute"
+    },
+    {
+      "token": "path:./src/",
+      "reason": "dot_segment"
+    },
+    {
+      "token": "path:src/./x.ts",
+      "reason": "dot_segment"
+    },
+    {
+      "token": "path:..",
+      "reason": "dotdot_segment"
+    },
+    {
+      "token": "path:../src/",
+      "reason": "dotdot_segment"
+    },
+    {
+      "token": "path:src/..",
+      "reason": "dotdot_segment"
+    },
+    {
+      "token": "path:src//x.ts",
+      "reason": "empty_segment"
+    },
+    {
+      "token": "path:src//",
+      "reason": "empty_segment"
+    },
+    {
+      "token": "path:src\\x.ts",
+      "reason": "backslash"
+    },
+    {
+      "token": "path:src/\u0000x",
+      "reason": "nul"
+    },
+    {
+      "token": "path:\u0000",
+      "reason": "nul"
+    }
   ],
   "monotonicity": [
-    { "parent": "src/", "child": "src/", "covers": true },
-    { "parent": "src/", "child": "src/x.ts", "covers": true },
-    { "parent": "src/", "child": "src/a/b/", "covers": true },
-    { "parent": "src/x.ts", "child": "src/x.ts", "covers": true },
-    { "parent": "src/x.ts", "child": "src/", "covers": false },
-    { "parent": "src/x.ts", "child": "src/x.ts/", "covers": false },
-    { "parent": "src/x.ts", "child": "src/y.ts", "covers": false },
-    { "parent": "src/", "child": "docs/", "covers": false },
-    { "parent": "src/", "child": "srcx/", "covers": false },
-    { "parent": "src/", "child": "src", "covers": false },
-    { "parent": "src/a/", "child": "src/", "covers": false }
+    {
+      "parent": "src/",
+      "child": "src/",
+      "covers": true
+    },
+    {
+      "parent": "src/",
+      "child": "src/x.ts",
+      "covers": true
+    },
+    {
+      "parent": "src/",
+      "child": "src/a/b/",
+      "covers": true
+    },
+    {
+      "parent": "src/x.ts",
+      "child": "src/x.ts",
+      "covers": true
+    },
+    {
+      "parent": "src/x.ts",
+      "child": "src/",
+      "covers": false
+    },
+    {
+      "parent": "src/x.ts",
+      "child": "src/x.ts/",
+      "covers": false
+    },
+    {
+      "parent": "src/x.ts",
+      "child": "src/y.ts",
+      "covers": false
+    },
+    {
+      "parent": "src/",
+      "child": "docs/",
+      "covers": false
+    },
+    {
+      "parent": "src/",
+      "child": "srcx/",
+      "covers": false
+    },
+    {
+      "parent": "src/",
+      "child": "src",
+      "covers": false
+    },
+    {
+      "parent": "src/a/",
+      "child": "src/",
+      "covers": false
+    }
   ]
 }
