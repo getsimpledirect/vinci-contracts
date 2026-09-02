@@ -221,8 +221,8 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
     }
   }
 
-  if (record.schemaVersion !== 3) {
-    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 3"));
+  if (record.schemaVersion !== 4) {
+    issues.push(issue("/schemaVersion", "invalid_schema_version", "this schema is version 4"));
   }
   for (const field of ["eventId", "runId", "workspaceId", "idempotencyKey", "traceId"] as const) {
     const value = record[field];
@@ -290,7 +290,7 @@ export function validateRunEvent(input: unknown): ValidationResult<RunEvent> {
 
 export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
   id: "vinci.run-event",
-  version: 3,
+  version: 4,
   /**
    * FROZEN, not additive-only, and the pair below is why.
    *
@@ -333,5 +333,5 @@ export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
   unknownFields: "reject",
   malformedData: "fail-closed",
   migration:
-    "version 2 events are rejected; a version 2 reader could silently drop unknown security events, which is worse than refusing version skew",
+    "v3 events remain readable by a v3 validator only; v4 adds 24 event types and two optional run.completed fields; no v3 type, field or payload rule changes; a v4 consumer refuses v3 events (schemaVersion mismatch) rather than up-converting them",
 };

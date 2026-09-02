@@ -17,11 +17,41 @@ export type EndpointCapability = (typeof ENDPOINT_CAPABILITIES)[number];
  * These capabilities describe what the harness/framework can provide (e.g., edit files,
  * construct citations). They are NOT properties of the endpoint itself and cannot be
  * evaluated by matchEndpointToRole.
+ *
+ * Extended additively in IR-00: the original three come first (kept stable so an
+ * existing attestation list keeps working), then the governed-run vocabulary.
  */
 export const HARNESS_CAPABILITIES = [
   "repository_editing",
   "long_horizon_recovery",
   "evidence_citation",
+  // IR-00 additions: the vocabulary a governed run can actually attest.
+  "workspace_read",
+  "workspace_write",
+  "shell_execution",
+  "code_sandbox",
+  "institutional_context",
+  "web_research",
+  "file_retrieval",
+  "skill_loading",
+  "context_compaction",
+  "tool_catalog_search",
+  "mcp_catalog",
+  "mcp_call",
+  "github_read",
+  "github_publish_pr",
+  "artifact_create",
+  "artifact_store",
+  "durable_events",
+  "steer_interrupt",
+  "approval_suspend_resume",
+  "subagent_spawn",
+  "watcher_wait",
+  "independent_verification",
+  "deployment_observation",
+  "human_escalation",
+  "provider_usage_receipt",
+  "utility_measurement",
 ] as const;
 export type HarnessCapability = (typeof HARNESS_CAPABILITIES)[number];
 

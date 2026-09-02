@@ -48,6 +48,42 @@ export const WORKER_WARNING_CODES = [
 ] as const;
 
 /**
+ * How a run.completed came to a close, carried as a closed set so a consumer
+ * can distinguish a productive terminal (work finished and its outcome is
+ * worth something) from the not-doing outcomes (the run was told not to start,
+ * turned out to be a duplicate, lost value, was superseded, or closed with a
+ * negative result). The not-doing outcomes are PRODUCTIVE terminals, not
+ * failures: nothing went wrong, the run simply had nothing worth doing — which
+ * is why they ride on run.completed and not run.failed (which keeps
+ * RUN_FAILURE_CODES).
+ */
+export const RUN_OUTCOMES = [
+  "SUCCEEDED",
+  "DO_NOT_START",
+  "DUPLICATE",
+  "NO_LONGER_VALUABLE",
+  "SUPERSEDED",
+  "CLOSE_WITH_NEGATIVE_RESULT",
+] as const;
+
+/**
+ * The highest tier a run's output reached by the time it completed.
+ * `NONE` means nothing was merged, deployed or observed.
+ */
+export const TERMINAL_TIERS = ["NONE", "MERGED", "DEPLOYED", "OBSERVED"] as const;
+
+/** Why a capability was refused at the boundary (capability.refused). */
+export const CAPABILITY_REFUSAL_REASONS = [
+  "not_attested",
+  "expired",
+  "environment_mismatch",
+  "runtime_mismatch",
+] as const;
+
+/** Why a new run attempt was started (run.attempt_started). */
+export const ATTEMPT_REASONS = ["worker_lost", "stalled", "manual"] as const;
+
+/**
  * What a payload field may hold. Never free text.
  *
  * These refer to content without being it: an identifier, a member of a closed
@@ -242,9 +278,122 @@ export const PAYLOAD_FIELDS = {
     humanDecisions: { kind: "count", required: true },
     humanInterruptions: { kind: "count", required: true },
     escalations: { kind: "count", required: true },
+    // v4 additions: two OPTIONAL fields. The not-doing outcomes are productive
+    // terminals and belong on run.completed, not run.failed (which keeps
+    // RUN_FAILURE_CODES). Both are optional so a v3-shaped run.completed event
+    // remains valid at v4; a new type/field is still a version bump under the
+    // frozen policy, but the version is bumped by the 24 new event types, not
+    // by forcing every completed event to name an outcome.
+    outcome: { kind: "enum", required: false, members: RUN_OUTCOMES },
+    tierReached: { kind: "enum", required: false, members: TERMINAL_TIERS },
   },
   "run.failed": { reasonCode: { kind: "enum", required: true, members: RUN_FAILURE_CODES } },
   "run.blocked": { reasonCode: { kind: "enum", required: true, members: RUN_BLOCKED_CODES } },
+  "run.stalled": {
+    lastEventAt: { kind: "at", required: true },
+    stallWindowS: { kind: "count", required: true },
+  },
+  "run.attempt_started": {
+    attemptId: { kind: "id", required: true },
+    previousAttemptId: { kind: "id", required: false },
+    reason: { kind: "enum", required: true, members: ATTEMPT_REASONS },
+  },
+  "agent.turn_started": { turnId: { kind: "id", required: true } },
+  "agent.turn_finished": {
+    turnId: { kind: "id", required: true },
+    inputTokens: { kind: "count", required: true },
+    outputTokens: { kind: "count", required: true },
+    costMicrousd: { kind: "count", required: true },
+    modelId: { kind: "id", required: true },
+  },
+  "agent.compaction_started": {
+    reason: { kind: "enum", required: true, members: ["manual", "threshold", "overflow"] },
+    tokens: { kind: "count", required: true },
+  },
+  "agent.compaction_finished": { tokens: { kind: "count", required: true } },
+  "agent.retry_started": {
+    attempt: { kind: "count", required: true },
+    maxAttempts: { kind: "count", required: true },
+  },
+  "agent.retry_finished": {
+    attempt: { kind: "count", required: true },
+    success: { kind: "flag", required: true },
+  },
+  "tool.requested": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+  },
+  "tool.started": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+  },
+  "tool.completed": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+    durationMs: { kind: "count", required: true },
+    outputDigest: { kind: "digest", required: true },
+  },
+  "tool.failed": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+    reason: { kind: "enum", required: true, members: ["error", "refused", "timeout"] },
+  },
+  "tool.confirmation_required": {
+    toolCallId: { kind: "id", required: true },
+    approvalId: { kind: "id", required: true },
+  },
+  "governor.lease_acquired": {
+    leaseId: { kind: "id", required: true },
+    expiresAt: { kind: "at", required: true },
+  },
+  "governor.lease_renewed": {
+    leaseId: { kind: "id", required: true },
+    expiresAt: { kind: "at", required: true },
+  },
+  "governor.lease_lost": {
+    leaseId: { kind: "id", required: true },
+    reason: { kind: "enum", required: true, members: ["expired", "revoked", "superseded"] },
+  },
+  "artifact.persisted": {
+    artifactId: { kind: "id", required: true },
+    contentDigest: { kind: "digest", required: true },
+    kind: {
+      kind: "enum",
+      required: true,
+      members: ["code_patch", "report", "dataset", "evidence", "deployment_receipt"],
+    },
+  },
+  "artifact.verified": {
+    artifactId: { kind: "id", required: true },
+    verifierPrincipalId: { kind: "id", required: true },
+    receiptId: { kind: "id", required: true },
+  },
+  "approval.expired": {
+    approvalId: { kind: "id", required: true },
+    defaultApplied: { kind: "enum", required: true, members: ["DENY"] },
+  },
+  "context.loaded": {
+    contextManifestDigest: { kind: "digest", required: true },
+    entryCount: { kind: "count", required: true },
+  },
+  "context.invalidated": {
+    contextManifestDigest: { kind: "digest", required: true },
+    reason: { kind: "enum", required: true, members: ["superseded", "rights_restricted", "stale"] },
+  },
+  "capability.attested": {
+    attestationDigest: { kind: "digest", required: true },
+    capabilityId: { kind: "id", required: true },
+    version: { kind: "count", required: true },
+  },
+  "capability.refused": {
+    capabilityId: { kind: "id", required: true },
+    reason: { kind: "enum", required: true, members: CAPABILITY_REFUSAL_REASONS },
+  },
+  "steer.received": {
+    steerId: { kind: "id", required: true },
+    instructionDigest: { kind: "digest", required: true },
+    issuedByPrincipalId: { kind: "id", required: true },
+  },
 } satisfies Record<RunEventType, Record<string, FieldSpec>>;
 
 /** The value type a declared field kind produces. */

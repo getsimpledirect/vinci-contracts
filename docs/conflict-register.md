@@ -339,3 +339,39 @@ So the policy manifest has no incumbent vocabulary constraining it — unusually
 for this work, it can be designed from the requirements rather than negotiated
 against something shipping. The constraint is C13: it must not be confused with
 `vinci-work`'s device policies.
+
+---
+
+## C16 — `vinci.run-event` schema v3 → v4 is a version bump, not an additive change
+
+**Status: resolved in this repository.**
+
+`RUN_EVENT_SCHEMA_META` is FROZEN with `unknownFields: "reject"`; its own comment
+prescribes that additions are version bumps because a validator that rejects
+unknown fields does not tolerate them. v4 adds 24 event types and two optional
+`run.completed` fields (`outcome`, `tierReached`). No v3 type, field or payload
+rule changes.
+
+Resolution: `version` is 4, the `schemaVersion` literal and the validator check
+moved to 4, and a v4 consumer refuses v3 events (`schemaVersion` mismatch,
+`invalid_schema_version`) rather than up-converting them. v3 events remain
+readable by a v3 validator only. Recorded here because a frozen schema's only
+legitimate change is a version bump, and the bump is the change.
+
+---
+
+## C17 — Not-doing outcomes ride `run.completed`; `run.failed` keeps `RUN_FAILURE_CODES`
+
+**Status: resolved in this repository.**
+
+A run can end productively while doing nothing: told not to start, discovered to
+be a duplicate, outlived, superseded, or closed with a negative result. These are
+not failures — nothing went wrong, the run simply had nothing worth doing — so
+putting them on `run.failed` (which carries the `RUN_FAILURE_CODES` closed set)
+would conflate "the work failed" with "there was no work to do".
+
+Resolution: v4's `run.completed` carries the optional `outcome` field whose
+closed set is `RUN_OUTCOMES` (`SUCCEEDED`, `DO_NOT_START`, `DUPLICATE`,
+`NO_LONGER_VALUABLE`, `SUPERSEDED`, `CLOSE_WITH_NEGATIVE_RESULT`). The not-doing
+outcomes are productive terminals; `run.failed` keeps `RUN_FAILURE_CODES` and
+refuses an `outcome` field.
