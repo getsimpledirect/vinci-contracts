@@ -332,6 +332,17 @@ export const RUN_EVENT_SCHEMA_META: SchemaMeta = {
    */
   unknownFields: "reject",
   malformedData: "fail-closed",
+  /**
+   * The field list here is exhaustive on purpose. It said "24 event types and
+   * two optional run.completed fields; no v3 type, field or payload rule
+   * changes" while v4 had ALSO added an optional `workOrderDigest` to the v3
+   * type `run.created` -- the one field a consuming registry needs in order to
+   * bind a run to its order, omitted from the sentence that tells the registry
+   * what to adopt.
+   */
   migration:
-    "v3 events remain readable by a v3 validator only; v4 adds 24 event types and two optional run.completed fields; no v3 type, field or payload rule changes; a v4 consumer refuses v3 events (schemaVersion mismatch) rather than up-converting them",
+    "v3 events remain readable by a v3 validator only; v4 adds 24 event types, two optional run.completed "
+    + "fields (outcome, tierReached), and one optional field on the existing v3 type run.created "
+    + "(workOrderDigest, kind digest); no v3 type is removed and no existing v3 field or payload rule changes; "
+    + "a v4 consumer refuses v3 events (schemaVersion mismatch) rather than up-converting them",
 };

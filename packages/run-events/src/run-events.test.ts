@@ -948,3 +948,99 @@ describe("v4 adds 24 event types to the governed run vocabulary", () => {
     ).toBe(true);
   });
 });
+
+/**
+ * `run.created.workOrderDigest`: the field a consuming registry binds a run to
+ * its order BY DIGEST.
+ *
+ * It shipped with no accept test, no reject test and no vector. The only thing
+ * pinning it was the committed vocabulary vector — which the same commit
+ * regenerated, so the pin was written by the change it was supposed to
+ * constrain. Measured: deleting the field outright, and changing its kind from
+ * `digest` to `id`, BOTH passed 1564/1564 once the vector was regenerated, and
+ * regenerating is one command. The `kind: "digest"` rule was never executed for
+ * the one field whose entire purpose is being a digest.
+ *
+ * The trio below is the one `outcome` already has: valid without the field,
+ * valid with it, refused when the value is not a digest — and the refusals name
+ * the exact `{path, code}` so a broader failure cannot stand in for the
+ * intended one.
+ */
+describe("run.created carries an optional work-order digest, and the digest rule is enforced", () => {
+  const DIGEST = "4f3a06b7d5e48c3f1c3b9a8d7e6f5a4b32cd1e0f9a8b7c6d5e4f3a2b1c0d9e8f";
+  const base = {
+    workspaceId: { kind: "id", value: "workspace-1" },
+    policyId: { kind: "id", value: "policy-1" },
+    policyVersion: { kind: "count", value: 1 },
+  };
+  const created = (payload: Record<string, unknown>) =>
+    validateRunEvent(event({ type: "run.created", payload }));
+  const codesOf = (result: ReturnType<typeof validateRunEvent>): string[] =>
+    result.ok ? [] : result.issues.map((i) => `${i.path}:${i.code}`);
+
+  it("is ACCEPTED without the field: optional means a producer that holds no digest still emits a valid run.created", () => {
+    expect(codesOf(created(base))).toEqual([]);
+    expect(created(base).ok).toBe(true);
+  });
+
+  it("is ACCEPTED with a 64-hex digest — the reachability control for the refusals below", () => {
+    // This is also the control that kills a DELETION of the field: with
+    // workOrderDigest gone from the allowlist the same payload is refused
+    // /payload/workOrderDigest:field_not_allowed, not accepted.
+    const result = created({ ...base, workOrderDigest: { kind: "digest", value: DIGEST } });
+    expect(codesOf(result)).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("REFUSES a non-digest value with exactly /payload/workOrderDigest:invalid_digest", () => {
+    // Exactly, not merely "contains": if an earlier guard answered instead, the
+    // list carries its code too and this fails rather than passing on the wrong
+    // mechanism.
+    for (const notADigest of [
+      "wo-1",
+      DIGEST.toUpperCase(),
+      DIGEST.slice(0, 63),
+      `${DIGEST}0`,
+      "",
+      "g".repeat(64),
+    ]) {
+      const result = created({ ...base, workOrderDigest: { kind: "digest", value: notADigest } });
+      expect(codesOf(result), JSON.stringify(notADigest)).toEqual([
+        "/payload/workOrderDigest:invalid_digest",
+      ]);
+    }
+  });
+
+  it("REFUSES a non-string digest, and a missing/extra key on the tagged value", () => {
+    for (const [label, value] of [
+      ["null", null],
+      ["number", 1],
+      ["array", []],
+      ["nested object", { nested: true }],
+    ] as const) {
+      expect(
+        codesOf(created({ ...base, workOrderDigest: { kind: "digest", value } })),
+        label,
+      ).toEqual(["/payload/workOrderDigest:invalid_digest"]);
+    }
+    expect(codesOf(created({ ...base, workOrderDigest: { kind: "digest" } }))).toEqual([
+      "/payload/workOrderDigest:invalid_payload_value",
+    ]);
+    expect(codesOf(created({ ...base, workOrderDigest: DIGEST }))).toEqual([
+      "/payload/workOrderDigest:invalid_payload_value",
+    ]);
+  });
+
+  it("REFUSES an `id`-kinded value: the field is declared `digest`, and an order ID is exactly what a producer would otherwise send", () => {
+    // The mutation this kills is `kind: "digest"` -> `kind: "id"`. Under that
+    // mutant a work-order ID passes here and a real digest fails the case
+    // above, so the two together pin the kind from both sides.
+    expect(codesOf(created({ ...base, workOrderDigest: { kind: "id", value: "wo-1" } }))).toEqual([
+      "/payload/workOrderDigest:wrong_value_kind",
+    ]);
+  });
+
+  it("the field is OPTIONAL in the allowlist and typed `digest` there — read from PAYLOAD_FIELDS, not from a copy", () => {
+    expect(PAYLOAD_FIELDS["run.created"].workOrderDigest).toEqual({ kind: "digest", required: false });
+  });
+});

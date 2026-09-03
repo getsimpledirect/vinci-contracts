@@ -111,15 +111,36 @@ const ATTESTABLE_ENTRYPOINTS = ["installed_package", "pinned_checkout"] as const
  * - `treeId` — `git write-tree` over the working tree AS OBSERVED (40 lowercase
  *   hex).
  *
- * A bare `clean: true` would be the attestation problem one level down: anyone
- * can set a boolean, and nobody can check it. `treeId` is a RECOMPUTABLE value.
- * A third party holding the repository recomputes `git rev-parse
- * <commitId>^{tree}` and compares: equal means the tree that ran the self-test
- * was exactly the recorded commit, and a dirty tree hashes to something else,
- * so the claim is falsifiable by anyone rather than believable only on trust.
- * That comparison needs the repository and so is an AUDITOR's check, not this
- * validator's; what the contract enforces is that the falsifiable evidence is
- * present and well-formed, which is the part a schema can enforce at all.
+ * WHAT THIS RECORDS, AND WHAT IT DOES NOT ESTABLISH. An earlier version of
+ * this comment said `treeId` made the pin "falsifiable by anyone rather than
+ * believable only on trust". That claim was wrong and is withdrawn.
+ *
+ * The binding is an OUT-OF-BAND DEPLOYMENT ATTESTATION: the attester observed a
+ * commit and a tree hash, and states them here. The contract RECORDS the pair
+ * and enforces its shape. It cannot verify it. Measured against this validator:
+ * a `treeId` identical to the `commitId` (impossible in git, a commit and its
+ * tree are different objects), the all-zero object id, and two unrelated
+ * invented 40-hex ids are all ACCEPTED, and all grant `repository_editing`
+ * through `attestedHarnessCapabilities`. The `installed_package` arm carries no
+ * evidence field at all.
+ *
+ * The audit the earlier comment prescribed -- recompute `git rev-parse
+ * <commitId>^{tree}` and compare -- is computable by anyone holding the
+ * repository, INCLUDING an attester whose tree is dirty. So it separates an
+ * honest reporter with a dirty tree from an honest reporter with a clean one,
+ * and places no constraint at all on a dishonest one, who writes the tree hash
+ * of the clean commit and is indistinguishable from the honest clean case.
+ * That is the same sentence this schema's v2 note uses to condemn v1's
+ * `installed_worker` label, and it applies here too.
+ *
+ * The pair is still worth carrying, for what it actually is. A bare
+ * `clean: true` records nothing an auditor could even look up; `commitId` and
+ * `treeId` name specific objects, so a later investigation has something
+ * concrete to reconcile against a deployment record, a bus `worker_build`
+ * announcement, or the operator's own logs. What a schema can enforce is that
+ * the evidence is PRESENT and WELL-FORMED, and that is all this validator
+ * claims to do. Trust in the values themselves comes from the deployment path,
+ * not from this record.
  *
  * Ids and digests only — no paths, no branch names, no free text. A pin is
  * identity, and every place this record could carry prose is a place content

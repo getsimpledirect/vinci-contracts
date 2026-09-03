@@ -565,6 +565,58 @@ describe("projectRunState", () => {
     expect(projected.issues.map((i) => i.code)).toEqual(["event_after_terminal"]);
     expect(projected.issues[0]?.path).toBe("/events/4");
   });
+
+  /**
+   * EVERY post-terminal event, not just the first.
+   *
+   * The case above uses exactly ONE post-terminal event, so it cannot tell the
+   * `continue` in the TERMINAL branch from a `break`: with one anomaly both
+   * produce one issue and the same TERMINAL state. Measured: changing that
+   * `continue` to `break` survived the whole gate at 1564/1564. The release
+   * notes advertise `projectRunState` as "TERMINAL is absorbing and a later
+   * event is reported, not folded away" -- with a `break` the FIRST later event
+   * is reported and every one after it is dropped silently, which is the same
+   * defect one level along.
+   *
+   * Two anomalies distinguish them, and the assertion is on the SEQUENCE PATHS
+   * rather than the count: a projection that reported the same event twice
+   * would satisfy a count of two.
+   */
+  it("reports EVERY post-terminal event: two anomalies yield two issues, at their own sequences", () => {
+    sequence = 0;
+    const events = [created(), started(), completed(), turnStarted(), paused()];
+    const projected = projectRunState(events);
+    expect(projected.state).toBe("TERMINAL");
+    expect(projected.issues.map((i) => i.code)).toEqual([
+      "event_after_terminal",
+      "event_after_terminal",
+    ]);
+    expect(projected.issues.map((i) => i.path)).toEqual(["/events/4", "/events/5"]);
+    // The second anomaly is a `run.paused`, whose transition would move a
+    // non-terminal run to PAUSED. It is reported and NOT applied, so this also
+    // pins that the branch continues to absorb rather than falling through.
+    expect(events[4]?.type).toBe("run.paused");
+  });
+
+  it("three post-terminal events yield three issues, in log order and none folded away", () => {
+    // A second, longer chain: with `break` the tail is dropped whatever its
+    // length, so a two-event case could in principle be satisfied by an
+    // off-by-one. Three, of three different types, cannot.
+    sequence = 0;
+    const events = [created(), started(), completed(), turnStarted(), paused(), started()];
+    const projected = projectRunState(events);
+    expect(projected.state).toBe("TERMINAL");
+    expect(projected.issues.map((i) => i.path)).toEqual(["/events/4", "/events/5", "/events/6"]);
+    expect(projected.issues.every((i) => i.code === "event_after_terminal")).toBe(true);
+    // Positive control through the same function: the identical tail BEFORE a
+    // terminal produces no issues at all and does move the state, so the
+    // assertions above are about the TERMINAL branch and not about these three
+    // event types being rejected everywhere.
+    sequence = 0;
+    const legal = projectRunState([created(), started(), turnStarted(), paused(), started()]);
+    expect(legal.issues).toEqual([]);
+    expect(legal.state).toBe("RUNNING");
+  });
 });
 
 describe("terminalEvidenceMissing", () => {

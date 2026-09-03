@@ -348,9 +348,18 @@ against something shipping. The constraint is C13: it must not be confused with
 
 `RUN_EVENT_SCHEMA_META` is FROZEN with `unknownFields: "reject"`; its own comment
 prescribes that additions are version bumps because a validator that rejects
-unknown fields does not tolerate them. v4 adds 24 event types and two optional
-`run.completed` fields (`outcome`, `tierReached`). No v3 type, field or payload
-rule changes.
+unknown fields does not tolerate them. v4 adds 24 event types, two optional
+`run.completed` fields (`outcome`, `tierReached`), and one optional field on the
+existing v3 type `run.created` (`workOrderDigest`, `kind: "digest"`). No v3 type
+is removed, and no existing v3 field or payload rule changes.
+
+Corrected 2026-09-03: this entry, the release note and the `migration` string in
+`RUN_EVENT_SCHEMA_META` all read "24 event types and two optional
+`run.completed` fields ... no v3 type, field or payload rule changed" after
+`workOrderDigest` had been added to `run.created`. The commit that added the
+field touched no document, so the three surfaces that tell the consuming
+registry what to adopt did not name the field the commit exists to hand it. The
+divergence in its optionality is recorded as C18.
 
 Resolution: `version` is 4, the `schemaVersion` literal and the validator check
 moved to 4, and a v4 consumer refuses v3 events (`schemaVersion` mismatch,
@@ -375,3 +384,47 @@ closed set is `RUN_OUTCOMES` (`SUCCEEDED`, `DO_NOT_START`, `DUPLICATE`,
 `NO_LONGER_VALUABLE`, `SUPERSEDED`, `CLOSE_WITH_NEGATIVE_RESULT`). The not-doing
 outcomes are productive terminals; `run.failed` keeps `RUN_FAILURE_CODES` and
 refuses an `outcome` field.
+
+---
+
+## C18 — `workOrderDigest` is OPTIONAL on `run.created` and REQUIRED on `VinciRun`
+
+**Status: resolved in this repository. The divergence is deliberate.**
+
+| Surface | Field | Optionality |
+| --- | --- | --- |
+| `vinci.run-event` `run.created` payload | `workOrderDigest` | OPTIONAL |
+| `vinci.run` (`VinciRun`) | `workOrderId`, `workOrderDigest` | REQUIRED, non-nullable |
+
+Two schemas in this repository speak about the same binding and disagree about
+whether it must be present. Recorded here so the disagreement is a decision
+rather than something a reader discovers by hitting it.
+
+Verified here: `VinciRun` declares `workOrderId: string` and
+`workOrderDigest: string` with no null arm, and `validateRun` refuses the field
+null, empty, or omitted (`/workOrderId:invalid_id`,
+`/workOrderDigest:invalid_digest`) while accepting the same record with
+`sessionId` set. `PAYLOAD_FIELDS["run.created"].workOrderDigest` is
+`{ kind: "digest", required: false }`.
+
+Resolution: both are right, and they answer different questions.
+
+`VinciRun` is the durable declaration of what a run IS. Every run in this
+contract's world executes a work order — that is what makes it the governed
+unit, and it is why the order's id and digest sit beside the agent, the
+environment and the budget as things fixed before the work starts. There is no
+representation of an order-less run here, deliberately.
+
+`run.created` is an EVENT a producer emits at a moment in time. Optionality
+there is a statement about EMISSION, not about the world: a producer may not
+hold the digest when it announces the run — it may have the order id and not
+yet its canonical digest, or announce before binding completes. An absent
+optional field is silence, not an assertion that the run has no order. Requiring
+it on the event would also break every existing producer at once, for a fact the
+durable record already carries.
+
+An earlier version of the rationale in `payload.ts` justified the optionality by
+saying "an interactive session run has no order". That was wrong and is
+withdrawn: an interactive session run is representable here only WITH an order
+(`sessionId` is the nullable field; the two work-order fields are not), so the
+counterexample it offered cannot be expressed in this package at all.

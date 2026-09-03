@@ -148,13 +148,34 @@ export const PAYLOAD_FIELDS = {
   // as a consumer's local exception — an exception that has to be re-argued
   // every time either side changes.
   //
-  // Required would have been the wrong call twice over: it breaks every
-  // existing producer at once, and it asserts that a run MUST execute a work
-  // order, which is not true of this contract's world (an interactive session
-  // run has no order). Optional says what is actually the case — some runs
-  // carry a work-order identity and, when they do, this is where it goes and
-  // this is its shape. A producer that always has one is free to be stricter
-  // than the contract; the contract cannot be stricter than its producers.
+  // WHY OPTIONAL, corrected. An earlier version of this comment said required
+  // "asserts that a run MUST execute a work order, which is not true of this
+  // contract's world (an interactive session run has no order)". That
+  // counterexample is not representable in this contract and the reasoning is
+  // withdrawn.
+  //
+  // `VinciRun` — the durable declaration of what a run IS — declares
+  // `workOrderId` and `workOrderDigest` REQUIRED and non-nullable, while
+  // `sessionId` is the field that may be null. Measured against `validateRun`:
+  // the two work-order fields are refused null, empty and omitted
+  // (`/workOrderId:invalid_id`, `/workOrderDigest:invalid_digest`), and a run
+  // WITH a session and an order validates. So an interactive session run is
+  // representable here only WITH an order, and no schema in this package can
+  // represent a run without one. Every run in this contract's world binds a
+  // work order; that is what makes it the governed unit.
+  //
+  // The field is optional because of EMISSION, not because of the world. A
+  // producer may not hold the digest at the moment it announces the run — it
+  // may have the order id and not yet its canonical digest, or announce before
+  // binding completes. An absent optional field is silence about the digest,
+  // not an assertion that there is no order; the durable `VinciRun` still
+  // carries one. Required would additionally break every existing producer at
+  // once, for a fact the durable record already holds.
+  //
+  // A producer that always has the digest is free to be stricter than the
+  // contract; the contract cannot be stricter than its producers. The
+  // divergence between this OPTIONAL and `VinciRun`'s REQUIRED is deliberate
+  // and is recorded as C18 in docs/conflict-register.md.
   "run.created": {
     workspaceId: { kind: "id", required: true },
     policyId: { kind: "id", required: true },
