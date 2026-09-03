@@ -12,6 +12,10 @@
         "kind": "count",
         "required": true
       },
+      "workOrderDigest": {
+        "kind": "digest",
+        "required": false
+      },
       "workspaceId": {
         "kind": "id",
         "required": true

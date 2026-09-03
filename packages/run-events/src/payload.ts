@@ -138,10 +138,28 @@ type FieldSpec = {
  * appeared to would be worse than saying so.
  */
 export const PAYLOAD_FIELDS = {
+  // `workOrderDigest` is OPTIONAL, and the optionality is the whole decision.
+  //
+  // It arrived as a reported gap from the Python Run registry in
+  // vinci-gpu-control, which binds every Run to the work order it executes and
+  // could not say so in a run.created at all. A run that executes a work order
+  // is a concept this contract already has (@getsimpledirect/vinci-work-orders
+  // defines the digest), so the field belongs here rather than living forever
+  // as a consumer's local exception — an exception that has to be re-argued
+  // every time either side changes.
+  //
+  // Required would have been the wrong call twice over: it breaks every
+  // existing producer at once, and it asserts that a run MUST execute a work
+  // order, which is not true of this contract's world (an interactive session
+  // run has no order). Optional says what is actually the case — some runs
+  // carry a work-order identity and, when they do, this is where it goes and
+  // this is its shape. A producer that always has one is free to be stricter
+  // than the contract; the contract cannot be stricter than its producers.
   "run.created": {
     workspaceId: { kind: "id", required: true },
     policyId: { kind: "id", required: true },
     policyVersion: { kind: "count", required: true },
+    workOrderDigest: { kind: "digest", required: false },
   },
   "run.started": { workerId: { kind: "id", required: true } },
   // RESOLVED 2026-08-24: this phase list has three members and worker.heartbeat's has
