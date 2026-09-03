@@ -38,6 +38,15 @@ describe("the committed vocabulary vector is the current vocabulary", () => {
     // Not `toEqual` on parsed objects: the consumer pins a DIGEST of these
     // exact bytes, so a reformatting that leaves the object equal still breaks
     // the consumer and must fail here.
+    //
+    // MASKED PAIR -- do not delete this as redundant. It is masked by the
+    // "carries every event type" case below, which compares the PARSED
+    // committed JSON against the live PAYLOAD_FIELDS. Silence this one alone
+    // and that one still fails; silence that one alone and this one still
+    // fails. Silence BOTH and 206 tests pass over a genuinely stale committed
+    // artifact -- measured, not reasoned. Each looks spare from the other's
+    // side, which is exactly why the next reader deletes whichever they meet
+    // first.
     expect(committed).toBe(emitVocabularyVector());
   });
 
@@ -47,6 +56,11 @@ describe("the committed vocabulary vector is the current vocabulary", () => {
   });
 
   it("carries every event type, and the same fields payload.ts declares", () => {
+    // MASKED PAIR -- do not delete this as redundant. It is masked by the
+    // byte-identity case above. That one catches a stale artifact only while
+    // the generator is really consulted; this one catches a divergence from
+    // payload.ts through the PARSED object, by a different route. With both
+    // silenced the suite passes over a stale artifact. See the note above.
     const parsed: { vectorVersion: number; schemaVersion: number; types: Record<string, Record<string, unknown>> } =
       JSON.parse(committed);
     expect(parsed.vectorVersion).toBe(VOCABULARY_VECTOR_VERSION);
