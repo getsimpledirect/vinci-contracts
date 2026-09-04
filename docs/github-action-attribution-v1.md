@@ -1,7 +1,12 @@
 # GitHub action attribution v1
 
-`GitHubActionAttribution` is the signed, immutable answer to “which Vinci actor
-caused this GitHub pull-request action?” It lives in
+`GitHubActionAttribution` defines the signed, immutable wire shape intended to
+answer “which Vinci actor caused this GitHub pull-request action?” The schema,
+or a record that merely passes shape validation, is **not** by itself an
+attestation, authorization, or identity proof. It becomes a verifiable
+attribution only after a trusted VGC issuer derives `Actor` and
+`SessionBindingRef` from authenticated server-side state and cryptographically
+signs the canonical bytes. The contract lives in
 `@getsimpledirect/vinci-remote-protocol` because it binds the existing central
 `Actor` to the existing `SessionBindingRef` and follows that package's signed
 wire-envelope conventions. It does not add a GitHub-specific actor or a second
