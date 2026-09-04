@@ -20,6 +20,8 @@ Each layer knows everything below it; nothing above. Packages export only the ty
 
 Three channels, three packages, deliberately not one: `run-events` (layer 2) is the durable, content-minimal record — its payload values are ids, enums, counts, digests, timestamps and flags, never free text; `remote-protocol` (layer 3) carries signed authority commands; `session-stream` (layer 4) carries what a supervising human sees while a worker runs — current action, a bounded diff, a question, a warning — with `retention: "ephemeral"` so it is never mistaken for the record.
 
+`remote-protocol` also defines the signed [`GitHubActionAttribution` v1](docs/github-action-attribution-v1.md) envelope. It binds the central `Actor` and `SessionBindingRef` to an exact pull-request object while recording a shared GitHub login as explicitly non-authoritative transport metadata.
+
 `worker-capabilities` (layer 4) answers a different question: what can THIS worker's adapter actually honour? A `WorkerDeclaration` carries a closed `CapabilityMatrix`; the trust level (`inventoried → observed → supervised → governed → assured`) is derived from the matrix, never trusted from the declaration, and a declaration that claims more than it demonstrates is rejected. A UI renders `renderableRemoteCommands(matrix, role)` — the adapter axis intersected with what remote-protocol lets the role issue — and nothing else, so a control is never shown that the system cannot enforce.
 
 ## Using the Record Types
