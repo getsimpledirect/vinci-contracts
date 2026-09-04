@@ -21,6 +21,14 @@ import {
   verifyReviewPublicationAttributionSignature,
   type ReviewPublicationAttribution,
 } from "./index.ts";
+import {
+  MAX_SIGNED_JSON_BYTES,
+  MAX_SIGNED_JSON_DEPTH,
+  MAX_SIGNED_JSON_MEMBERS,
+  MAX_SIGNED_JSON_NODES,
+  MAX_SIGNED_JSON_STRING_BYTES,
+  parseStrictSignedJson,
+} from "./strict-json.ts";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PACKAGE = join(HERE, "..");
@@ -233,13 +241,92 @@ describe("strict JSON ingress", () => {
         .toContain(entry.code);
     }
   });
+
+  it("bounds raw input bytes, nesting, width, node count and string bytes", () => {
+    expect(MAX_SIGNED_JSON_BYTES).toBe(1_000_000);
+    expect(MAX_SIGNED_JSON_DEPTH).toBe(32);
+    expect(MAX_SIGNED_JSON_NODES).toBe(200_000);
+    expect(MAX_SIGNED_JSON_MEMBERS).toBe(10_000);
+    expect(MAX_SIGNED_JSON_STRING_BYTES).toBe(262_144);
+
+    const deep = `${"[".repeat(1_100)}0${"]".repeat(1_100)}`;
+    expect(issueCodes(parseReviewPublicationAttributionJson(deep, NOW))).toContain("too_deep");
+    const wide = `[${new Array(MAX_SIGNED_JSON_MEMBERS + 1).fill("0").join(",")}]`;
+    expect(issueCodes(parseReviewPublicationAttributionJson(wide, NOW))).toContain("too_many_keys");
+    const row = `[${new Array(MAX_SIGNED_JSON_MEMBERS).fill("0").join(",")}]`;
+    const manyNodes = `[${new Array(21).fill(row).join(",")}]`;
+    expect(issueCodes(parseReviewPublicationAttributionJson(manyNodes, NOW))).toContain("too_many_nodes");
+    const longString = `{"value":"${"a".repeat(MAX_SIGNED_JSON_STRING_BYTES + 1)}"}`;
+    expect(issueCodes(parseReviewPublicationAttributionJson(longString, NOW))).toContain("too_large");
+    expect(issueCodes(parseReviewPublicationAttributionJson(" ".repeat(MAX_SIGNED_JSON_BYTES + 1), NOW)))
+      .toContain("too_large");
+  });
+
+  it("accepts each exact raw resource boundary so the caps discriminate", () => {
+    expect(parseStrictSignedJson(`${"[".repeat(MAX_SIGNED_JSON_DEPTH)}0${"]".repeat(MAX_SIGNED_JSON_DEPTH)}`).ok)
+      .toBe(true);
+    expect(parseStrictSignedJson(`[${new Array(MAX_SIGNED_JSON_MEMBERS).fill("0").join(",")}]`).ok)
+      .toBe(true);
+    expect(parseStrictSignedJson(`"${"a".repeat(MAX_SIGNED_JSON_STRING_BYTES)}"`).ok).toBe(true);
+    expect(parseStrictSignedJson(`${" ".repeat(MAX_SIGNED_JSON_BYTES - 1)}0`).ok).toBe(true);
+
+    const fullRow = `[${new Array(MAX_SIGNED_JSON_MEMBERS).fill("0").join(",")}]`;
+    const finalRow = `[${new Array(9_979).fill("0").join(",")}]`;
+    const exactNodes = `[${[...new Array(19).fill(fullRow), finalRow].join(",")}]`;
+    expect(parseStrictSignedJson(exactNodes).ok).toBe(true);
+    const overNodes = exactNodes.replace(finalRow, `[${new Array(9_980).fill("0").join(",")}]`);
+    expect(issueCodes(parseStrictSignedJson(overNodes))).toContain("too_many_nodes");
+  });
+
+  it("fails closed for deep, cyclic, wide and node-heavy direct objects", () => {
+    const cyclicUnknown = fixture();
+    cyclicUnknown.unknown = cyclicUnknown;
+    expect(() => validateReviewPublicationAttribution(cyclicUnknown, NOW)).not.toThrow();
+    expect(issueCodes(validateReviewPublicationAttribution(cyclicUnknown, NOW))).toContain("not_serializable");
+
+    const cyclicActor = { kind: "verifier", verifierId: undefined as unknown, independent: true };
+    cyclicActor.verifierId = cyclicActor;
+    expect(issueCodes(validateReviewPublicationAttribution({ ...fixture(), actor: cyclicActor }, NOW)))
+      .toContain("not_serializable");
+
+    let deep: unknown = "verifier-1";
+    for (let index = 0; index < 1_100; index += 1) deep = [deep];
+    expect(issueCodes(validateReviewPublicationAttribution({
+      ...fixture(),
+      actor: { kind: "verifier", verifierId: deep, independent: true },
+    }, NOW))).toContain("too_deep");
+
+    expect(issueCodes(validateReviewPublicationAttribution({
+      ...fixture(),
+      actor: {
+        kind: "verifier",
+        verifierId: new Array(MAX_SIGNED_JSON_MEMBERS + 1).fill("x"),
+        independent: true,
+      },
+    }, NOW))).toContain("too_many_keys");
+
+    const row = new Array(MAX_SIGNED_JSON_MEMBERS).fill(0);
+    const nodeHeavyCodes = issueCodes(validateReviewPublicationAttribution({
+      ...fixture(),
+      actor: { kind: "verifier", verifierId: new Array(21).fill(row), independent: true },
+    }, NOW));
+    expect(["too_many_nodes", "too_large"]).toContain(nodeHeavyCodes[0]);
+  });
+
+  it("rejects a nested unknown field without inspecting it as authority", () => {
+    const input = JSON.parse(source) as Record<string, unknown>;
+    (input.subject as Record<string, unknown>).unknown = { nested: ["attacker"] };
+    const result = parseReviewPublicationAttributionJson(JSON.stringify(input), NOW);
+    expect(issueCodes(result)).toContain("unknown_field");
+  });
 });
 
 describe("canonical bytes, digest, signature and compact reference", () => {
   it("matches the committed canonical bytes, digest, signature and public key", () => {
     const value = validated();
-    expect(Buffer.from(reviewPublicationAttributionSigningPayload(value)))
-      .toEqual(readFileSync(join(VECTORS, "canonical.txt")));
+    const payload = Buffer.from(reviewPublicationAttributionSigningPayload(value));
+    expect(payload).toHaveLength(843);
+    expect(payload).toEqual(readFileSync(join(VECTORS, "canonical.txt")));
     expect(reviewPublicationAttributionDigest(value)).toBe(read("digest.txt").trim());
     expect(value.signature.value).toBe(read("signature.txt").trim());
     expect(verifyReviewPublicationAttributionSignature(value, read("public-key.txt").trim())).toBe(true);
@@ -286,25 +373,79 @@ describe("canonical bytes, digest, signature and compact reference", () => {
     }
   });
 
-  it("covers each semantic compartment in the digest and signature", () => {
+  it("binds each of the 24 signed semantic leaves in the digest and signature", () => {
     const original = validated();
-    const cases: Array<[string, Record<string, unknown>]> = [
-      ["actor", { actor: { kind: "verifier", verifierId: "verifier-02JTEST", independent: true } }],
-      ["binding", { binding: { ...original.binding, sessionId: "session-2" } }],
-      ["subject", { subject: { ...original.subject, headTreeSha: "e".repeat(40) } }],
-      ["verdict", { verdict: "BLOCK" }],
-      ["recordSetDigest", { recordSetDigest: "e".repeat(64) }],
-      ["idempotencyKey", { idempotencyKey: "review-publication-02JTEST" }],
-      ["issuedAt", { issuedAt: "2026-09-04T12:00:00.001Z" }],
-      ["expiresAt", { expiresAt: "2026-09-04T12:09:59.999Z" }],
-      ["issuerKeyId", { issuerKeyId: "vgc-platform-key-2" }],
+    const cases: Array<[string, ReviewPublicationAttribution]> = [
+      ["schemaVersion", { ...original, schemaVersion: 2 } as unknown as ReviewPublicationAttribution],
+      ["purpose", { ...original, purpose: "guard_review.read" } as unknown as ReviewPublicationAttribution],
+      ["audience", { ...original, audience: "vinci-governor" } as unknown as ReviewPublicationAttribution],
+      ["actor.kind", { ...original, actor: { ...original.actor, kind: "system" } } as unknown as ReviewPublicationAttribution],
+      ["actor.verifierId", { ...original, actor: { ...original.actor, verifierId: "verifier-02JTEST" } } as ReviewPublicationAttribution],
+      ["actor.independent", { ...original, actor: { ...original.actor, independent: false } } as ReviewPublicationAttribution],
+      ["binding.protocolVersion", { ...original, binding: { ...original.binding, protocolVersion: 2 } } as ReviewPublicationAttribution],
+      ["binding.organizationId", { ...original, binding: { ...original.binding, organizationId: "organization-2" } } as ReviewPublicationAttribution],
+      ["binding.workspaceId", { ...original, binding: { ...original.binding, workspaceId: "workspace-2" } } as ReviewPublicationAttribution],
+      ["binding.runId", { ...original, binding: { ...original.binding, runId: "review-run-2" } } as ReviewPublicationAttribution],
+      ["binding.sessionId", { ...original, binding: { ...original.binding, sessionId: "session-2" } } as ReviewPublicationAttribution],
+      ["subject.provider", { ...original, subject: { ...original.subject, provider: "gitlab" } } as unknown as ReviewPublicationAttribution],
+      ["subject.repositoryNodeId", { ...original, subject: { ...original.subject, repositoryNodeId: "R_kgDOOther" } }],
+      ["subject.pullRequestNumber", { ...original, subject: { ...original.subject, pullRequestNumber: 11 } }],
+      ["subject.headSha", { ...original, subject: { ...original.subject, headSha: "e".repeat(40) } }],
+      ["subject.baseSha", { ...original, subject: { ...original.subject, baseSha: "e".repeat(40) } }],
+      ["subject.headTreeSha", { ...original, subject: { ...original.subject, headTreeSha: "e".repeat(40) } }],
+      ["verdict", { ...original, verdict: "BLOCK" }],
+      ["recordSetDigest", { ...original, recordSetDigest: "e".repeat(64) }],
+      ["idempotencyKey", { ...original, idempotencyKey: "review-publication-02JTEST" }],
+      ["issuedAt", { ...original, issuedAt: "2026-09-04T12:00:00.001Z" }],
+      ["expiresAt", { ...original, expiresAt: "2026-09-04T12:09:59.999Z" }],
+      ["issuerKeyId", { ...original, issuerKeyId: "vgc-platform-key-2" }],
+      ["signature.alg", { ...original, signature: { ...original.signature, alg: "Ed25518" } } as unknown as ReviewPublicationAttribution],
     ];
-    for (const [label, overrides] of cases) {
-      const changed = validated({ ...fixture(), ...overrides });
+    expect(cases).toHaveLength(24);
+    for (const [label, changed] of cases) {
       expect(reviewPublicationAttributionDigest(changed), label)
         .not.toBe(reviewPublicationAttributionDigest(original));
       expect(verifyReviewPublicationAttributionSignature(changed, read("public-key.txt").trim()), label)
         .toBe(false);
+    }
+  });
+
+  it("rejects wrong/malformed keys and signatures, including Ed25519 S+L malleability", () => {
+    const original = validated();
+    const publicKey = Buffer.from(read("public-key.txt").trim(), "base64url");
+    const wrongKey = Buffer.from(publicKey);
+    wrongKey[0] ^= 1;
+    for (const key of [
+      wrongKey.toString("base64url"),
+      publicKey.subarray(1).toString("base64url"),
+      Buffer.concat([publicKey, Buffer.from([0])]).toString("base64url"),
+      `${publicKey.toString("base64url")}=`,
+      "not+base64url",
+    ]) {
+      expect(verifyReviewPublicationAttributionSignature(original, key), key).toBe(false);
+    }
+
+    const signature = Buffer.from(original.signature.value, "base64url");
+    const order = (1n << 252n) + 27742317777372353535851937790883648493n;
+    let scalar = 0n;
+    for (let index = 31; index >= 0; index -= 1) scalar = (scalar << 8n) + BigInt(signature[32 + index] ?? 0);
+    scalar += order;
+    const malleable = Buffer.from(signature);
+    for (let index = 0; index < 32; index += 1) {
+      malleable[32 + index] = Number(scalar & 0xffn);
+      scalar >>= 8n;
+    }
+    const signatures = [
+      signature.subarray(1).toString("base64url"),
+      Buffer.concat([signature, Buffer.from([0])]).toString("base64url"),
+      `${signature.toString("base64url")}=`,
+      malleable.toString("base64url"),
+    ];
+    for (const value of signatures) {
+      expect(verifyReviewPublicationAttributionSignature({
+        ...original,
+        signature: { alg: "Ed25519", value },
+      }, publicKey.toString("base64url")), value).toBe(false);
     }
   });
 
@@ -342,4 +483,34 @@ describe("canonical bytes, digest, signature and compact reference", () => {
     expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(result.stdout + result.stderr).toContain("OK");
   });
+});
+
+describe("shared timestamp domain", () => {
+  const cases = JSON.parse(read("timestamp-v1.json")) as ReadonlyArray<{
+    readonly name: string;
+    readonly issuedAt: string;
+    readonly expiresAt: string;
+    readonly now: string;
+    readonly valid: boolean;
+    readonly code?: string;
+    readonly digest?: string;
+  }>;
+
+  for (const entry of cases) {
+    it(`${entry.name}: matches the pinned validity and canonical digest`, () => {
+      const candidate = { ...fixture(), issuedAt: entry.issuedAt, expiresAt: entry.expiresAt };
+      const result = validateReviewPublicationAttribution(candidate, entry.now);
+      expect(result.ok, entry.name).toBe(entry.valid);
+      if (entry.valid) {
+        if (!result.ok) return;
+        expect(reviewPublicationAttributionDigest(result.value)).toBe(entry.digest);
+      } else {
+        expect(issueCodes(result)).toContain(entry.code);
+      }
+      if (["invalid_timestamp", "invalid_time_order", "lifetime_exceeded"].includes(entry.code ?? "")) {
+        expect(() => reviewPublicationAttributionSigningPayload(candidate as ReviewPublicationAttribution))
+          .toThrow();
+      }
+    });
+  }
 });

@@ -244,6 +244,36 @@ if (!checkedReview.ok) throw new Error("installed review attribution validator r
 if (!parseReviewPublicationAttributionJson(JSON.stringify(reviewAttribution), "2026-09-04T12:05:00.000Z").ok) {
   throw new Error("installed strict review attribution JSON parser refused the golden value");
 }
+const installedDeep = parseReviewPublicationAttributionJson(
+  "[".repeat(1_100) + "0" + "]".repeat(1_100),
+  "2026-09-04T12:05:00.000Z",
+);
+if (installedDeep.ok) {
+  throw new Error("installed strict review parser accepted excessive depth");
+}
+if (!("issues" in installedDeep) || !installedDeep.issues.some((entry) => entry.code === "too_deep")) {
+  throw new Error("installed strict review parser did not fail closed on excessive depth");
+}
+const installedYearZero = validateReviewPublicationAttribution({
+  ...reviewAttribution,
+  issuedAt: "0000-01-01T00:00:00.000Z",
+  expiresAt: "0000-01-01T00:10:00.000Z",
+}, "0000-01-01T00:05:00.000Z");
+if (installedYearZero.ok) {
+  throw new Error("installed review validator accepted a timestamp outside the shared year domain");
+}
+if (!("issues" in installedYearZero) || !installedYearZero.issues.some((entry) => entry.code === "invalid_timestamp")) {
+  throw new Error("installed review validator accepted a timestamp outside the shared year domain");
+}
+const installedCyclicActor: Record<string, unknown> = {
+  kind: "verifier", verifierId: null, independent: true,
+};
+installedCyclicActor.verifierId = installedCyclicActor;
+const installedCyclic = validateReviewPublicationAttribution({
+  ...reviewAttribution,
+  actor: installedCyclicActor,
+}, "2026-09-04T12:05:00.000Z");
+if (installedCyclic.ok) throw new Error("installed review validator accepted a cyclic direct object");
 if (!verifyReviewPublicationAttributionSignature(checkedReview.value, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo")) {
   throw new Error("installed review attribution signature helper refused the golden signature");
 }

@@ -78,9 +78,83 @@ const invalid = [
   { name: "fractional integer spelling", code: "ambiguous_number", input: JSON.stringify(attribution).replace('"pullRequestNumber":10', '"pullRequestNumber":10.0') },
   { name: "non-NFC identity", code: "non_canonical_unicode", input: changed({ actor: { kind: "verifier", verifierId: "e\u0301", independent: true } }) },
 ];
+const timestampCases = [
+  {
+    name: "year one lower boundary",
+    issuedAt: "0001-01-01T00:00:00.000Z",
+    expiresAt: "0001-01-01T00:10:00.000Z",
+    now: "0001-01-01T00:09:59.999Z",
+    valid: true,
+  },
+  {
+    name: "real leap day and exact maximum lifetime",
+    issuedAt: "2024-02-29T23:50:00.000Z",
+    expiresAt: "2024-03-01T00:00:00.000Z",
+    now: "2024-02-29T23:59:59.999Z",
+    valid: true,
+  },
+  {
+    name: "year zero",
+    issuedAt: "0000-01-01T00:00:00.000Z",
+    expiresAt: "0000-01-01T00:10:00.000Z",
+    now: "0000-01-01T00:05:00.000Z",
+    valid: false,
+    code: "invalid_timestamp",
+  },
+  {
+    name: "nonexistent leap day",
+    issuedAt: "2026-02-29T00:00:00.000Z",
+    expiresAt: "2026-02-29T00:10:00.000Z",
+    now: "2026-02-29T00:05:00.000Z",
+    valid: false,
+    code: "invalid_timestamp",
+  },
+  {
+    name: "expiry equals issue",
+    issuedAt: "2026-09-04T12:00:00.000Z",
+    expiresAt: "2026-09-04T12:00:00.000Z",
+    now: "2026-09-04T11:59:59.999Z",
+    valid: false,
+    code: "invalid_time_order",
+  },
+  {
+    name: "expiry before issue",
+    issuedAt: "2026-09-04T12:00:00.001Z",
+    expiresAt: "2026-09-04T12:00:00.000Z",
+    now: "2026-09-04T11:59:59.999Z",
+    valid: false,
+    code: "invalid_time_order",
+  },
+  {
+    name: "one millisecond over lifetime",
+    issuedAt: "2026-09-04T12:00:00.000Z",
+    expiresAt: "2026-09-04T12:10:00.001Z",
+    now: "2026-09-04T12:05:00.000Z",
+    valid: false,
+    code: "lifetime_exceeded",
+  },
+  {
+    name: "expiry is exclusive",
+    issuedAt: "2026-09-04T12:00:00.000Z",
+    expiresAt: "2026-09-04T12:10:00.000Z",
+    now: "2026-09-04T12:10:00.000Z",
+    valid: false,
+    code: "expired",
+  },
+].map((entry) => entry.valid
+  ? {
+      ...entry,
+      digest: reviewPublicationAttributionDigest({
+        ...attribution,
+        issuedAt: entry.issuedAt,
+        expiresAt: entry.expiresAt,
+      }),
+    }
+  : entry);
 
 writeFileSync(join(here, "valid-v1.json"), `${JSON.stringify(attribution, null, 2)}\n`);
 writeFileSync(join(here, "invalid-v1.json"), `${JSON.stringify(invalid, null, 2)}\n`);
+writeFileSync(join(here, "timestamp-v1.json"), `${JSON.stringify(timestampCases, null, 2)}\n`);
 writeFileSync(join(here, "canonical.txt"), payload);
 writeFileSync(join(here, "digest.txt"), `${digest}\n`);
 writeFileSync(join(here, "public-key.txt"), `${publicKey}\n`);

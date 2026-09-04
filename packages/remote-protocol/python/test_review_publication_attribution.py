@@ -10,6 +10,11 @@ import unittest
 
 from review_publication_attribution import (
     ContractError,
+    MAX_SIGNED_JSON_BYTES,
+    MAX_SIGNED_JSON_DEPTH,
+    MAX_SIGNED_JSON_MEMBERS,
+    MAX_SIGNED_JSON_NODES,
+    MAX_SIGNED_JSON_STRING_BYTES,
     attribution_digest,
     canonical_signing_bytes,
     decode_public_key,
@@ -89,6 +94,34 @@ class GoldenVector(unittest.TestCase):
             bytes(payload),
             signature_bytes(read("signature.txt").strip()),
         ))
+
+    def test_wrong_key_and_noncanonical_scalar_signature_fail(self):
+        public_key = bytearray(decode_public_key(read("public-key.txt").strip()))
+        signature = bytearray(signature_bytes(read("signature.txt").strip()))
+        public_key[0] ^= 1
+        self.assertFalse(openssl_verifies(bytes(public_key), canonical_signing_bytes(self.value), bytes(signature)))
+
+        order = (1 << 252) + 27742317777372353535851937790883648493
+        scalar = int.from_bytes(signature[32:], "little") + order
+        signature[32:] = scalar.to_bytes(32, "little")
+        self.assertFalse(openssl_verifies(
+            decode_public_key(read("public-key.txt").strip()),
+            canonical_signing_bytes(self.value),
+            bytes(signature),
+        ))
+
+    def test_noncanonical_key_and_signature_encodings_are_refused(self):
+        public_key = read("public-key.txt").strip()
+        for candidate in (public_key[1:], public_key + "AA", public_key + "=", "not+base64url"):
+            with self.subTest(key=candidate), self.assertRaises(ContractError):
+                decode_public_key(candidate)
+
+        signature = read("signature.txt").strip()
+        for candidate in (signature[1:], signature + "AA", signature + "=", "not+base64url"):
+            changed = copy.deepcopy(self.value)
+            changed["signature"]["value"] = candidate
+            with self.subTest(signature=candidate), self.assertRaises(ContractError):
+                validate_attribution(changed, NOW)
 
     def test_compact_reference_is_identical(self):
         pointer = read("pointer.txt").strip()
@@ -184,6 +217,112 @@ class FailClosedValidation(unittest.TestCase):
                 with self.assertRaises(ContractError) as caught:
                     parse_attribution_json(case["input"], NOW)
                 self.assertEqual(caught.exception.code, case["code"])
+
+    def test_raw_resource_limits_are_stable_contract_refusals(self):
+        self.assertEqual(MAX_SIGNED_JSON_BYTES, 1_000_000)
+        self.assertEqual(MAX_SIGNED_JSON_DEPTH, 32)
+        self.assertEqual(MAX_SIGNED_JSON_NODES, 200_000)
+        self.assertEqual(MAX_SIGNED_JSON_MEMBERS, 10_000)
+        self.assertEqual(MAX_SIGNED_JSON_STRING_BYTES, 262_144)
+        row = "[" + ",".join(["0"] * MAX_SIGNED_JSON_MEMBERS) + "]"
+        cases = [
+            ("[" * 1_100 + "0" + "]" * 1_100, "too_deep"),
+            ("[" + ",".join(["0"] * (MAX_SIGNED_JSON_MEMBERS + 1)) + "]", "too_many_keys"),
+            ("[" + ",".join([row] * 21) + "]", "too_many_nodes"),
+            ('{"value":"' + "a" * (MAX_SIGNED_JSON_STRING_BYTES + 1) + '"}', "too_large"),
+            (" " * (MAX_SIGNED_JSON_BYTES + 1), "too_large"),
+        ]
+        for source, code in cases:
+            with self.subTest(code=code), self.assertRaises(ContractError) as caught:
+                parse_attribution_json(source, NOW)
+            self.assertEqual(caught.exception.code, code)
+
+    def test_exact_raw_resource_boundaries_are_accepted(self):
+        self.assertIsNotNone(parse_strict_json("[" * MAX_SIGNED_JSON_DEPTH + "0" + "]" * MAX_SIGNED_JSON_DEPTH))
+        self.assertEqual(len(parse_strict_json("[" + ",".join(["0"] * MAX_SIGNED_JSON_MEMBERS) + "]")), MAX_SIGNED_JSON_MEMBERS)
+        self.assertEqual(len(parse_strict_json('"' + "a" * MAX_SIGNED_JSON_STRING_BYTES + '"')), MAX_SIGNED_JSON_STRING_BYTES)
+        self.assertEqual(parse_strict_json(" " * (MAX_SIGNED_JSON_BYTES - 1) + "0"), 0)
+
+        full_row = "[" + ",".join(["0"] * MAX_SIGNED_JSON_MEMBERS) + "]"
+        final_row = "[" + ",".join(["0"] * 9_979) + "]"
+        exact_nodes = "[" + ",".join([full_row] * 19 + [final_row]) + "]"
+        self.assertEqual(len(parse_strict_json(exact_nodes)), 20)
+        over_nodes = "[" + ",".join([full_row] * 19 + ["[" + ",".join(["0"] * 9_980) + "]"]) + "]"
+        with self.assertRaises(ContractError) as caught:
+            parse_strict_json(over_nodes)
+        self.assertEqual(caught.exception.code, "too_many_nodes")
+
+    def test_direct_object_depth_cycles_width_and_nodes_fail_closed(self):
+        cyclic_unknown = copy.deepcopy(self.value)
+        cyclic_unknown["unknown"] = cyclic_unknown
+        with self.assertRaises(ContractError) as caught:
+            validate_attribution(cyclic_unknown, NOW)
+        self.assertEqual(caught.exception.code, "invalid_fields")
+
+        cyclic_actor = {"kind": "verifier", "verifierId": None, "independent": True}
+        cyclic_actor["verifierId"] = cyclic_actor
+        cyclic_value = copy.deepcopy(self.value)
+        cyclic_value["actor"] = cyclic_actor
+        with self.assertRaises(ContractError) as caught:
+            validate_attribution(cyclic_value, NOW)
+        self.assertEqual(caught.exception.code, "not_serializable")
+
+        deep = "verifier-1"
+        for _index in range(1_100):
+            deep = [deep]
+        deep_value = copy.deepcopy(self.value)
+        deep_value["actor"]["verifierId"] = deep
+        with self.assertRaises(ContractError) as caught:
+            validate_attribution(deep_value, NOW)
+        self.assertEqual(caught.exception.code, "too_deep")
+
+        wide_value = copy.deepcopy(self.value)
+        wide_value["actor"]["verifierId"] = ["x"] * (MAX_SIGNED_JSON_MEMBERS + 1)
+        with self.assertRaises(ContractError) as caught:
+            validate_attribution(wide_value, NOW)
+        self.assertEqual(caught.exception.code, "too_many_keys")
+
+        row = [0] * MAX_SIGNED_JSON_MEMBERS
+        nodes_value = copy.deepcopy(self.value)
+        nodes_value["actor"]["verifierId"] = [row] * 21
+        with self.assertRaises(ContractError) as caught:
+            validate_attribution(nodes_value, NOW)
+        self.assertEqual(caught.exception.code, "too_many_nodes")
+
+    def test_nested_unknown_field_is_rejected_before_its_value_is_walked(self):
+        changed = copy.deepcopy(self.value)
+        hostile = {}
+        hostile["self"] = hostile
+        changed["actor"]["unknown"] = hostile
+        with self.assertRaises(ContractError) as caught:
+            validate_attribution(changed, NOW)
+        self.assertEqual(caught.exception.code, "invalid_actor")
+
+
+class SharedTimestampDomain(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.value = json.loads(read("valid-v1.json"))
+        cls.cases = json.loads(read("timestamp-v1.json"))
+
+    def test_validity_codes_and_canonical_digests_match_typescript(self):
+        for case in self.cases:
+            candidate = copy.deepcopy(self.value)
+            candidate["issuedAt"] = case["issuedAt"]
+            candidate["expiresAt"] = case["expiresAt"]
+            with self.subTest(vector=case["name"]):
+                if case["valid"]:
+                    checked = validate_attribution(candidate, case["now"])
+                    self.assertEqual(attribution_digest(checked), case["digest"])
+                else:
+                    with self.assertRaises(ContractError) as caught:
+                        validate_attribution(candidate, case["now"])
+                    self.assertEqual(caught.exception.code, case["code"])
+
+                if case.get("code") in ("invalid_timestamp", "invalid_time_order", "lifetime_exceeded"):
+                    with self.assertRaises(ContractError) as caught:
+                        canonical_signing_bytes(candidate)
+                    self.assertEqual(caught.exception.code, case["code"])
 
 
 if __name__ == "__main__":

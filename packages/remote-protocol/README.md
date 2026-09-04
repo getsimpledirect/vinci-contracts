@@ -43,3 +43,20 @@ The TypeScript and Python implementations share the files under `vectors/`.
 Those vectors pin the canonical UTF-8 signing bytes, SHA-256 attribution digest,
 Ed25519 signature/public key, and compact reference. The Python suite is invoked
 from the TypeScript test so the normal repository gate runs both languages.
+
+Both language boundaries accept canonical timestamps only in ISO-8601 years
+`0001` through `9999`; year zero is rejected. They share an inclusive ten-minute
+maximum lifetime and exclusive expiry comparison.
+
+Strict signed JSON ingress is bounded identically in both implementations:
+
+- 1,000,000 UTF-8 bytes per input;
+- 32 nested levels;
+- 200,000 JSON values;
+- 10,000 members per object or array; and
+- 262,144 UTF-8 bytes per decoded string.
+
+Depth, width, node, string, cycle, and parser-recursion failures are contract
+refusals rather than uncaught runtime exceptions. Python direct-object validation
+also rejects foreign fields before walking their values and tracks active object
+identities so cycles cannot escape as `RecursionError`.

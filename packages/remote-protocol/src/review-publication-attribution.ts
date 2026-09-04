@@ -113,6 +113,22 @@ const OPAQUE_GITHUB_NODE_ID = /^[\x21-\x7e]{1,255}$/;
 const REVIEW_ID = /^grv_[A-Za-z0-9][A-Za-z0-9._:-]{0,123}$/;
 const ED25519_SPKI_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
 
+/** Python datetime and this wire contract share the ISO-8601 year 0001..9999 domain. */
+function isReviewPublicationTimestamp(value: unknown): value is string {
+  return isCanonicalTimestamp(value) && !(value as string).startsWith("0000-");
+}
+
+function assertSigningTimePair(attribution: ReviewPublicationAttribution): void {
+  if (!isReviewPublicationTimestamp(attribution.issuedAt)
+      || !isReviewPublicationTimestamp(attribution.expiresAt)) {
+    throw new Error("review-publication signing timestamps must be canonical years 0001 through 9999");
+  }
+  const lifetime = Date.parse(attribution.expiresAt) - Date.parse(attribution.issuedAt);
+  if (lifetime <= 0 || lifetime > MAX_REVIEW_PUBLICATION_ATTRIBUTION_LIFETIME_MS) {
+    throw new Error("review-publication signing timestamps must be ordered within the ten-minute lifetime");
+  }
+}
+
 function recordAt(
   value: unknown,
   path: string,
@@ -230,7 +246,7 @@ export function validateReviewPublicationAttribution(
   validateUnicode(record, "", issues);
   rejectUnknownFields(record, ATTRIBUTION_FIELDS, "", issues);
 
-  if (!isCanonicalTimestamp(now)) {
+  if (!isReviewPublicationTimestamp(now)) {
     issues.push(issue("/", "invalid_validation_time", "expiry validation requires a canonical UTC timestamp"));
   }
   if (record.schemaVersion !== REVIEW_PUBLICATION_ATTRIBUTION_SCHEMA_META.version) {
@@ -285,13 +301,13 @@ export function validateReviewPublicationAttribution(
   for (const field of ["idempotencyKey", "issuerKeyId"] as const) {
     validateId(record[field], `/${field}`, issues);
   }
-  if (!isCanonicalTimestamp(record.issuedAt)) {
-    issues.push(issue("/issuedAt", "invalid_timestamp", "issuedAt must be a canonical UTC timestamp"));
+  if (!isReviewPublicationTimestamp(record.issuedAt)) {
+    issues.push(issue("/issuedAt", "invalid_timestamp", "issuedAt must be a canonical UTC timestamp in years 0001 through 9999"));
   }
-  if (!isCanonicalTimestamp(record.expiresAt)) {
-    issues.push(issue("/expiresAt", "invalid_timestamp", "expiresAt must be a canonical UTC timestamp"));
+  if (!isReviewPublicationTimestamp(record.expiresAt)) {
+    issues.push(issue("/expiresAt", "invalid_timestamp", "expiresAt must be a canonical UTC timestamp in years 0001 through 9999"));
   }
-  if (isCanonicalTimestamp(record.issuedAt) && isCanonicalTimestamp(record.expiresAt)) {
+  if (isReviewPublicationTimestamp(record.issuedAt) && isReviewPublicationTimestamp(record.expiresAt)) {
     const issuedMs = Date.parse(record.issuedAt);
     const expiresMs = Date.parse(record.expiresAt);
     if (expiresMs <= issuedMs) {
@@ -299,7 +315,7 @@ export function validateReviewPublicationAttribution(
     } else if (expiresMs - issuedMs > MAX_REVIEW_PUBLICATION_ATTRIBUTION_LIFETIME_MS) {
       issues.push(issue("/expiresAt", "lifetime_exceeded", "a review-publication attribution may live for at most 10 minutes"));
     }
-    if (isCanonicalTimestamp(now) && expiresMs <= Date.parse(now)) {
+    if (isReviewPublicationTimestamp(now) && expiresMs <= Date.parse(now)) {
       issues.push(issue("/expiresAt", "expired", "the review-publication attribution has expired"));
     }
   }
@@ -331,6 +347,7 @@ export function parseReviewPublicationAttributionJson(
 export function reviewPublicationAttributionSigningPayload(
   attribution: ReviewPublicationAttribution,
 ): Uint8Array {
+  assertSigningTimePair(attribution);
   return new TextEncoder().encode(canonicalize({
     schemaVersion: attribution.schemaVersion,
     purpose: attribution.purpose,
