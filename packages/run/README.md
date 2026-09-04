@@ -48,13 +48,16 @@ artifact's IDENTITY BOUND?
 
 - `installed_package` — an installed package artifact (what the control-plane
   server gets via install.sh). Attestable.
-- `pinned_checkout` — a clean tree at an exact commit. Attestable, and it must
-  carry `checkoutPin: { commitId, treeId }`: the 40-hex commit the tree is at,
-  and the 40-hex `git write-tree` observed there. A bare `clean: true` would be
-  the attestation problem one level down — anyone can set a boolean and nobody
-  can check it — whereas an auditor recomputes `git rev-parse <commitId>^{tree}`
-  and compares, so a dirty tree is falsifiable by a third party. A
-  `pinned_checkout` without that evidence is INVALID
+- `pinned_checkout` — a checkout the attester declares bound to an exact commit
+  and observed tree. Attestable, and it must carry
+  `checkoutPin: { commitId, treeId }`: the 40-hex commit and the 40-hex
+  `git write-tree` the attester says it observed. This is an out-of-band
+  deployment assertion that the contract records and shape-checks; the
+  contract cannot verify the checkout or prove it was clean. An auditor can
+  recompute the declared commit's tree and reconcile the pair with deployment
+  records, but a dishonest dirty attester can simply report the clean commit's
+  tree. The pair provides concrete identities for later reconciliation, not
+  independent proof. A `pinned_checkout` without that evidence is INVALID
   (`missing_checkout_pin`), not merely uncapable; a pin on any other entrypoint
   is `checkout_pin_not_applicable`.
 - `working_tree` — dirty, or at no recorded commit. NEVER attestable.

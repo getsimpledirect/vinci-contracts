@@ -109,9 +109,9 @@ const manifest = (): Record<string, unknown> => ({
 });
 
 // A well-formed pin: two git object ids, 40 lowercase hex each. `COMMIT_ID` is
-// what production already announces as `worker_build`; `TREE_ID` is what
-// `git write-tree` produced over the tree as observed, and an auditor holding
-// the repository recomputes `git rev-parse <COMMIT_ID>^{tree}` to check it.
+// what production already announces as `worker_build`; `TREE_ID` is what the
+// attester says `git write-tree` produced over the tree as observed. The
+// validator shape-checks this pair but cannot prove that observation.
 const COMMIT_ID = "0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d";
 const TREE_ID = "f9e8d7c6b5a4938271605f4e3d2c1b0a99887766";
 const pin = () => ({ commitId: COMMIT_ID, treeId: TREE_ID });
