@@ -189,7 +189,9 @@ import {
 import {
   validateSessionBinding, REMOTE_PROTOCOL_VERSION, SESSION_BINDING_SCHEMA_META,
   validateReviewPublicationAttribution, parseReviewPublicationAttributionJson,
+  reviewPublicationAttributionSigningPayload, reviewPublicationAttributionDigest,
   verifyReviewPublicationAttributionSignature, validateReviewPublicationReference,
+  type ReviewPublicationAttribution,
 } from "@getsimpledirect/vinci-remote-protocol";
 import { checkValidatedExecutionSpecWithinOrder } from "@getsimpledirect/vinci-work-orders/dist/within-order.js";
 
@@ -277,6 +279,35 @@ if (installedCyclic.ok) throw new Error("installed review validator accepted a c
 if (!verifyReviewPublicationAttributionSignature(checkedReview.value, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo")) {
   throw new Error("installed review attribution signature helper refused the golden signature");
 }
+const installedStateful = () => {
+  const value = { ...reviewAttribution } as Record<string, unknown>;
+  let reads = 0;
+  Object.defineProperty(value, "issuedAt", {
+    enumerable: true,
+    get: () => {
+      reads += 1;
+      return reads <= 2 ? "2026-09-04T12:00:00.000Z" : "0000-01-01T00:00:00.000Z";
+    },
+  });
+  return { value, reads: () => reads };
+};
+const installedPayloadInput = installedStateful();
+if (new TextDecoder().decode(reviewPublicationAttributionSigningPayload(
+  installedPayloadInput.value as unknown as ReviewPublicationAttribution,
+)).includes("0000-")) throw new Error("installed signing payload did not use one inert snapshot");
+if (installedPayloadInput.reads() !== 1) throw new Error("installed signing payload read caller data more than once");
+const installedDigestInput = installedStateful();
+if (reviewPublicationAttributionDigest(installedDigestInput.value as unknown as ReviewPublicationAttribution)
+    !== "6a81b96fa73260e5bed85a23c49c3671dddf4e7e15b8117560d4a9e4af1d1ae7") {
+  throw new Error("installed digest did not use one inert snapshot");
+}
+if (installedDigestInput.reads() !== 1) throw new Error("installed digest read caller data more than once");
+const installedVerifyInput = installedStateful();
+if (!verifyReviewPublicationAttributionSignature(
+  installedVerifyInput.value as unknown as ReviewPublicationAttribution,
+  "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+)) throw new Error("installed signature verification did not use one inert snapshot");
+if (installedVerifyInput.reads() !== 1) throw new Error("installed verification read caller data more than once");
 if (!validateReviewPublicationReference("grv_01JTEST@sha256:ddd88ffea6e4cfd88caa0ace345f31954d8d72c530f0fde9a4ed6638f7abc378").ok) {
   throw new Error("installed compact review reference parser refused the golden pointer");
 }

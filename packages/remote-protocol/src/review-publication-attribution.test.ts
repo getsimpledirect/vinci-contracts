@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer";
-import { verify } from "node:crypto";
+import { createPrivateKey, sign, verify } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { spawnSync } from "node:child_process";
@@ -352,6 +352,52 @@ describe("canonical bytes, digest, signature and compact reference", () => {
     expect(reviewPublicationAttributionSigningPayload(reordered))
       .toEqual(reviewPublicationAttributionSigningPayload(value));
     expect(reviewPublicationAttributionDigest(reordered)).toBe(reviewPublicationAttributionDigest(value));
+  });
+
+  it("snapshots stateful direct objects once across payload, digest and verification", () => {
+    const stateful = (signatureValue = read("signature.txt").trim()) => {
+      const value = fixture();
+      value.signature = { alg: "Ed25519", value: signatureValue };
+      let reads = 0;
+      Object.defineProperty(value, "issuedAt", {
+        enumerable: true,
+        get: () => {
+          reads += 1;
+          return reads <= 2 ? "2026-09-04T12:00:00.000Z" : "0000-01-01T00:00:00.000Z";
+        },
+      });
+      return {
+        value: value as unknown as ReviewPublicationAttribution,
+        reads: () => reads,
+      };
+    };
+
+    const payloadInput = stateful();
+    expect(Buffer.from(reviewPublicationAttributionSigningPayload(payloadInput.value)))
+      .toEqual(readFileSync(join(VECTORS, "canonical.txt")));
+    expect(payloadInput.reads()).toBe(1);
+
+    const digestInput = stateful();
+    expect(reviewPublicationAttributionDigest(digestInput.value)).toBe(read("digest.txt").trim());
+    expect(digestInput.reads()).toBe(1);
+
+    const invalidPayload = Buffer.from(read("canonical.txt").replace(
+      '"issuedAt":"2026-09-04T12:00:00.000Z"',
+      '"issuedAt":"0000-01-01T00:00:00.000Z"',
+    ));
+    expect(invalidPayload.toString("utf8")).toContain('"issuedAt":"0000-01-01T00:00:00.000Z"');
+    const seed = Buffer.from("9d61b19deffd5a60ba844af492ec2cc44449c5697b326919703bac031cae7f60", "hex");
+    const privateKey = createPrivateKey({
+      key: Buffer.concat([Buffer.from("302e020100300506032b657004220420", "hex"), seed]),
+      format: "der",
+      type: "pkcs8",
+    });
+    const verificationInput = stateful(sign(null, invalidPayload, privateKey).toString("base64url"));
+    expect(verifyReviewPublicationAttributionSignature(
+      verificationInput.value,
+      read("public-key.txt").trim(),
+    )).toBe(false);
+    expect(verificationInput.reads()).toBe(1);
   });
 
   it("makes every one-byte mutation of the signed bytes fail Ed25519 verification", async () => {

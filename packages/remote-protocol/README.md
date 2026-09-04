@@ -60,3 +60,9 @@ Depth, width, node, string, cycle, and parser-recursion failures are contract
 refusals rather than uncaught runtime exceptions. Python direct-object validation
 also rejects foreign fields before walking their values and tracks active object
 identities so cycles cannot escape as `RecursionError`.
+
+The TypeScript signing, digest, and verification helpers normalize a direct
+object exactly once before checking timestamps or constructing signed bytes.
+Verification reads both the signature and its payload from that same inert
+snapshot, so stateful accessors cannot make validation and verification observe
+different claims.

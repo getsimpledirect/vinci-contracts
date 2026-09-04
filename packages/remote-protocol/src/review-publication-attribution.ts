@@ -119,14 +119,42 @@ function isReviewPublicationTimestamp(value: unknown): value is string {
 }
 
 function assertSigningTimePair(attribution: ReviewPublicationAttribution): void {
-  if (!isReviewPublicationTimestamp(attribution.issuedAt)
-      || !isReviewPublicationTimestamp(attribution.expiresAt)) {
+  const { issuedAt, expiresAt } = attribution;
+  if (!isReviewPublicationTimestamp(issuedAt)
+      || !isReviewPublicationTimestamp(expiresAt)) {
     throw new Error("review-publication signing timestamps must be canonical years 0001 through 9999");
   }
-  const lifetime = Date.parse(attribution.expiresAt) - Date.parse(attribution.issuedAt);
+  const lifetime = Date.parse(expiresAt) - Date.parse(issuedAt);
   if (lifetime <= 0 || lifetime > MAX_REVIEW_PUBLICATION_ATTRIBUTION_LIFETIME_MS) {
     throw new Error("review-publication signing timestamps must be ordered within the ten-minute lifetime");
   }
+}
+
+function snapshotForSigning(attribution: ReviewPublicationAttribution): ReviewPublicationAttribution {
+  const plain = toPlainRecord(attribution);
+  if (!plain.ok) {
+    throw new Error("review-publication signing input must be a bounded inert data record");
+  }
+  return plain.value as unknown as ReviewPublicationAttribution;
+}
+
+function signingPayloadFromSnapshot(attribution: ReviewPublicationAttribution): Uint8Array {
+  assertSigningTimePair(attribution);
+  return new TextEncoder().encode(canonicalize({
+    schemaVersion: attribution.schemaVersion,
+    purpose: attribution.purpose,
+    audience: attribution.audience,
+    actor: attribution.actor,
+    binding: attribution.binding,
+    subject: attribution.subject,
+    verdict: attribution.verdict,
+    recordSetDigest: attribution.recordSetDigest,
+    idempotencyKey: attribution.idempotencyKey,
+    issuedAt: attribution.issuedAt,
+    expiresAt: attribution.expiresAt,
+    issuerKeyId: attribution.issuerKeyId,
+    signature: { alg: attribution.signature.alg },
+  }));
 }
 
 function recordAt(
@@ -347,22 +375,7 @@ export function parseReviewPublicationAttributionJson(
 export function reviewPublicationAttributionSigningPayload(
   attribution: ReviewPublicationAttribution,
 ): Uint8Array {
-  assertSigningTimePair(attribution);
-  return new TextEncoder().encode(canonicalize({
-    schemaVersion: attribution.schemaVersion,
-    purpose: attribution.purpose,
-    audience: attribution.audience,
-    actor: attribution.actor,
-    binding: attribution.binding,
-    subject: attribution.subject,
-    verdict: attribution.verdict,
-    recordSetDigest: attribution.recordSetDigest,
-    idempotencyKey: attribution.idempotencyKey,
-    issuedAt: attribution.issuedAt,
-    expiresAt: attribution.expiresAt,
-    issuerKeyId: attribution.issuerKeyId,
-    signature: { alg: attribution.signature.alg },
-  }));
+  return signingPayloadFromSnapshot(snapshotForSigning(attribution));
 }
 
 /** SHA-256 of the exact canonical signing bytes, excluding signature.value. */
@@ -386,8 +399,9 @@ export function verifyReviewPublicationAttributionSignature(
   publicKey: string,
 ): boolean {
   try {
+    const snapshot = snapshotForSigning(attribution);
     const rawKey = decodeCanonicalBase64Url(publicKey);
-    const signature = decodeCanonicalBase64Url(attribution.signature.value);
+    const signature = decodeCanonicalBase64Url(snapshot.signature.value);
     if (rawKey?.byteLength !== 32 || signature?.byteLength !== 64) return false;
     const key = createPublicKey({
       key: Buffer.concat([ED25519_SPKI_PREFIX, Buffer.from(rawKey)]),
@@ -396,7 +410,7 @@ export function verifyReviewPublicationAttributionSignature(
     });
     return verify(
       null,
-      reviewPublicationAttributionSigningPayload(attribution),
+      signingPayloadFromSnapshot(snapshot),
       key,
       Buffer.from(signature),
     );
