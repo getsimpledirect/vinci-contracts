@@ -186,7 +186,13 @@ import {
   matchEndpointToRole, selectForRole, violatesIndependence, roleById, endpointById,
   validateModelEndpointSpec,
 } from "@getsimpledirect/vinci-model-classes";
-import { validateSessionBinding, REMOTE_PROTOCOL_VERSION, SESSION_BINDING_SCHEMA_META } from "@getsimpledirect/vinci-remote-protocol";
+import {
+  validateSessionBinding, REMOTE_PROTOCOL_VERSION, SESSION_BINDING_SCHEMA_META,
+  validateReviewPublicationAttribution, parseReviewPublicationAttributionJson,
+  reviewPublicationAttributionSigningPayload, reviewPublicationAttributionDigest,
+  verifyReviewPublicationAttributionSignature, validateReviewPublicationReference,
+  type ReviewPublicationAttribution,
+} from "@getsimpledirect/vinci-remote-protocol";
 import { checkValidatedExecutionSpecWithinOrder } from "@getsimpledirect/vinci-work-orders/dist/within-order.js";
 
 const level: RiskLevel = RISK_LEVELS[0];
@@ -211,6 +217,100 @@ const skewed = validateSessionBinding({
   hostDeviceId: "dev-1", policyId: "pol-1", policyVersion: 1, retentionClass: "zdr_0d",
 });
 if (skewed.ok) throw new Error("protocol skew was accepted by an installed build");
+
+// The new review-publication surface must survive packing, including its
+// strict JSON entry point and cryptographic helper — source-path tests cannot
+// prove that any of these exports reached dist/index.js in the tarball.
+const reviewAttribution = {
+  schemaVersion: 1,
+  purpose: "guard_review.publish",
+  audience: "vinci-acceptance",
+  actor: { kind: "verifier", verifierId: "verifier-01JTEST", independent: true },
+  binding: { protocolVersion: 1, organizationId: "organization-1", workspaceId: "workspace-1", runId: "review-run-1", sessionId: "session-1" },
+  subject: {
+    provider: "github", repositoryNodeId: "R_kgDOExample", pullRequestNumber: 10,
+    headSha: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    baseSha: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    headTreeSha: "cccccccccccccccccccccccccccccccccccccccc",
+  },
+  verdict: "GO",
+  recordSetDigest: "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  idempotencyKey: "review-publication-01JTEST",
+  issuedAt: "2026-09-04T12:00:00.000Z",
+  expiresAt: "2026-09-04T12:10:00.000Z",
+  issuerKeyId: "vgc-platform-key-1",
+  signature: { alg: "Ed25519", value: "MvkxKoVgn7zs8g6j4_PjXfFLMznHv2VsJuUvC_m3wCndIgIFTq5Olr9JdnEVr7jfynjCArps98WH2PRQFvMcDw" },
+} as const;
+const checkedReview = validateReviewPublicationAttribution(reviewAttribution, "2026-09-04T12:05:00.000Z");
+if (!checkedReview.ok) throw new Error("installed review attribution validator refused the golden value");
+if (!parseReviewPublicationAttributionJson(JSON.stringify(reviewAttribution), "2026-09-04T12:05:00.000Z").ok) {
+  throw new Error("installed strict review attribution JSON parser refused the golden value");
+}
+const installedDeep = parseReviewPublicationAttributionJson(
+  "[".repeat(1_100) + "0" + "]".repeat(1_100),
+  "2026-09-04T12:05:00.000Z",
+);
+if (installedDeep.ok) {
+  throw new Error("installed strict review parser accepted excessive depth");
+}
+if (!("issues" in installedDeep) || !installedDeep.issues.some((entry) => entry.code === "too_deep")) {
+  throw new Error("installed strict review parser did not fail closed on excessive depth");
+}
+const installedYearZero = validateReviewPublicationAttribution({
+  ...reviewAttribution,
+  issuedAt: "0000-01-01T00:00:00.000Z",
+  expiresAt: "0000-01-01T00:10:00.000Z",
+}, "0000-01-01T00:05:00.000Z");
+if (installedYearZero.ok) {
+  throw new Error("installed review validator accepted a timestamp outside the shared year domain");
+}
+if (!("issues" in installedYearZero) || !installedYearZero.issues.some((entry) => entry.code === "invalid_timestamp")) {
+  throw new Error("installed review validator accepted a timestamp outside the shared year domain");
+}
+const installedCyclicActor: Record<string, unknown> = {
+  kind: "verifier", verifierId: null, independent: true,
+};
+installedCyclicActor.verifierId = installedCyclicActor;
+const installedCyclic = validateReviewPublicationAttribution({
+  ...reviewAttribution,
+  actor: installedCyclicActor,
+}, "2026-09-04T12:05:00.000Z");
+if (installedCyclic.ok) throw new Error("installed review validator accepted a cyclic direct object");
+if (!verifyReviewPublicationAttributionSignature(checkedReview.value, "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo")) {
+  throw new Error("installed review attribution signature helper refused the golden signature");
+}
+const installedStateful = () => {
+  const value = { ...reviewAttribution } as Record<string, unknown>;
+  let reads = 0;
+  Object.defineProperty(value, "issuedAt", {
+    enumerable: true,
+    get: () => {
+      reads += 1;
+      return reads <= 2 ? "2026-09-04T12:00:00.000Z" : "0000-01-01T00:00:00.000Z";
+    },
+  });
+  return { value, reads: () => reads };
+};
+const installedPayloadInput = installedStateful();
+if (new TextDecoder().decode(reviewPublicationAttributionSigningPayload(
+  installedPayloadInput.value as unknown as ReviewPublicationAttribution,
+)).includes("0000-")) throw new Error("installed signing payload did not use one inert snapshot");
+if (installedPayloadInput.reads() !== 1) throw new Error("installed signing payload read caller data more than once");
+const installedDigestInput = installedStateful();
+if (reviewPublicationAttributionDigest(installedDigestInput.value as unknown as ReviewPublicationAttribution)
+    !== "6a81b96fa73260e5bed85a23c49c3671dddf4e7e15b8117560d4a9e4af1d1ae7") {
+  throw new Error("installed digest did not use one inert snapshot");
+}
+if (installedDigestInput.reads() !== 1) throw new Error("installed digest read caller data more than once");
+const installedVerifyInput = installedStateful();
+if (!verifyReviewPublicationAttributionSignature(
+  installedVerifyInput.value as unknown as ReviewPublicationAttribution,
+  "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+)) throw new Error("installed signature verification did not use one inert snapshot");
+if (installedVerifyInput.reads() !== 1) throw new Error("installed verification read caller data more than once");
+if (!validateReviewPublicationReference("grv_01JTEST@sha256:ddd88ffea6e4cfd88caa0ace345f31954d8d72c530f0fde9a4ed6638f7abc378").ok) {
+  throw new Error("installed compact review reference parser refused the golden pointer");
+}
 
 // The comparison helper is package-private by convention, but this package has
 // no exports map and ships dist/, so a consumer can deep-import it. It must not
