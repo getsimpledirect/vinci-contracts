@@ -375,6 +375,59 @@ describe("closed sets and fail-closed scalars", () => {
     expect(validateRun({ ...run(), contextManifestDigest: DIGEST }).ok).toBe(true);
     expect(codesOf(validateRun({ ...run(), contextManifestDigest: "latest" }))).toEqual(["invalid_digest"]);
   });
+  it("run: work-order, attempt, agent, environment and budget bindings are required", () => {
+    const required: ReadonlyArray<[string, string]> = [
+      ["workOrderId", "invalid_id"],
+      ["workOrderDigest", "invalid_digest"],
+      ["attemptId", "invalid_id"],
+      ["agent", "invalid_type"],
+      ["environment", "invalid_type"],
+      ["budget", "invalid_type"],
+    ];
+    for (const [field, code] of required) {
+      const candidate = { ...run() };
+      delete candidate[field];
+      expect(codesOf(validateRun(candidate))).toContain(code);
+    }
+    expect(codesOf(validateRun({ ...run(), agent: { id: "agent-1", version: 0 } }))).toEqual(["invalid_version"]);
+    expect(codesOf(validateRun({ ...run(), environment: { id: "env-1", digest: "latest" } }))).toEqual([
+      "invalid_digest",
+    ]);
+  });
+  it("run: context, harness, service-principal and every budget limit remain validated and digest-bound", () => {
+    const bound = {
+      ...run(),
+      contextManifestDigest: DIGEST,
+      harnessAttestationDigest: OTHER_DIGEST,
+      servicePrincipalId: "principal-1",
+      budget: {
+        maxListCostMicrousd: 10,
+        maxCashCostMicrousd: 5,
+        maxRuntimeS: 3600,
+        maxToolCalls: 200,
+        maxHumanInterruptions: 2,
+      },
+    };
+    const validated = validateRun(bound);
+    expect(validated.ok).toBe(true);
+    if (!validated.ok) return;
+
+    expect(codesOf(validateRun({ ...bound, harnessAttestationDigest: "latest" }))).toEqual(["invalid_digest"]);
+    expect(codesOf(validateRun({ ...bound, servicePrincipalId: " " }))).toEqual(["invalid_id"]);
+
+    const identities = [
+      validated.value,
+      { ...bound, workOrderDigest: OTHER_DIGEST },
+      { ...bound, attemptId: "attempt-2" },
+      { ...bound, agent: { id: "agent-2", version: 1 } },
+      { ...bound, environment: { id: "env-2", digest: DIGEST } },
+      { ...bound, contextManifestDigest: OTHER_DIGEST },
+      { ...bound, harnessAttestationDigest: DIGEST },
+      { ...bound, servicePrincipalId: "principal-2" },
+      { ...bound, budget: { ...(bound.budget as Record<string, unknown>), maxToolCalls: 201 } },
+    ].map((candidate) => runDigest(candidate as VinciRun));
+    expect(new Set(identities).size).toBe(identities.length);
+  });
   it("harness attestation: expiresAt must be strictly after createdAt; issuedBy must be a consistent actor", () => {
     expect(codesOf(validateHarnessAttestation({ ...attestation(), expiresAt: AT }))).toEqual(["expiry_not_after_creation"]);
     expect(
@@ -532,6 +585,22 @@ describe("context manifest: control plane vs data plane", () => {
     expect(codesOf(validateContextManifest({ ...manifest(), excluded: [{ ref: "r", reason: "too_long" }] }))).toEqual([
       "unknown_exclusion_reason",
     ]);
+  });
+  it("malformed trust and exclusion records are refused rather than ignored", () => {
+    expect(
+      codesOf(validateContextManifest({
+        ...manifest(),
+        entries: [{ section: "mission", ref: "m", digest: DIGEST, trust: "probably" }],
+      })),
+    ).toEqual(["required_field"]);
+    expect(codesOf(validateContextManifest({ ...manifest(), excluded: null }))).toEqual(["invalid_type"]);
+    expect(codesOf(validateContextManifest({ ...manifest(), excluded: ["history://other-program"] }))).toEqual([
+      "invalid_type",
+    ]);
+    expect(codesOf(validateContextManifest({
+      ...manifest(),
+      excluded: [{ ref: "history://other-program", reason: "unrelated_program_history", trusted: true }],
+    }))).toEqual(["unknown_field"]);
   });
 });
 
