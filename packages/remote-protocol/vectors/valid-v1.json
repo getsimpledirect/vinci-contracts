@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "purpose": "guard_review.publish",
+  "audience": "vinci-acceptance",
+  "actor": {
+    "kind": "verifier",
+    "verifierId": "verifier-01JTEST",
+    "independent": true
+  },
+  "binding": {
+    "protocolVersion": 1,
+    "organizationId": "organization-1",
+    "workspaceId": "workspace-1",
+    "runId": "review-run-1",
+    "sessionId": "session-1"
+  },
+  "subject": {
+    "provider": "github",
+    "repositoryNodeId": "R_kgDOExample",
+    "pullRequestNumber": 10,
+    "headSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "baseSha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "headTreeSha": "cccccccccccccccccccccccccccccccccccccccc"
+  },
+  "verdict": "GO",
+  "recordSetDigest": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "idempotencyKey": "review-publication-01JTEST",
+  "issuedAt": "2026-09-04T12:00:00.000Z",
+  "expiresAt": "2026-09-04T12:10:00.000Z",
+  "issuerKeyId": "vgc-platform-key-1",
+  "signature": {
+    "alg": "Ed25519",
+    "value": "MvkxKoVgn7zs8g6j4_PjXfFLMznHv2VsJuUvC_m3wCndIgIFTq5Olr9JdnEVr7jfynjCArps98WH2PRQFvMcDw"
+  }
+}
