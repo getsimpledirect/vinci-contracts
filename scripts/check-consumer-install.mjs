@@ -194,6 +194,7 @@ import {
   type ReviewPublicationAttribution,
 } from "@getsimpledirect/vinci-remote-protocol";
 import { checkValidatedExecutionSpecWithinOrder } from "@getsimpledirect/vinci-work-orders/dist/within-order.js";
+import { validateAgent, validateContextManifest } from "@getsimpledirect/vinci-run";
 
 const level: RiskLevel = RISK_LEVELS[0];
 if (level !== "critical") throw new Error("RISK_LEVELS is not ordered most-severe-first");
@@ -207,6 +208,60 @@ const good = validateSessionBinding({
   hostDeviceId: "dev-1", policyId: "pol-1", policyVersion: 1, retentionClass: "zdr_0d",
 });
 if (!good.ok) throw new Error("a valid binding was refused: " + JSON.stringify(good));
+
+// These are authority-shape checks, so exercise the public entry points from
+// the packed package rather than accepting source-only coverage. A duplicate
+// capability must not make an autonomy ceiling depend on array order, and the
+// same context ref must not be simultaneously loaded and declared excluded.
+const installedAgent = {
+  schemaVersion: 1, agentId: "agent-installed", version: 1, modelClass: "repository-agent",
+  systemPolicyRef: "policy://system/v1", skills: [], requiredCapabilities: [],
+  allowedToolCategories: ["repository"], permissionPolicyRef: "policy://permissions/v1",
+  autonomy: [
+    { capabilityId: "repository_editing", level: 3 },
+    { capabilityId: "github_publish_pr", level: 0 },
+  ],
+};
+if (!validateAgent(installedAgent).ok) throw new Error("installed validateAgent refused its positive control");
+for (const autonomy of [
+  [{ capabilityId: "repository_editing", level: 3 }, { capabilityId: "repository_editing", level: 8 }],
+  [{ capabilityId: "repository_editing", level: 8 }, { capabilityId: "repository_editing", level: 3 }],
+]) {
+  if (validateAgent({ ...installedAgent, autonomy }).ok) {
+    throw new Error("installed validateAgent accepted a duplicate autonomy capability");
+  }
+}
+if (validateAgent({ ...installedAgent, autonomy: [null] }).ok) {
+  throw new Error("installed validateAgent accepted a malformed autonomy entry");
+}
+
+const installedManifestEntry = {
+  section: "files", ref: "file://installed-shared", digest: "ab".repeat(32), trust: "machine_observed",
+};
+const installedManifest = {
+  schemaVersion: 1, runId: "run-installed", entries: [installedManifestEntry], excluded: [],
+};
+if (!validateContextManifest(installedManifest).ok) {
+  throw new Error("installed validateContextManifest refused its positive control");
+}
+if (validateContextManifest({
+  ...installedManifest,
+  excluded: [{ ref: installedManifestEntry.ref, reason: "budget" }],
+}).ok) {
+  throw new Error("installed validateContextManifest accepted an included/excluded ref collision");
+}
+for (const excluded of [
+  [{ ref: "history://duplicate", reason: "budget" }, { ref: "history://duplicate", reason: "budget" }],
+  [{ ref: "history://duplicate", reason: "budget" }, { ref: "history://duplicate", reason: "superseded" }],
+  [{ ref: "history://duplicate", reason: "superseded" }, { ref: "history://duplicate", reason: "budget" }],
+]) {
+  if (validateContextManifest({ ...installedManifest, entries: [], excluded }).ok) {
+    throw new Error("installed validateContextManifest accepted a duplicate excluded ref");
+  }
+}
+if (validateContextManifest({ ...installedManifest, excluded: [{ ref: null, reason: "budget" }] }).ok) {
+  throw new Error("installed validateContextManifest accepted a malformed excluded ref");
+}
 
 // The guard must still refuse from outside the workspace. A validator that
 // passes everything looks identical to one that works, from the accept side.

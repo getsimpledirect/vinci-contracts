@@ -114,7 +114,12 @@ function validateRequiredCapability(
   }
 }
 
-function validateAutonomy(raw: unknown, path: string, issues: ValidationIssue[]): void {
+function validateAutonomy(
+  raw: unknown,
+  path: string,
+  issues: ValidationIssue[],
+  seen: Set<string>,
+): void {
   if (!isObjectRecord(raw)) {
     issues.push(issue(path, "invalid_type", "an autonomy entry is an object"));
     return;
@@ -122,6 +127,16 @@ function validateAutonomy(raw: unknown, path: string, issues: ValidationIssue[])
   rejectUnknownFields(raw, ["capabilityId", "level"], path, "an autonomy entry", issues);
   if (!isIdentifier(raw.capabilityId)) {
     issues.push(issue(`${path}/capabilityId`, "invalid_id", "a capabilityId is an identifier"));
+  } else if (seen.has(raw.capabilityId)) {
+    issues.push(
+      issue(
+        `${path}/capabilityId`,
+        "duplicate_autonomy_capability",
+        "an autonomy capabilityId is listed twice; its authority ceiling must be single-valued",
+      ),
+    );
+  } else {
+    seen.add(raw.capabilityId);
   }
   if (!isNonNegativeInt(raw.level) || (raw.level as number) > 8) {
     issues.push(issue(`${path}/level`, "invalid_autonomy_level", "an autonomy level is an integer from 0 to 8"));
@@ -200,7 +215,8 @@ export function validateAgent(input: unknown): ValidationResult<VinciAgent> {
   if (!Array.isArray(record.autonomy)) {
     issues.push(issue("/autonomy", "invalid_type", "autonomy is an array"));
   } else {
-    record.autonomy.forEach((raw, i) => validateAutonomy(raw, `/autonomy/${i}`, issues));
+    const seen = new Set<string>();
+    record.autonomy.forEach((raw, i) => validateAutonomy(raw, `/autonomy/${i}`, issues, seen));
   }
 
   if (issues.length > 0) return fail(issues);

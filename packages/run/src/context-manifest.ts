@@ -86,10 +86,10 @@ export function validateContextManifest(input: unknown): ValidationResult<Contex
     issues.push(issue("/runId", "invalid_id", "runId is an identifier"));
   }
 
+  const includedRefs = new Set<string>();
   if (!Array.isArray(record.entries)) {
     issues.push(issue("/entries", "invalid_type", "entries is an array"));
   } else {
-    const seenRefs = new Set<string>();
     record.entries.forEach((raw, i) => {
       const path = `/entries/${i}`;
       if (!isObjectRecord(raw)) {
@@ -102,10 +102,10 @@ export function validateContextManifest(input: unknown): ValidationResult<Contex
       }
       if (!isRefText(raw.ref)) {
         issues.push(issue(`${path}/ref`, "invalid_ref", "a ref is non-blank text of at most 512 characters"));
-      } else if (seenRefs.has(raw.ref)) {
+      } else if (includedRefs.has(raw.ref)) {
         issues.push(issue(`${path}/ref`, "duplicate_ref", "a ref is listed twice"));
       } else {
-        seenRefs.add(raw.ref);
+        includedRefs.add(raw.ref);
       }
       if (!isDigest(raw.digest)) {
         issues.push(issue(`${path}/digest`, "invalid_digest", "an entry digest is 64 lowercase hex characters"));
@@ -131,6 +131,7 @@ export function validateContextManifest(input: unknown): ValidationResult<Contex
   if (!Array.isArray(record.excluded)) {
     issues.push(issue("/excluded", "invalid_type", "excluded is an array"));
   } else {
+    const excludedRefs = new Set<string>();
     record.excluded.forEach((raw, i) => {
       const path = `/excluded/${i}`;
       if (!isObjectRecord(raw)) {
@@ -140,6 +141,18 @@ export function validateContextManifest(input: unknown): ValidationResult<Contex
       rejectUnknownFields(raw, ["ref", "reason"], path, "an excluded entry", issues);
       if (!isRefText(raw.ref)) {
         issues.push(issue(`${path}/ref`, "invalid_ref", "a ref is non-blank text of at most 512 characters"));
+      } else if (includedRefs.has(raw.ref)) {
+        issues.push(
+          issue(
+            `${path}/ref`,
+            "included_excluded_ref_collision",
+            "a ref cannot be both included and excluded",
+          ),
+        );
+      } else if (excludedRefs.has(raw.ref)) {
+        issues.push(issue(`${path}/ref`, "duplicate_excluded_ref", "an excluded ref is listed twice"));
+      } else {
+        excludedRefs.add(raw.ref);
       }
       if (!isEnumMember(raw.reason, EXCLUSION_REASONS)) {
         issues.push(issue(`${path}/reason`, "unknown_exclusion_reason", "reason must come from EXCLUSION_REASONS"));

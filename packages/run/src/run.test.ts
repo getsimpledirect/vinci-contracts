@@ -349,6 +349,24 @@ describe("closed sets and fail-closed scalars", () => {
     ]);
     expect(validateAgent({ ...agent(), autonomy: [{ capabilityId: "x", level: 8 }] }).ok).toBe(true);
   });
+  it("agent: each autonomy capability has exactly one authority ceiling", () => {
+    const first = { capabilityId: "repository_editing", level: 3 };
+    const second = { capabilityId: "github_publish_pr", level: 0 };
+    expect(validateAgent({ ...agent(), autonomy: [first, second] }).ok).toBe(true);
+
+    for (const autonomy of [
+      [first, { ...first }],
+      [first, { ...first, level: 8 }],
+      [{ ...first, level: 8 }, first],
+    ]) {
+      expect(codesOf(validateAgent({ ...agent(), autonomy }))).toEqual(["duplicate_autonomy_capability"]);
+    }
+
+    expect(codesOf(validateAgent({ ...agent(), autonomy: [null] }))).toEqual(["invalid_type"]);
+    expect(codesOf(validateAgent({ ...agent(), autonomy: [{ capabilityId: " ", level: 3 }] }))).toEqual([
+      "invalid_id",
+    ]);
+  });
   it("environment: secretPolicy.source must be platform_vault or none", () => {
     expect(codesOf(validateEnvironment({ ...environment(), secretPolicy: { source: "env_file", delivery: "run_scoped" } }))).toEqual([
       "unknown_secret_source",
@@ -601,6 +619,32 @@ describe("context manifest: control plane vs data plane", () => {
       ...manifest(),
       excluded: [{ ref: "history://other-program", reason: "unrelated_program_history", trusted: true }],
     }))).toEqual(["unknown_field"]);
+  });
+  it("an included ref cannot also be excluded, regardless of ordering", () => {
+    const entry = { section: "files", ref: "file://shared", digest: DIGEST, trust: "machine_observed" };
+    const excluded = { ref: "file://shared", reason: "budget" };
+    expect(validateContextManifest({ ...manifest(), entries: [entry], excluded: [] }).ok).toBe(true);
+
+    for (const entries of [[entry], [
+      { section: "dynamic", ref: "web://other", digest: OTHER_DIGEST, trust: "externally_sourced" },
+      entry,
+    ]]) {
+      expect(codesOf(validateContextManifest({ ...manifest(), entries, excluded: [excluded] }))).toEqual([
+        "included_excluded_ref_collision",
+      ]);
+    }
+  });
+  it("an excluded ref is unique even when duplicate reasons conflict or order changes", () => {
+    const unrelated = { ref: "history://duplicate", reason: "unrelated_program_history" };
+    const budget = { ref: "history://duplicate", reason: "budget" };
+    for (const excluded of [[unrelated, { ...unrelated }], [unrelated, budget], [budget, unrelated]]) {
+      expect(codesOf(validateContextManifest({ ...manifest(), entries: [], excluded }))).toEqual([
+        "duplicate_excluded_ref",
+      ]);
+    }
+    expect(codesOf(validateContextManifest({ ...manifest(), excluded: [{ ref: null, reason: "budget" }] }))).toEqual([
+      "invalid_ref",
+    ]);
   });
 });
 
