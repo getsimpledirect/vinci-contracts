@@ -373,8 +373,8 @@ Remote control of an agent is teleoperation, not autonomy. If a work order could
 
 ## Running the Gate
 
-The gate is a nine-part check suite. It runs in GitHub Actions on every pull
-request and every push to `main`.
+The gate is an eleven-part check suite. It runs in GitHub Actions on every
+pull request and every push to `main`.
 
 Running is not enforcing, and the difference is the whole point of this file
 existing: a workflow that runs on a push reports on a commit that has already
@@ -394,17 +394,19 @@ Run the gate locally with:
 npm run gate
 ```
 
-The nine checks, in order:
+The eleven checks, in order:
 
 1. **build** — TypeScript compiles without errors or unused variables
 2. **lint** — ESLint rules pass (style, naming, common mistakes)
 3. **tests** — All unit tests pass
-4. **dependency graph** — Layering is respected across four edge mechanisms: manifest dependencies, source imports, tsconfig project references, and tsconfig path aliases including `extends` chains. Also checks transitive reachability and cycles
-5. **SchemaMeta conformance** — Every record type exports schema metadata, with closed vocabularies and positive integer versions actually enforced rather than merely present
-6. **hostile-key conformance** — Every exported validator and authority guard is probed with inherited property names, accessors, proxies, sparse arrays and prototype tricks. Each guard carries a real allow **and** deny control, because a positive control that cannot fail is not a control
-7. **duplicate vocabularies** — No closed string vocabulary is declared twice, comparing const arrays, bare string unions, and inline object-property arrays of three or more members. Thirteen duplications have been found in this codebase; every one agreed when written and would have drifted later
-8. **lockstep versions** — All packages share one version and internal dependencies pin to it exactly, so a consumer cannot resolve a combination that was never tested together. Checks every dependency section including `optionalDependencies`, and refuses a manifest carrying a section it does not recognise — a typo like `dependancies` would otherwise be skipped by every check here while looking like a clean scan
-9. **no stray scripts** — Repository root holds exactly its allowed files
+4. **digest vectors (python)** — `packages/work-orders/vectors` is shared between a Node implementation (exercised by `tests`, via `vitest`) and a Python one; this step runs the Python side (`packages/work-orders/python`) against the same vector files so the two languages are checked to agree, not just checked separately
+5. **dependency graph** — Layering is respected across four edge mechanisms: manifest dependencies, source imports, tsconfig project references, and tsconfig path aliases including `extends` chains. Also checks transitive reachability and cycles
+6. **SchemaMeta conformance** — Every record type exports schema metadata, with closed vocabularies and positive integer versions actually enforced rather than merely present
+7. **hostile-key conformance** — Every exported validator and authority guard is probed with inherited property names, accessors, proxies, sparse arrays and prototype tricks. Each guard carries a real allow **and** deny control, because a positive control that cannot fail is not a control
+8. **rights-gap reason mapping** — Every unevaluable-rights code (e.g. `rights_undeclared`) maps to a specific field and a specific citing document (e.g. `trainingAllowed` / "OpenRouter terms of service"), so a caller is told exactly what's missing and where it would be declared, never just "rights unknown"
+9. **duplicate vocabularies** — No closed string vocabulary is declared twice, comparing const arrays, bare string unions, and inline object-property arrays of three or more members. Thirteen duplications have been found in this codebase; every one agreed when written and would have drifted later
+10. **lockstep versions** — All packages share one version and internal dependencies pin to it exactly, so a consumer cannot resolve a combination that was never tested together. Checks every dependency section including `optionalDependencies`, and refuses a manifest carrying a section it does not recognise — a typo like `dependancies` would otherwise be skipped by every check here while looking like a clean scan
+11. **no stray scripts** — Repository root holds exactly its allowed files
 
 Several checks report how much they examined and fail if that count is
 implausibly low. A scanner that finds nothing looks exactly like a codebase with
@@ -417,14 +419,14 @@ you it found less than it should have. The inventory in
 `scripts/expected-packages.json` is compared exactly, so adding or removing a
 package has to be done deliberately, in the same commit.
 
-A tenth check runs in CI but not in `npm run gate`, because it installs from the
+A twelfth check runs in CI but not in `npm run gate`, because it installs from the
 network and takes minutes:
 
 ```bash
 npm run check:pack
 ```
 
-It packs all ten packages, installs the tarballs into an empty directory outside
+It packs all twelve packages, installs the tarballs into an empty directory outside
 this repository, and both type-checks and runs a program that imports every one
 of them. Everything else here resolves package names to source through tsconfig
 path aliases and project references; a consumer gets `files`, `main` and `types`
@@ -433,3 +435,21 @@ it is installed. Removing `dist` from one package's `files` list, or pointing
 `types` at a file that was never emitted, both pass the gate and both fail this.
 
 If any check fails, the gate exits with code 1 and names the failure.
+
+### `battery/`: adversarial evidence, not a gate step
+
+`battery/` is not part of `npm run gate` or `check:pack` — nothing in this repository
+invokes it. It holds six manual probe scripts (`cls.mjs`, `cross.mjs`, `getter.mjs`,
+`once.mjs`, `proxy.mjs`, `throw.mjs`) committed as the evidence trail for a
+`model-classes` independence-guard fix (#35): "repaired battery finds no further
+escape." Each imports a *built* `model-classes/dist/index.js` and probes
+`violatesIndependence`/the endpoint guards directly with adversarial inputs — inherited
+properties, proxies, sparse arrays — the same hostile-key shapes the gate's own
+`hostile-key conformance` step checks, but run by hand against the installed artifact
+rather than the source.
+
+As committed, none of them run as-is: every file hardcodes the absolute path an
+earlier session imported `dist/index.js` from, on a machine this one isn't. Point the
+import at your own `packages/model-classes/dist/index.js` (`npm run build` first) before
+running one. Treat these as a historical verification record to read, not a suite to
+execute unmodified.
