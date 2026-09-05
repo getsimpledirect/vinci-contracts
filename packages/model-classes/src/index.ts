@@ -1,3 +1,4 @@
+export * from "./capability-abi.ts";
 export * from "./customer-endpoint.ts";
 export * from "./endpoint.ts";
 export * from "./fallback.ts";

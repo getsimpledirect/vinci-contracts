@@ -16,7 +16,7 @@ import type { PayloadFor } from "./payload.ts";
  * sentinel; that ambiguity is not reproduced here. Zero is not an event.
  */
 export type RunEventFor<T extends RunEventType> = {
-  readonly schemaVersion: 3;
+  readonly schemaVersion: 4;
   readonly eventId: string;
   readonly runId: RunId;
   /** Required on every event so durable history carries its own tenant binding. */

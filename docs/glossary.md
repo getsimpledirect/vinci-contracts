@@ -22,6 +22,10 @@ is listed so migrations can be mechanical.
 | Evidence | `EvidenceId` | `@getsimpledirect/vinci-evidence` | A record supporting *or contradicting* a completion claim. |
 | Receipt | `ReceiptId`, `TerminalState` | `@getsimpledirect/vinci-receipts` | The durable record of what a run did. |
 | Verdict | `Verdict` | `@getsimpledirect/vinci-contracts` | An assessment by an independent verifier. Not a run state. |
+| Attempt | `AttemptId` | `@getsimpledirect/vinci-run` | One bounded retry of a run's objective; a run may span several attempts (`run.attempt_started`). |
+| Steer | `SteerId` | `@getsimpledirect/vinci-run` | A directive issued into a running run; content referenced by digest, never inline (`steer.received`). |
+| Capability ABI | `HARNESS_CAPABILITY_ABI` | `@getsimpledirect/vinci-model-classes` | The versioned, machine-readable contract of what a harness capability means. |
+| Not-doing outcome | `RUN_OUTCOMES` | `@getsimpledirect/vinci-run-events` | A productive terminal where the run deliberately did nothing (`DO_NOT_START`, `DUPLICATE`, `NO_LONGER_VALUABLE`, `SUPERSEDED`, `CLOSE_WITH_NEGATIVE_RESULT`). |
 
 ## Distinctions that are load-bearing
 

@@ -102,10 +102,10 @@ consumer can create a cycle:
      +----------+----+-----+-----+-----+                        |
                      |           |                              |
                  receipts    run-events ----------------------- +
-                     |           |
-                     +-----+-----+
-                           |
-                    worker-protocol
+                     |           |        \
+                     +-----+-----+     work-orders
+                           |              |
+                    worker-protocol      run   (also model-classes)
 
                     remote-protocol
                            |       |
@@ -127,6 +127,11 @@ reference the verdict.
 
 `scripts/check-dependency-graph.mjs` enforces this in CI. A package that imports
 "upward" fails the build rather than being caught in review.
+
+`run` (the six run-contract objects) sits beside `worker-protocol`: it reads
+run-events for state projection, work-orders for the digest idiom it mirrors,
+and model-classes for the capability vocabulary its attestations feed into.
+Nothing at or above its layer is imported.
 
 `session-stream` sits above `remote-protocol`: its frames carry the remote
 protocol version and session identity, while also using the base run and

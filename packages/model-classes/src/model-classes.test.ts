@@ -5,6 +5,9 @@ import { describe, expect, it } from "vitest";
 import {
   CUSTOMER_ENDPOINT_SCHEMA_META,
   FALLBACK_RECORD_SCHEMA_META,
+  HARNESS_CAPABILITY_ABI,
+  HARNESS_CAPABILITIES,
+  ENDPOINT_CAPABILITIES,
   MODEL_ENDPOINT_SPEC_SCHEMA_META,
   MODEL_PROVENANCE_SCHEMA_META,
   MODEL_ROLE_SPEC_SCHEMA_META,
@@ -1818,5 +1821,55 @@ describe("role selection", () => {
     const rVal = (reviewer.weightsDigest as Record<string, unknown>).value;
     expect(pVal).not.toBe(rVal);
     expect(violatesIndependence(producer, reviewer)).toBe(false);
+  });
+});
+
+describe("the capability ABI", () => {
+  it("covers exactly the harness and endpoint vocabularies, and nothing else", () => {
+    const harnessAbiIds = HARNESS_CAPABILITY_ABI.filter((e) => e.domain === "harness").map((e) => e.id);
+    const endpointAbiIds = HARNESS_CAPABILITY_ABI.filter((e) => e.domain === "endpoint").map((e) => e.id);
+
+    // Two-way parity: every ABI harness id is in HARNESS_CAPABILITIES and vice
+    // versa, and the same for the endpoint vocabulary.
+    expect([...harnessAbiIds].sort()).toEqual([...HARNESS_CAPABILITIES].sort());
+    expect([...endpointAbiIds].sort()).toEqual([...ENDPOINT_CAPABILITIES].sort());
+
+    // Every entry is versioned, domain-classified, and carries a real meaning.
+    expect(new Set(HARNESS_CAPABILITY_ABI.map((e) => e.id)).size).toBe(HARNESS_CAPABILITY_ABI.length);
+    for (const entry of HARNESS_CAPABILITY_ABI) {
+      expect(entry.version).toBe(1);
+      expect(entry.meaning.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("extends HARNESS_CAPABILITIES additively to 29, keeping the original three first", () => {
+    expect(HARNESS_CAPABILITIES.slice(0, 3)).toEqual([
+      "repository_editing",
+      "long_horizon_recovery",
+      "evidence_citation",
+    ]);
+    expect(HARNESS_CAPABILITIES).toHaveLength(29);
+    expect(HARNESS_CAPABILITIES).toContain("durable_events");
+  });
+
+  it("withholds eligibility for an unattested durable_events requirement and grants it when attested", () => {
+    const now = "2026-08-30T12:00:00.000Z";
+    const role = {
+      ...validRole(),
+      roleId: "durable-runner",
+      requiredHarnessCapabilities: ["durable_events"],
+    };
+    const endpoint = validLocalEndpoint("vinci_pretrained");
+
+    // Negative: no attestation supplied, so the harness requirement cannot be
+    // confirmed and the honest verdict is unevaluable, not eligible.
+    const negative = matchEndpointToRole(role, endpoint, now);
+    expect(negative.verdict).toBe("unevaluable");
+    expect(negative.reasons.map(({ code }) => code)).toEqual(["harness_capabilities_unverified"]);
+
+    // Positive: with durable_events attested, the same pair is eligible.
+    const positive = matchEndpointToRole(role, endpoint, now, ["durable_events"]);
+    expect(positive.verdict).toBe("eligible");
+    expect(positive.reasons).toEqual([]);
   });
 });

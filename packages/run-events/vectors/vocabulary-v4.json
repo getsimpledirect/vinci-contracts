@@ -1,0 +1,716 @@
+{
+  "comment": "The run-event vocabulary emitted from packages/run-events/src/{event-types,payload}.ts. ONLY packages/run-events/vectors/generate.mjs writes this file; every other reader compares against it. Consumers in other languages vendor a copy and assert parity field by field.",
+  "vectorVersion": 1,
+  "schemaVersion": 4,
+  "types": {
+    "run.created": {
+      "policyId": {
+        "kind": "id",
+        "required": true
+      },
+      "policyVersion": {
+        "kind": "count",
+        "required": true
+      },
+      "workOrderDigest": {
+        "kind": "digest",
+        "required": false
+      },
+      "workspaceId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "run.started": {
+      "workerId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "run.progress": {
+      "completedSteps": {
+        "kind": "count",
+        "required": false
+      },
+      "phase": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "planning",
+          "working",
+          "verifying"
+        ]
+      }
+    },
+    "run.question": {
+      "questionId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "run.question_answered": {
+      "humanSeconds": {
+        "kind": "count",
+        "required": true
+      },
+      "questionId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "approval.requested": {
+      "actionClass": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "deployment",
+          "production_database_change",
+          "external_communication",
+          "financial_obligation",
+          "billing_modification",
+          "content_publication",
+          "customer_data_deletion",
+          "access_control_change",
+          "protected_branch_update",
+          "infrastructure_purchase",
+          "security_policy_change"
+        ]
+      },
+      "approvalId": {
+        "kind": "id",
+        "required": true
+      },
+      "riskLevel": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "critical",
+          "high",
+          "medium",
+          "low"
+        ]
+      }
+    },
+    "approval.granted": {
+      "approvalId": {
+        "kind": "id",
+        "required": true
+      },
+      "humanSeconds": {
+        "kind": "count",
+        "required": true
+      },
+      "narrowed": {
+        "kind": "flag",
+        "required": true
+      }
+    },
+    "approval.denied": {
+      "approvalId": {
+        "kind": "id",
+        "required": true
+      },
+      "humanSeconds": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "device.revoked": {
+      "credentialId": {
+        "kind": "id",
+        "required": true
+      },
+      "deviceId": {
+        "kind": "id",
+        "required": true
+      },
+      "revokedBy": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "self",
+          "dashboard",
+          "platform"
+        ]
+      }
+    },
+    "relay.unavailable": {
+      "sinceSeq": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "relay.restored": {
+      "gapFrames": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "host.unreachable": {
+      "lastHeartbeatAt": {
+        "kind": "at",
+        "required": true
+      }
+    },
+    "host.reachable": {},
+    "authority.acknowledged": {
+      "commandDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "commandId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "authority.rejected": {
+      "commandId": {
+        "kind": "id",
+        "required": true
+      },
+      "rejectionCode": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "option_not_offered",
+          "expired",
+          "already_settled",
+          "not_permitted",
+          "session_changed",
+          "credential_revoked",
+          "binding_mismatch"
+        ]
+      }
+    },
+    "capability.used": {
+      "capabilityId": {
+        "kind": "id",
+        "required": true
+      },
+      "resourceDigest": {
+        "kind": "digest",
+        "required": false
+      }
+    },
+    "artifact.created": {
+      "artifactDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "artifactId": {
+        "kind": "id",
+        "required": true
+      },
+      "byteCount": {
+        "kind": "count",
+        "required": false
+      }
+    },
+    "evidence.recorded": {
+      "evidenceId": {
+        "kind": "id",
+        "required": true
+      },
+      "provenance": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "worker_provided",
+          "system_observed",
+          "human_provided",
+          "independent_verifier"
+        ]
+      }
+    },
+    "worker.heartbeat": {
+      "activeMs": {
+        "kind": "count",
+        "required": true
+      },
+      "phase": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "planning",
+          "working",
+          "verifying",
+          "waiting"
+        ]
+      },
+      "safeToInterrupt": {
+        "kind": "flag",
+        "required": true
+      }
+    },
+    "worker.warning": {
+      "occurrences": {
+        "kind": "count",
+        "required": false
+      },
+      "reasonCode": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "retry_exhausted",
+          "provider_stalled",
+          "heartbeat_late",
+          "budget_nearly_exhausted",
+          "capability_denied",
+          "evidence_collection_failed"
+        ]
+      }
+    },
+    "run.paused": {
+      "requestedBy": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "run.resumed": {
+      "resumedFromSequence": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "run.cancelled": {
+      "acknowledged": {
+        "kind": "flag",
+        "required": true
+      },
+      "cleanupCompleted": {
+        "kind": "flag",
+        "required": true
+      },
+      "requestedBy": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "verification.started": {
+      "verificationJobId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "verdict.recorded": {
+      "snapshotDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "staled": {
+        "kind": "flag",
+        "required": true
+      },
+      "status": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "VERIFIED_PASS",
+          "CONDITIONAL",
+          "BLOCKED"
+        ]
+      },
+      "verificationJobId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "run.completed": {
+      "escalations": {
+        "kind": "count",
+        "required": true
+      },
+      "humanAttentionSeconds": {
+        "kind": "count",
+        "required": true
+      },
+      "humanDecisions": {
+        "kind": "count",
+        "required": true
+      },
+      "humanInterruptions": {
+        "kind": "count",
+        "required": true
+      },
+      "outcome": {
+        "kind": "enum",
+        "required": false,
+        "members": [
+          "SUCCEEDED",
+          "DO_NOT_START",
+          "DUPLICATE",
+          "NO_LONGER_VALUABLE",
+          "SUPERSEDED",
+          "CLOSE_WITH_NEGATIVE_RESULT"
+        ]
+      },
+      "receiptDigest": {
+        "kind": "digest",
+        "required": false
+      },
+      "terminalState": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "DONE",
+          "DONE_UNVERIFIED"
+        ]
+      },
+      "tierReached": {
+        "kind": "enum",
+        "required": false,
+        "members": [
+          "NONE",
+          "MERGED",
+          "DEPLOYED",
+          "OBSERVED"
+        ]
+      }
+    },
+    "run.failed": {
+      "reasonCode": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "worker_crashed",
+          "worker_unreachable",
+          "provider_error",
+          "budget_exhausted",
+          "runtime_exceeded",
+          "internal_error"
+        ]
+      }
+    },
+    "run.blocked": {
+      "reasonCode": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "awaiting_approval",
+          "policy_denied",
+          "policy_undetermined",
+          "credential_unavailable",
+          "external_dependency_unavailable",
+          "verification_unavailable"
+        ]
+      }
+    },
+    "run.stalled": {
+      "lastEventAt": {
+        "kind": "at",
+        "required": true
+      },
+      "stallWindowS": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "run.attempt_started": {
+      "attemptId": {
+        "kind": "id",
+        "required": true
+      },
+      "previousAttemptId": {
+        "kind": "id",
+        "required": false
+      },
+      "reason": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "worker_lost",
+          "stalled",
+          "manual"
+        ]
+      }
+    },
+    "agent.turn_started": {
+      "turnId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "agent.turn_finished": {
+      "costMicrousd": {
+        "kind": "count",
+        "required": true
+      },
+      "inputTokens": {
+        "kind": "count",
+        "required": true
+      },
+      "modelId": {
+        "kind": "id",
+        "required": true
+      },
+      "outputTokens": {
+        "kind": "count",
+        "required": true
+      },
+      "turnId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "agent.compaction_started": {
+      "reason": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "manual",
+          "threshold",
+          "overflow"
+        ]
+      },
+      "tokens": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "agent.compaction_finished": {
+      "tokens": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "agent.retry_started": {
+      "attempt": {
+        "kind": "count",
+        "required": true
+      },
+      "maxAttempts": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "agent.retry_finished": {
+      "attempt": {
+        "kind": "count",
+        "required": true
+      },
+      "success": {
+        "kind": "flag",
+        "required": true
+      }
+    },
+    "tool.requested": {
+      "toolCallId": {
+        "kind": "id",
+        "required": true
+      },
+      "toolId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "tool.started": {
+      "toolCallId": {
+        "kind": "id",
+        "required": true
+      },
+      "toolId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "tool.completed": {
+      "durationMs": {
+        "kind": "count",
+        "required": true
+      },
+      "outputDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "toolCallId": {
+        "kind": "id",
+        "required": true
+      },
+      "toolId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "tool.failed": {
+      "reason": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "error",
+          "refused",
+          "timeout"
+        ]
+      },
+      "toolCallId": {
+        "kind": "id",
+        "required": true
+      },
+      "toolId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "tool.confirmation_required": {
+      "approvalId": {
+        "kind": "id",
+        "required": true
+      },
+      "toolCallId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "governor.lease_acquired": {
+      "expiresAt": {
+        "kind": "at",
+        "required": true
+      },
+      "leaseId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "governor.lease_renewed": {
+      "expiresAt": {
+        "kind": "at",
+        "required": true
+      },
+      "leaseId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "governor.lease_lost": {
+      "leaseId": {
+        "kind": "id",
+        "required": true
+      },
+      "reason": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "expired",
+          "revoked",
+          "superseded"
+        ]
+      }
+    },
+    "artifact.persisted": {
+      "artifactId": {
+        "kind": "id",
+        "required": true
+      },
+      "contentDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "kind": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "code_patch",
+          "report",
+          "dataset",
+          "evidence",
+          "deployment_receipt"
+        ]
+      }
+    },
+    "artifact.verified": {
+      "artifactId": {
+        "kind": "id",
+        "required": true
+      },
+      "receiptId": {
+        "kind": "id",
+        "required": true
+      },
+      "verifierPrincipalId": {
+        "kind": "id",
+        "required": true
+      }
+    },
+    "approval.expired": {
+      "approvalId": {
+        "kind": "id",
+        "required": true
+      },
+      "defaultApplied": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "DENY"
+        ]
+      }
+    },
+    "context.loaded": {
+      "contextManifestDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "entryCount": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "context.invalidated": {
+      "contextManifestDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "reason": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "superseded",
+          "rights_restricted",
+          "stale"
+        ]
+      }
+    },
+    "capability.attested": {
+      "attestationDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "capabilityId": {
+        "kind": "id",
+        "required": true
+      },
+      "version": {
+        "kind": "count",
+        "required": true
+      }
+    },
+    "capability.refused": {
+      "capabilityId": {
+        "kind": "id",
+        "required": true
+      },
+      "reason": {
+        "kind": "enum",
+        "required": true,
+        "members": [
+          "not_attested",
+          "expired",
+          "environment_mismatch",
+          "runtime_mismatch"
+        ]
+      }
+    },
+    "steer.received": {
+      "instructionDigest": {
+        "kind": "digest",
+        "required": true
+      },
+      "issuedByPrincipalId": {
+        "kind": "id",
+        "required": true
+      },
+      "steerId": {
+        "kind": "id",
+        "required": true
+      }
+    }
+  }
+}

@@ -48,6 +48,42 @@ export const WORKER_WARNING_CODES = [
 ] as const;
 
 /**
+ * How a run.completed came to a close, carried as a closed set so a consumer
+ * can distinguish a productive terminal (work finished and its outcome is
+ * worth something) from the not-doing outcomes (the run was told not to start,
+ * turned out to be a duplicate, lost value, was superseded, or closed with a
+ * negative result). The not-doing outcomes are PRODUCTIVE terminals, not
+ * failures: nothing went wrong, the run simply had nothing worth doing — which
+ * is why they ride on run.completed and not run.failed (which keeps
+ * RUN_FAILURE_CODES).
+ */
+export const RUN_OUTCOMES = [
+  "SUCCEEDED",
+  "DO_NOT_START",
+  "DUPLICATE",
+  "NO_LONGER_VALUABLE",
+  "SUPERSEDED",
+  "CLOSE_WITH_NEGATIVE_RESULT",
+] as const;
+
+/**
+ * The highest tier a run's output reached by the time it completed.
+ * `NONE` means nothing was merged, deployed or observed.
+ */
+export const TERMINAL_TIERS = ["NONE", "MERGED", "DEPLOYED", "OBSERVED"] as const;
+
+/** Why a capability was refused at the boundary (capability.refused). */
+export const CAPABILITY_REFUSAL_REASONS = [
+  "not_attested",
+  "expired",
+  "environment_mismatch",
+  "runtime_mismatch",
+] as const;
+
+/** Why a new run attempt was started (run.attempt_started). */
+export const ATTEMPT_REASONS = ["worker_lost", "stalled", "manual"] as const;
+
+/**
  * What a payload field may hold. Never free text.
  *
  * These refer to content without being it: an identifier, a member of a closed
@@ -102,10 +138,49 @@ type FieldSpec = {
  * appeared to would be worse than saying so.
  */
 export const PAYLOAD_FIELDS = {
+  // `workOrderDigest` is OPTIONAL, and the optionality is the whole decision.
+  //
+  // It arrived as a reported gap from the Python Run registry in
+  // vinci-gpu-control, which binds every Run to the work order it executes and
+  // could not say so in a run.created at all. A run that executes a work order
+  // is a concept this contract already has (@getsimpledirect/vinci-work-orders
+  // defines the digest), so the field belongs here rather than living forever
+  // as a consumer's local exception — an exception that has to be re-argued
+  // every time either side changes.
+  //
+  // WHY OPTIONAL, corrected. An earlier version of this comment said required
+  // "asserts that a run MUST execute a work order, which is not true of this
+  // contract's world (an interactive session run has no order)". That
+  // counterexample is not representable in this contract and the reasoning is
+  // withdrawn.
+  //
+  // `VinciRun` — the durable declaration of what a run IS — declares
+  // `workOrderId` and `workOrderDigest` REQUIRED and non-nullable, while
+  // `sessionId` is the field that may be null. Measured against `validateRun`:
+  // the two work-order fields are refused null, empty and omitted
+  // (`/workOrderId:invalid_id`, `/workOrderDigest:invalid_digest`), and a run
+  // WITH a session and an order validates. So an interactive session run is
+  // representable here only WITH an order, and no schema in this package can
+  // represent a run without one. Every run in this contract's world binds a
+  // work order; that is what makes it the governed unit.
+  //
+  // The field is optional because of EMISSION, not because of the world. A
+  // producer may not hold the digest at the moment it announces the run — it
+  // may have the order id and not yet its canonical digest, or announce before
+  // binding completes. An absent optional field is silence about the digest,
+  // not an assertion that there is no order; the durable `VinciRun` still
+  // carries one. Required would additionally break every existing producer at
+  // once, for a fact the durable record already holds.
+  //
+  // A producer that always has the digest is free to be stricter than the
+  // contract; the contract cannot be stricter than its producers. The
+  // divergence between this OPTIONAL and `VinciRun`'s REQUIRED is deliberate
+  // and is recorded as C18 in docs/conflict-register.md.
   "run.created": {
     workspaceId: { kind: "id", required: true },
     policyId: { kind: "id", required: true },
     policyVersion: { kind: "count", required: true },
+    workOrderDigest: { kind: "digest", required: false },
   },
   "run.started": { workerId: { kind: "id", required: true } },
   // RESOLVED 2026-08-24: this phase list has three members and worker.heartbeat's has
@@ -242,9 +317,122 @@ export const PAYLOAD_FIELDS = {
     humanDecisions: { kind: "count", required: true },
     humanInterruptions: { kind: "count", required: true },
     escalations: { kind: "count", required: true },
+    // v4 additions: two OPTIONAL fields. The not-doing outcomes are productive
+    // terminals and belong on run.completed, not run.failed (which keeps
+    // RUN_FAILURE_CODES). Both are optional so a v3-shaped run.completed event
+    // remains valid at v4; a new type/field is still a version bump under the
+    // frozen policy, but the version is bumped by the 24 new event types, not
+    // by forcing every completed event to name an outcome.
+    outcome: { kind: "enum", required: false, members: RUN_OUTCOMES },
+    tierReached: { kind: "enum", required: false, members: TERMINAL_TIERS },
   },
   "run.failed": { reasonCode: { kind: "enum", required: true, members: RUN_FAILURE_CODES } },
   "run.blocked": { reasonCode: { kind: "enum", required: true, members: RUN_BLOCKED_CODES } },
+  "run.stalled": {
+    lastEventAt: { kind: "at", required: true },
+    stallWindowS: { kind: "count", required: true },
+  },
+  "run.attempt_started": {
+    attemptId: { kind: "id", required: true },
+    previousAttemptId: { kind: "id", required: false },
+    reason: { kind: "enum", required: true, members: ATTEMPT_REASONS },
+  },
+  "agent.turn_started": { turnId: { kind: "id", required: true } },
+  "agent.turn_finished": {
+    turnId: { kind: "id", required: true },
+    inputTokens: { kind: "count", required: true },
+    outputTokens: { kind: "count", required: true },
+    costMicrousd: { kind: "count", required: true },
+    modelId: { kind: "id", required: true },
+  },
+  "agent.compaction_started": {
+    reason: { kind: "enum", required: true, members: ["manual", "threshold", "overflow"] },
+    tokens: { kind: "count", required: true },
+  },
+  "agent.compaction_finished": { tokens: { kind: "count", required: true } },
+  "agent.retry_started": {
+    attempt: { kind: "count", required: true },
+    maxAttempts: { kind: "count", required: true },
+  },
+  "agent.retry_finished": {
+    attempt: { kind: "count", required: true },
+    success: { kind: "flag", required: true },
+  },
+  "tool.requested": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+  },
+  "tool.started": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+  },
+  "tool.completed": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+    durationMs: { kind: "count", required: true },
+    outputDigest: { kind: "digest", required: true },
+  },
+  "tool.failed": {
+    toolCallId: { kind: "id", required: true },
+    toolId: { kind: "id", required: true },
+    reason: { kind: "enum", required: true, members: ["error", "refused", "timeout"] },
+  },
+  "tool.confirmation_required": {
+    toolCallId: { kind: "id", required: true },
+    approvalId: { kind: "id", required: true },
+  },
+  "governor.lease_acquired": {
+    leaseId: { kind: "id", required: true },
+    expiresAt: { kind: "at", required: true },
+  },
+  "governor.lease_renewed": {
+    leaseId: { kind: "id", required: true },
+    expiresAt: { kind: "at", required: true },
+  },
+  "governor.lease_lost": {
+    leaseId: { kind: "id", required: true },
+    reason: { kind: "enum", required: true, members: ["expired", "revoked", "superseded"] },
+  },
+  "artifact.persisted": {
+    artifactId: { kind: "id", required: true },
+    contentDigest: { kind: "digest", required: true },
+    kind: {
+      kind: "enum",
+      required: true,
+      members: ["code_patch", "report", "dataset", "evidence", "deployment_receipt"],
+    },
+  },
+  "artifact.verified": {
+    artifactId: { kind: "id", required: true },
+    verifierPrincipalId: { kind: "id", required: true },
+    receiptId: { kind: "id", required: true },
+  },
+  "approval.expired": {
+    approvalId: { kind: "id", required: true },
+    defaultApplied: { kind: "enum", required: true, members: ["DENY"] },
+  },
+  "context.loaded": {
+    contextManifestDigest: { kind: "digest", required: true },
+    entryCount: { kind: "count", required: true },
+  },
+  "context.invalidated": {
+    contextManifestDigest: { kind: "digest", required: true },
+    reason: { kind: "enum", required: true, members: ["superseded", "rights_restricted", "stale"] },
+  },
+  "capability.attested": {
+    attestationDigest: { kind: "digest", required: true },
+    capabilityId: { kind: "id", required: true },
+    version: { kind: "count", required: true },
+  },
+  "capability.refused": {
+    capabilityId: { kind: "id", required: true },
+    reason: { kind: "enum", required: true, members: CAPABILITY_REFUSAL_REASONS },
+  },
+  "steer.received": {
+    steerId: { kind: "id", required: true },
+    instructionDigest: { kind: "digest", required: true },
+    issuedByPrincipalId: { kind: "id", required: true },
+  },
 } satisfies Record<RunEventType, Record<string, FieldSpec>>;
 
 /** The value type a declared field kind produces. */

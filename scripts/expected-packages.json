@@ -9,6 +9,7 @@
     "policy",
     "receipts",
     "remote-protocol",
+    "run",
     "run-events",
     "session-stream",
     "worker-capabilities",

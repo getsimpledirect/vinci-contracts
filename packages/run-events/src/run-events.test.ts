@@ -7,6 +7,7 @@ import {
   PAYLOAD_FIELDS,
   RUN_EVENT_SCHEMA_META,
   RUN_EVENT_TYPES,
+  RUN_OUTCOMES,
   canonicalize,
   eventDigest,
   payloadSpecIsComplete,
@@ -21,7 +22,7 @@ const AT = "2026-08-23T00:00:00.000Z";
 const actor = { kind: "worker", workerId: "w-1" } as const;
 
 const event = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
-  schemaVersion: 3,
+  schemaVersion: 4,
   eventId: "evt-1",
   runId: "run-1",
   organizationId: null,
@@ -473,7 +474,7 @@ describe("canonicalization and identity", () => {
       organizationId: null,
       workspaceId: "workspace-1",
       eventId: "evt-1",
-      schemaVersion: 3,
+      schemaVersion: 4,
     });
     expect(reordered.ok).toBe(true);
     if (reordered.ok) expect(eventDigest(one)).toBe(eventDigest(reordered.value));
@@ -616,7 +617,7 @@ describe("the boundary refuses hostile raw input", () => {
 
   it("answers all six schema questions", () => {
     expect(() => assertSchemaMetaComplete(RUN_EVENT_SCHEMA_META)).not.toThrow();
-    expect(RUN_EVENT_SCHEMA_META.version).toBe(3);
+    expect(RUN_EVENT_SCHEMA_META.version).toBe(4);
     expect(RUN_EVENT_SCHEMA_META.unknownFields).toBe("reject");
   });
 });
@@ -628,7 +629,7 @@ describe("the payload type is wired to the event, not merely derived beside it",
     // structural guarantee that holds only at runtime is a runtime check with a
     // comment attached.
     const good: RunEventFor<"run.question"> = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       eventId: "evt-1",
       runId: "run-1" as RunEvent["runId"],
       organizationId: null,
@@ -656,7 +657,7 @@ describe("the payload type is wired to the event, not merely derived beside it",
 
   it("rejects a payload belonging to a different event type", () => {
     const mismatched = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       eventId: "evt-1",
       runId: "run-1",
       organizationId: null,
@@ -675,7 +676,7 @@ describe("the payload type is wired to the event, not merely derived beside it",
 
   it("closes an event type whose payload has no fields", () => {
     const reachable: RunEventFor<"host.reachable"> = {
-      schemaVersion: 3,
+      schemaVersion: 4,
       eventId: "evt-1",
       runId: "run-1" as RunEvent["runId"],
       organizationId: null,
@@ -748,7 +749,7 @@ describe("what identifier shape-checking actually enforces", () => {
   // prose and not token-shaped content. These tests assert the property that
   // holds, so nobody reads the suite as proving the stronger one.
   const question = (value: string) => ({
-    schemaVersion: 3,
+    schemaVersion: 4,
     eventId: "evt-1",
     runId: "run-1",
     organizationId: null,
@@ -793,5 +794,253 @@ describe("what identifier shape-checking actually enforces", () => {
       payload: { questionId: { kind: "id", value: "q-1" }, prompt: { kind: "id", value: "anything" } },
     };
     expect(validateRunEvent(withPrompt).ok).toBe(false);
+  });
+});
+
+describe("v4 adds 24 event types to the governed run vocabulary", () => {
+  const DIGEST = "b".repeat(64);
+  const NEW_TYPES: ReadonlyArray<{ readonly type: string; readonly payload: Record<string, unknown> }> = [
+    { type: "run.stalled", payload: { lastEventAt: { kind: "at", value: AT }, stallWindowS: { kind: "count", value: 90 } } },
+    { type: "run.attempt_started", payload: { attemptId: { kind: "id", value: "attempt-2" }, previousAttemptId: { kind: "id", value: "attempt-1" }, reason: { kind: "enum", value: "stalled" } } },
+    { type: "agent.turn_started", payload: { turnId: { kind: "id", value: "turn-1" } } },
+    {
+      type: "agent.turn_finished",
+      payload: {
+        turnId: { kind: "id", value: "turn-1" },
+        inputTokens: { kind: "count", value: 1200 },
+        outputTokens: { kind: "count", value: 400 },
+        costMicrousd: { kind: "count", value: 2500 },
+        modelId: { kind: "id", value: "model-1" },
+      },
+    },
+    { type: "agent.compaction_started", payload: { reason: { kind: "enum", value: "threshold" }, tokens: { kind: "count", value: 200000 } } },
+    { type: "agent.compaction_finished", payload: { tokens: { kind: "count", value: 180000 } } },
+    { type: "agent.retry_started", payload: { attempt: { kind: "count", value: 2 }, maxAttempts: { kind: "count", value: 3 } } },
+    { type: "agent.retry_finished", payload: { attempt: { kind: "count", value: 2 }, success: { kind: "flag", value: true } } },
+    { type: "tool.requested", payload: { toolCallId: { kind: "id", value: "tc-1" }, toolId: { kind: "id", value: "edit" } } },
+    { type: "tool.started", payload: { toolCallId: { kind: "id", value: "tc-1" }, toolId: { kind: "id", value: "edit" } } },
+    { type: "tool.completed", payload: { toolCallId: { kind: "id", value: "tc-1" }, toolId: { kind: "id", value: "edit" }, durationMs: { kind: "count", value: 1500 }, outputDigest: { kind: "digest", value: DIGEST } } },
+    { type: "tool.failed", payload: { toolCallId: { kind: "id", value: "tc-1" }, toolId: { kind: "id", value: "edit" }, reason: { kind: "enum", value: "timeout" } } },
+    { type: "tool.confirmation_required", payload: { toolCallId: { kind: "id", value: "tc-1" }, approvalId: { kind: "id", value: "approval-1" } } },
+    { type: "governor.lease_acquired", payload: { leaseId: { kind: "id", value: "lease-1" }, expiresAt: { kind: "at", value: AT } } },
+    { type: "governor.lease_renewed", payload: { leaseId: { kind: "id", value: "lease-1" }, expiresAt: { kind: "at", value: AT } } },
+    { type: "governor.lease_lost", payload: { leaseId: { kind: "id", value: "lease-1" }, reason: { kind: "enum", value: "expired" } } },
+    { type: "artifact.persisted", payload: { artifactId: { kind: "id", value: "artifact-1" }, contentDigest: { kind: "digest", value: DIGEST }, kind: { kind: "enum", value: "code_patch" } } },
+    { type: "artifact.verified", payload: { artifactId: { kind: "id", value: "artifact-1" }, verifierPrincipalId: { kind: "id", value: "verifier-1" }, receiptId: { kind: "id", value: "receipt-1" } } },
+    { type: "approval.expired", payload: { approvalId: { kind: "id", value: "approval-1" }, defaultApplied: { kind: "enum", value: "DENY" } } },
+    { type: "context.loaded", payload: { contextManifestDigest: { kind: "digest", value: DIGEST }, entryCount: { kind: "count", value: 12 } } },
+    { type: "context.invalidated", payload: { contextManifestDigest: { kind: "digest", value: DIGEST }, reason: { kind: "enum", value: "superseded" } } },
+    { type: "capability.attested", payload: { attestationDigest: { kind: "digest", value: DIGEST }, capabilityId: { kind: "id", value: "cap-1" }, version: { kind: "count", value: 1 } } },
+    { type: "capability.refused", payload: { capabilityId: { kind: "id", value: "cap-1" }, reason: { kind: "enum", value: "not_attested" } } },
+    { type: "steer.received", payload: { steerId: { kind: "id", value: "steer-1" }, instructionDigest: { kind: "digest", value: DIGEST }, issuedByPrincipalId: { kind: "id", value: "user-1" } } },
+  ];
+
+  it("grows RUN_EVENT_TYPES from 28 to 52, all with declared payloads", () => {
+    // 28 v3 types + 24 v4 types. A frozen schema changes only by version bump,
+    // and the bump is what the frozen policy's own comment prescribes.
+    expect(RUN_EVENT_TYPES).toHaveLength(52);
+    expect(payloadSpecIsComplete()).toBe(true);
+    expect(Object.keys(PAYLOAD_FIELDS).sort()).toEqual([...RUN_EVENT_TYPES].sort());
+  });
+
+  it("adds exactly the 24 new type names", () => {
+    expect(NEW_TYPES).toHaveLength(24);
+    for (const t of NEW_TYPES) expect(RUN_EVENT_TYPES).toContain(t.type);
+  });
+
+  it.each(NEW_TYPES)("accepts a valid kinded payload on $type", ({ type, payload }) => {
+    expect(validateRunEvent(event({ type, payload })).ok).toBe(true);
+  });
+
+  it.each(NEW_TYPES)("rejects an unknown field on $type", ({ type, payload }) => {
+    const result = validateRunEvent(event({ type, payload: { ...payload, extra: { kind: "id", value: "x" } } }));
+    expect(result.ok).toBe(false);
+    expect(
+      result.ok === false &&
+        result.issues.some((i) => i.path === "/payload/extra" && i.code === "field_not_allowed"),
+    ).toBe(true);
+  });
+
+  it.each(NEW_TYPES)("rejects a bare-string field on $type", ({ type, payload }) => {
+    // Free text must not enter durable history: an undeclared key is not an
+    // allowlisted field, and a bare string is not a tagged value.
+    const result = validateRunEvent(event({ type, payload: { ...payload, message: "free text" } }));
+    expect(result.ok).toBe(false);
+    expect(JSON.stringify(result)).not.toContain("free text");
+  });
+
+  it.each(NEW_TYPES)("rejects a value of the wrong kind on $type", ({ type, payload }) => {
+    const first = Object.keys(payload)[0] as string;
+    const spec = PAYLOAD_FIELDS[type as keyof typeof PAYLOAD_FIELDS];
+    const fieldSpec = spec[first as keyof typeof spec] as { readonly kind: string };
+    const wrong =
+      fieldSpec.kind === "count" ? { kind: "id", value: "not-a-count" } : { kind: "count", value: 1 };
+    const result = validateRunEvent(event({ type, payload: { ...payload, [first]: wrong } }));
+    expect(result.ok).toBe(false);
+    expect(
+      result.ok === false && result.issues.some((i) => i.code === "wrong_value_kind"),
+    ).toBe(true);
+  });
+
+  it("rejects a v3 event with invalid_schema_version but accepts the same event at v4", () => {
+    const atV3 = validateRunEvent(event({ schemaVersion: 3 }));
+    expect(atV3.ok).toBe(false);
+    expect(
+      atV3.ok === false &&
+        atV3.issues.some((i) => i.path === "/schemaVersion" && i.code === "invalid_schema_version"),
+    ).toBe(true);
+    const atV4 = validateRunEvent(event({ schemaVersion: 4 }));
+    expect(atV4.ok).toBe(true);
+  });
+
+  it("answers the six schema questions for the v4 bump", () => {
+    expect(RUN_EVENT_SCHEMA_META.version).toBe(4);
+    expect(RUN_EVENT_SCHEMA_META.migration.trim().length).toBeGreaterThan(0);
+    expect(RUN_EVENT_SCHEMA_META.compatibility).toBe("frozen");
+    expect(RUN_EVENT_SCHEMA_META.unknownFields).toBe("reject");
+    expect(() => assertSchemaMetaComplete(RUN_EVENT_SCHEMA_META)).not.toThrow();
+  });
+
+  it("carries the not-doing outcomes on run.completed, not run.failed", () => {
+    // A v3-shaped completion (no outcome) remains valid at v4.
+    const v3Shaped = validateRunEvent(
+      event({
+        type: "run.completed",
+        payload: {
+          terminalState: { kind: "enum", value: "DONE" },
+          humanAttentionSeconds: { kind: "count", value: 0 },
+          humanDecisions: { kind: "count", value: 0 },
+          humanInterruptions: { kind: "count", value: 0 },
+          escalations: { kind: "count", value: 0 },
+        },
+      }),
+    );
+    expect(v3Shaped.ok).toBe(true);
+    for (const outcome of RUN_OUTCOMES) {
+      const result = validateRunEvent(
+        event({
+          type: "run.completed",
+          payload: {
+            terminalState: { kind: "enum", value: "DONE" },
+            humanAttentionSeconds: { kind: "count", value: 0 },
+            humanDecisions: { kind: "count", value: 0 },
+            humanInterruptions: { kind: "count", value: 0 },
+            escalations: { kind: "count", value: 0 },
+            outcome: { kind: "enum", value: outcome },
+          },
+        }),
+      );
+      expect(result.ok, outcome).toBe(true);
+    }
+    // An outcome is not a run.failed field; run.failed keeps RUN_FAILURE_CODES.
+    const refused = validateRunEvent(
+      event({
+        type: "run.failed",
+        payload: {
+          reasonCode: { kind: "enum", value: "internal_error" },
+          outcome: { kind: "enum", value: "SUCCEEDED" },
+        },
+      }),
+    );
+    expect(refused.ok).toBe(false);
+    expect(
+      refused.ok === false && refused.issues.some((i) => i.path === "/payload/outcome"),
+    ).toBe(true);
+  });
+});
+
+/**
+ * `run.created.workOrderDigest`: the field a consuming registry binds a run to
+ * its order BY DIGEST.
+ *
+ * It shipped with no accept test, no reject test and no vector. The only thing
+ * pinning it was the committed vocabulary vector — which the same commit
+ * regenerated, so the pin was written by the change it was supposed to
+ * constrain. Measured: deleting the field outright, and changing its kind from
+ * `digest` to `id`, BOTH passed 1564/1564 once the vector was regenerated, and
+ * regenerating is one command. The `kind: "digest"` rule was never executed for
+ * the one field whose entire purpose is being a digest.
+ *
+ * The trio below is the one `outcome` already has: valid without the field,
+ * valid with it, refused when the value is not a digest — and the refusals name
+ * the exact `{path, code}` so a broader failure cannot stand in for the
+ * intended one.
+ */
+describe("run.created carries an optional work-order digest, and the digest rule is enforced", () => {
+  const DIGEST = "4f3a06b7d5e48c3f1c3b9a8d7e6f5a4b32cd1e0f9a8b7c6d5e4f3a2b1c0d9e8f";
+  const base = {
+    workspaceId: { kind: "id", value: "workspace-1" },
+    policyId: { kind: "id", value: "policy-1" },
+    policyVersion: { kind: "count", value: 1 },
+  };
+  const created = (payload: Record<string, unknown>) =>
+    validateRunEvent(event({ type: "run.created", payload }));
+  const codesOf = (result: ReturnType<typeof validateRunEvent>): string[] =>
+    result.ok ? [] : result.issues.map((i) => `${i.path}:${i.code}`);
+
+  it("is ACCEPTED without the field: optional means a producer that holds no digest still emits a valid run.created", () => {
+    expect(codesOf(created(base))).toEqual([]);
+    expect(created(base).ok).toBe(true);
+  });
+
+  it("is ACCEPTED with a 64-hex digest — the reachability control for the refusals below", () => {
+    // This is also the control that kills a DELETION of the field: with
+    // workOrderDigest gone from the allowlist the same payload is refused
+    // /payload/workOrderDigest:field_not_allowed, not accepted.
+    const result = created({ ...base, workOrderDigest: { kind: "digest", value: DIGEST } });
+    expect(codesOf(result)).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("REFUSES a non-digest value with exactly /payload/workOrderDigest:invalid_digest", () => {
+    // Exactly, not merely "contains": if an earlier guard answered instead, the
+    // list carries its code too and this fails rather than passing on the wrong
+    // mechanism.
+    for (const notADigest of [
+      "wo-1",
+      DIGEST.toUpperCase(),
+      DIGEST.slice(0, 63),
+      `${DIGEST}0`,
+      "",
+      "g".repeat(64),
+    ]) {
+      const result = created({ ...base, workOrderDigest: { kind: "digest", value: notADigest } });
+      expect(codesOf(result), JSON.stringify(notADigest)).toEqual([
+        "/payload/workOrderDigest:invalid_digest",
+      ]);
+    }
+  });
+
+  it("REFUSES a non-string digest, and a missing/extra key on the tagged value", () => {
+    for (const [label, value] of [
+      ["null", null],
+      ["number", 1],
+      ["array", []],
+      ["nested object", { nested: true }],
+    ] as const) {
+      expect(
+        codesOf(created({ ...base, workOrderDigest: { kind: "digest", value } })),
+        label,
+      ).toEqual(["/payload/workOrderDigest:invalid_digest"]);
+    }
+    expect(codesOf(created({ ...base, workOrderDigest: { kind: "digest" } }))).toEqual([
+      "/payload/workOrderDigest:invalid_payload_value",
+    ]);
+    expect(codesOf(created({ ...base, workOrderDigest: DIGEST }))).toEqual([
+      "/payload/workOrderDigest:invalid_payload_value",
+    ]);
+  });
+
+  it("REFUSES an `id`-kinded value: the field is declared `digest`, and an order ID is exactly what a producer would otherwise send", () => {
+    // The mutation this kills is `kind: "digest"` -> `kind: "id"`. Under that
+    // mutant a work-order ID passes here and a real digest fails the case
+    // above, so the two together pin the kind from both sides.
+    expect(codesOf(created({ ...base, workOrderDigest: { kind: "id", value: "wo-1" } }))).toEqual([
+      "/payload/workOrderDigest:wrong_value_kind",
+    ]);
+  });
+
+  it("the field is OPTIONAL in the allowlist and typed `digest` there — read from PAYLOAD_FIELDS, not from a copy", () => {
+    expect(PAYLOAD_FIELDS["run.created"].workOrderDigest).toEqual({ kind: "digest", required: false });
   });
 });

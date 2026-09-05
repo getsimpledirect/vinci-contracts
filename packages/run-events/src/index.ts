@@ -4,3 +4,4 @@ export * from "./event.ts";
 export * from "./ordering.ts";
 export * from "./payload.ts";
 export * from "./schema.ts";
+export * from "./vocabulary-vector.ts";
