@@ -2,7 +2,7 @@ import { toPlainRecord, type ValidationIssue } from "@getsimpledirect/vinci-cont
 import { claimRecordDigest, validateClaimRecord, type ClaimRecord } from "./claim.ts";
 import { validateClaimAssessment, type ClaimAssessment } from "./claim-assessment.ts";
 import { validateDecisionProposal, type DecisionProposal } from "./decision-proposal.ts";
-import { issue } from "./lib/validate.ts";
+import { isObjectRecord, issue } from "./lib/validate.ts";
 import {
   researchReportDigest,
   validateResearchReport,
@@ -125,28 +125,59 @@ export type ReportBundleResolution =
  * its status SAYS.
  */
 export function evidenceIsMissing(bound: unknown): boolean {
-  // Defensive, because this is exported and therefore probed: the permissive
-  // answer is `false` ("there is evidence"), so anything it cannot read must
-  // answer `true`. A hostile shape must never talk a claim into the section a
-  // reader takes as established.
-  // Through the SAME inert-snapshot boundary every validator uses, because a
-  // Proxy whose getter throws reaches an exported function as ordinary data and
-  // a guard must refuse rather than throw.
-  const plain = toPlainRecord(bound);
-  if (!plain.ok) return true;
-  const candidate = plain.value as unknown as Partial<BoundClaim>;
-  const claim = candidate.claim;
-  if (claim === undefined || !Array.isArray(claim.sourceSpans)) return true;
-  const cited = new Set(claim.sourceSpans.map((span) => span.sourceId));
-  const assessment = candidate.assessment;
-  if (assessment !== undefined && "reviewedSpans" in assessment) {
-    for (const span of assessment.reviewedSpans) cited.add(span.sourceId);
+  // NOT through `toPlainRecord`, and the reason is worth stating: a legitimate
+  // `BoundClaim` carries `assessment: undefined` when no assessment is stored,
+  // and `toPlainRecord` REFUSES a value JSON cannot carry. Routing through it
+  // made every unbound claim read as "evidence missing" — correct by accident
+  // for the renderer, which never asks about those, and wrong as an answer.
+  //
+  // So: every field is read ONCE into a local, every read is shape-checked, and
+  // the whole body is wrapped against a throwing accessor. The first version
+  // stopped at the top level and threw on six inner shapes — `claim: null`,
+  // `sourceSpans: [null]`, `assessment: "str"`, `reviewedSpans: null` — out of
+  // a function whose own contract says a guard must refuse rather than throw.
+  // And a wrong-typed `unresolvedSourceIds` coerced to an empty set, which
+  // reads as "nothing is unresolved": a value guard failing OPEN on a wrong
+  // type, in the direction that puts a claim under "what the evidence
+  // establishes". Every shape this cannot read now answers `true`: missing.
+  try {
+    if (!isObjectRecord(bound)) return true;
+
+    const claim = bound.claim;
+    if (!isObjectRecord(claim) || !Array.isArray(claim.sourceSpans)) return true;
+    const cited = new Set<string>();
+    for (const span of claim.sourceSpans) {
+      if (!isObjectRecord(span) || typeof span.sourceId !== "string") return true;
+      cited.add(span.sourceId);
+    }
+
+    const assessment = bound.assessment;
+    if (assessment !== undefined && assessment !== null) {
+      if (!isObjectRecord(assessment)) return true;
+      if (Object.hasOwn(assessment, "reviewedSpans")) {
+        const reviewed = assessment.reviewedSpans;
+        if (!Array.isArray(reviewed)) return true;
+        for (const span of reviewed) {
+          if (!isObjectRecord(span) || typeof span.sourceId !== "string") return true;
+          cited.add(span.sourceId);
+        }
+      }
+    }
+
+    if (cited.size === 0) return true;
+
+    const declared = bound.unresolvedSourceIds;
+    if (!Array.isArray(declared)) return true;
+    const unresolved = new Set<string>();
+    for (const id of declared) {
+      if (typeof id !== "string") return true;
+      unresolved.add(id);
+    }
+    return [...cited].every((id) => unresolved.has(id));
+  } catch {
+    // A throwing accessor is data this cannot read, and unreadable is missing.
+    return true;
   }
-  if (cited.size === 0) return true;
-  const unresolved = new Set(
-    Array.isArray(candidate.unresolvedSourceIds) ? candidate.unresolvedSourceIds : [],
-  );
-  return [...cited].every((id) => unresolved.has(id));
 }
 
 /** The keys a bundle must carry. Omission is loud: absent is not the same as empty. */

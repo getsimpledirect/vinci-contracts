@@ -150,7 +150,18 @@ const ORACLE_BUNDLE = {
  * agree with a broken resolver.
  */
 let ORACLE_BOUND_CLAIM = () => undefined;
+/** The same claim with every cited span unresolved, i.e. evidence genuinely missing. */
+let ORACLE_MISSING_CLAIM = () => undefined;
 function bindOracleBoundClaim(mod) {
+  ORACLE_MISSING_CLAIM = () => {
+    const bound = ORACLE_BOUND_CLAIM();
+    if (bound === undefined) return undefined;
+    return {
+      ...bound,
+      assessment: undefined,
+      unresolvedSourceIds: bound.claim.sourceSpans.map((span) => span.sourceId),
+    };
+  };
   ORACLE_BOUND_CLAIM = () => {
     const resolved = mod.resolveReportBundle(ORACLE_BUNDLE);
     if (resolved.outcome !== "RESOLVED") return undefined;
@@ -1030,6 +1041,86 @@ const AUTHORITY_GUARDS = [
       );
     },
   },
+  // The INNER argument positions. The outer-position probe never reached them,
+  // and six inner shapes threw out of a function whose own contract says a
+  // guard must refuse rather than throw.
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ claim: hostile }) === false",
+    call: (fn, hostile) => fn({ claim: hostile, unresolvedSourceIds: [] }) === false,
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      return bound !== undefined && fn(bound) === false && fn({ ...bound, claim: undefined }) === true;
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ claim: { sourceSpans: hostile } }) === false",
+    call: (fn, hostile) =>
+      fn({ claim: { sourceSpans: hostile }, unresolvedSourceIds: [] }) === false,
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      if (bound === undefined) return false;
+      // No assessment in the control, so `cited` comes from the claim's spans
+      // alone -- otherwise a bound assessment's reviewed spans supply the
+      // evidence and an empty claim span list is correctly NOT missing.
+      return (
+        fn(bound) === false
+        && fn({ ...bound, assessment: undefined, claim: { ...bound.claim, sourceSpans: [] } })
+          === true
+      );
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ assessment: hostile }) manufactures evidence",
+    // The property in THIS position is not "a hostile assessment yields false"
+    // -- a claim whose own spans resolved still has evidence, whatever the
+    // assessment is, and answering false there is correct. What must not happen
+    // is a hostile assessment turning a claim with NO resolvable evidence into
+    // one that has some. So the base is a claim whose every cited span is
+    // unresolved, and the hostile value goes in beside it.
+    call: (fn, hostile) => {
+      const missing = ORACLE_MISSING_CLAIM();
+      return missing !== undefined && fn({ ...missing, assessment: hostile }) === false;
+    },
+    control: (fn) => {
+      const missing = ORACLE_MISSING_CLAIM();
+      const bound = ORACLE_BOUND_CLAIM();
+      if (missing === undefined || bound === undefined) return false;
+      return (
+        // The base really is missing, so the probes above have something to flip.
+        fn(missing) === true
+        // And a REAL assessment reviewing a delivered source does supply
+        // evidence, so this position can still answer false.
+        && fn({
+          ...missing,
+          assessment: { ...bound.assessment, reviewedSpans: bound.claim.sourceSpans },
+          unresolvedSourceIds: [],
+        }) === false
+      );
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ unresolvedSourceIds: hostile }) === false",
+    // The wrong-type case that failed OPEN: a non-array coerced to the empty
+    // set, which reads as "nothing is unresolved".
+    call: (fn, hostile) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      return bound !== undefined && fn({ ...bound, unresolvedSourceIds: hostile }) === false;
+    },
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      if (bound === undefined) return false;
+      const allUnresolved = bound.claim.sourceSpans.map((s) => s.sourceId);
+      return fn(bound) === false && fn({ ...bound, unresolvedSourceIds: allUnresolved }) === true;
+    },
+  },
   {
     pkg: "@getsimpledirect/vinci-oracle-records",
     export: "resolveReportBundle",
@@ -1097,6 +1188,10 @@ const REQUIRED_GUARDS = [
   "resolveOutcomeCredits(outcomes, hostile authorizedWork).outcome === CREDITED",
   "resolveReportBundle(bundle) binds a claim",
   "evidenceIsMissing(boundClaim) === false",
+  "evidenceIsMissing({ claim: hostile }) === false",
+  "evidenceIsMissing({ claim: { sourceSpans: hostile } }) === false",
+  "evidenceIsMissing({ assessment: hostile }) manufactures evidence",
+  "evidenceIsMissing({ unresolvedSourceIds: hostile }) === false",
   "isKeyUsableAt(entry with hostile status, now, role)",
   "isKeyUsableAt(entry with hostile role, now, role)",
   "isKeyUsableAt(entry, now, hostile role)",

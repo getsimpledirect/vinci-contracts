@@ -7,6 +7,7 @@ import {
   admitResearchRequest,
   claimRecordDigest,
   deliveredHandle,
+  evidenceIsMissing,
   mapProposalToJobShape,
   resolveCitations,
   resolveContextBinding,
@@ -53,7 +54,11 @@ import {
  *   (c) THE ENVELOPE SPLIT — host-attested half against model-authored half.
  *
  * Rules that have NO anchor are listed too, as LIMITS, with a test showing the
- * lie succeeds. A limit nobody wrote down is the thing a fourth review finds.
+ * lie succeeds. A limit nobody wrote down is the thing a fourth review finds —
+ * and the fifth limit below was added because OUT-04 had been defeated three
+ * times and each repair moved the anchor to a different string the record
+ * authors. A fourth anchor would have looked closed until someone probed the
+ * new dimension. An honest limit is worth more.
  */
 
 const SRC = dirname(fileURLToPath(import.meta.url));
@@ -95,6 +100,7 @@ const CROSS_RECORD_RULES = [
   { rule: "resolveReportBundle: claim scope -> report scope", anchor: "NONE (limit)" },
   { rule: "resolveReportBundle: proposal <-> report", anchor: "NONE (limit)" },
   { rule: "validateClaimAssessment: claimDigest assertion", anchor: "NONE (limit)" },
+  { rule: "resolveOutcomeCredits: one execution -> one credit", anchor: "NONE (limit)" },
 ] as const;
 
 /**
@@ -186,7 +192,7 @@ describe("the resolver scan is an instrument, and the instrument is checked", ()
     for (const row of CROSS_RECORD_RULES) {
       expect(row.anchor, row.rule).not.toBe("");
     }
-    expect(CROSS_RECORD_RULES.filter((r) => r.anchor === "NONE (limit)")).toHaveLength(4);
+    expect(CROSS_RECORD_RULES.filter((r) => r.anchor === "NONE (limit)")).toHaveLength(5);
   });
 });
 
@@ -195,85 +201,243 @@ describe("the resolver scan is an instrument, and the instrument is checked", ()
  *
  * The resolver scan cannot see a comparison inside a validator, and the table
  * is hand-maintained — so a whole cross-record ASSERTION can exist with no rule
- * and no row, which is what happened. `ClaimAssessment.reportDigest` was
- * documented as "the report this assessment was issued against", shape-checked,
- * never recomputed, and absent from the table and from the limits alike. A
- * third review found it one field over from the defect the second review found.
+ * and no row, which is what happened to `ClaimAssessment.reportDigest`.
  *
- * So the fields are enumerated mechanically and each must be accounted for.
- * Adding a `*Ref` or `*Digest` field to a record now fails this test until
- * somebody writes down how it is anchored — which is the moment to think about
- * it, rather than the moment a reviewer does.
+ * The FIRST version of this instrument was blind to the very type the defect it
+ * was built for lives on. It matched `export type X = {`, and `ClaimAssessment`
+ * is an exported UNION whose fields live in a non-exported `AssessmentCommon`,
+ * so claim-assessment.ts yielded 0 of its 4 fields while a `scanned > 20` floor
+ * read 29 and could not notice. A review added `readonly smuggledOutcomeRef` to
+ * `AssessmentCommon` and all 23 tests stayed green. It also scanned 4 of the 8
+ * record-bearing files — the same hand-maintained failure mode as the table.
+ *
+ * So: non-exported and `interface` blocks are matched, all nine source files
+ * carrying record types are scanned, and — the part that actually saves it —
+ * every type is declared with the number of reference fields it must yield. A
+ * total floor cannot see one file drop to zero, which is the lesson the Python
+ * counts already taught.
  */
-const CROSS_RECORD_FIELDS: Readonly<Record<string, string>> = {
-  // Recomputed against the referenced record's own bytes.
-  "ClaimAssessment.claimDigest": "(a) recomputed in resolveReportBundle",
-  "ClaimAssessment.reportDigest": "(a) recomputed in resolveReportBundle",
-  "ReportClaimEntry.claimDigest": "(a) recomputed in resolveReportBundle",
-  "ClaimRecord.contextManifestDigest": "(a) compared to the report's in resolveReportBundle",
-  "ResearchReport.contextManifestDigest": "the reference point for a claim's context",
-  "OutcomeRecord.proposalDigest": "binds the outcome to the exact proposal; identity, not a lookup",
-  // Resolved against a set the caller supplies.
-  "OutcomeRecord.authorizedWorkRef": "(b) resolved against `authorizedWork` in resolveOutcomeCredits",
-  "OutcomeRecord.executionEvidenceRefs": "(b) the second dedup dimension; required for an accepted credit",
-  "AuthorizedWork.workRef": "the anchor ITSELF: host state, not a record field",
-  "AuthorizedWork.runRef": "the anchor's scope; compared to the outcome's run",
-  "AuthorizedWork.workspaceRef": "the anchor's scope; compared to the outcome's workspace",
-  "OutcomeEvidence.workRef": "names the work the follow-through was observed on; not resolved here",
-  "OutcomeEvidence.comparisonRef": "external counterfactual; nothing in this package resolves it",
-  // Scoping identifiers: compared to the report's, which is a declared LIMIT.
-  "ClaimRecord.runRef": "scope check against the report (LIMIT: both are in the document)",
-  "ClaimRecord.workspaceRef": "scope check against the report (LIMIT: both are in the document)",
-  "ClaimRecord.requestRef": "provenance only; nothing resolves it",
-  "ReportClaimEntry.claimRef": "the entry's own key; deduped by identity",
-  "ReportClaimEntry.assessmentRef": "looked up in the supplied assessment set",
-  "ResearchReport.proposalRef": "mutual reference with the proposal (LIMIT: both forgeable together)",
-  "ResearchReport.requestRef": "provenance only; nothing resolves it",
-  "ResearchReport.runRef": "the reference point for a claim's run",
-  "ResearchReport.workspaceRef": "the reference point for a claim's workspace",
-  "ReportSourceEntry.citationRefs": "names citations resolveCitations answers for",
-  "ReportCost.ledgerRef": "external ledger; nothing in this package resolves it",
-  "OutcomeRecord.proposalRef": "names the proposal; the DIGEST is what binds",
-  "OutcomeRecord.reportRef": "provenance only; nothing resolves it",
-  "OutcomeRecord.runRef": "provenance only; nothing resolves it",
-  "OutcomeRecord.workspaceRef": "provenance only; nothing resolves it",
-  "OutcomeRecord.duplicateOfOutcomeRef": "resolved within the supplied outcome set",
-  "OutcomeRecord.rubricRef": "external rubric; nothing in this package resolves it",
-  "ClaimDerivation.analysisRef": "external analysis; nothing resolves it",
+
+/** file -> type -> how many `*Ref`/`*Refs`/`*Digest` fields that type must yield. */
+const REFERENCE_FIELD_COUNTS: Readonly<Record<string, Readonly<Record<string, number>>>> = {
+  "claim.ts": { ClaimDerivation: 1, ClaimRecord: 4 },
+  "claim-assessment.ts": { AssessmentCommon: 3 },
+  "research-report.ts": { ReportCost: 1, ReportClaimEntry: 3, ReportSourceEntry: 1, ResearchReport: 5 },
+  "outcome-record.ts": { OutcomeEvidence: 2, OutcomeRecord: 9, AuthorizedWork: 3 },
+  "source-record.ts": {
+    SourceContentBinding: 4,
+    SourceRecord: 3,
+    DeliveredSourceHandle: 2,
+    SourceCitationHost: 1,
+  },
+  "research-request.ts": {
+    ResearchRequestScope: 2,
+    ResearchEffort: 1,
+    RequestLineage: 1,
+    ResearchRequestHost: 2,
+    AdmittedRequestIdentity: 1,
+  },
+  "oracle-context.ts": { OracleContextBinding: 5 },
+  "decision-proposal.ts": { MissingDecision: 1, DecisionProposalHost: 1, JobShapeAllowlistEntry: 1 },
+  "envelope.ts": { AttestedEnvelope: 7 },
+};
+
+/** Matches exported AND non-exported type/interface blocks. */
+const TYPE_BLOCK = /(?:export\s+)?(?:type|interface)\s+(\w+)(?:<[^>]*>)?\s*=?\s*\{([\s\S]*?)\n\};?/gu;
+
+function referenceFieldsIn(source: string): Record<string, string[]> {
+  const perType: Record<string, string[]> = {};
+  for (const block of source.matchAll(TYPE_BLOCK)) {
+    const typeName = block[1] ?? "";
+    for (const field of (block[2] ?? "").matchAll(/readonly (\w*(?:Refs|Ref|Digest))\??:/gu)) {
+      (perType[typeName] ??= []).push(field[1] ?? "");
+    }
+  }
+  return perType;
+}
+
+/**
+ * How each reference field is anchored.
+ *
+ * `anchor` is machine-checked where it names a mechanism: a `recomputed` or
+ * `resolved` entry must name the module that does it, and the field name must
+ * actually appear in that module's source. That is a WEAK link and it is worth
+ * having — `reportDigest` claimed to be recomputed in a module whose text did
+ * not contain the word, and `executionEvidenceRefs` claimed to be resolved
+ * against a caller-supplied set that does not exist. Two entries found wrong by
+ * reading is two too many for prose nothing checks.
+ */
+type FieldTreatment =
+  | { readonly anchor: "recomputed"; readonly by: string; readonly note: string }
+  | { readonly anchor: "resolved"; readonly by: string; readonly note: string }
+  | { readonly anchor: "host-state"; readonly note: string }
+  | { readonly anchor: "identity"; readonly note: string }
+  | { readonly anchor: "unresolved"; readonly note: string }
+  | { readonly anchor: "limit"; readonly note: string };
+
+const CROSS_RECORD_FIELDS: Readonly<Record<string, FieldTreatment>> = {
+  // ── recomputed against the referenced record's own bytes ────────────────
+  "ClaimAssessment.claimDigest": { anchor: "recomputed", by: "report-binding.ts", note: "against claimRecordDigest" },
+  "ClaimAssessment.reportDigest": { anchor: "recomputed", by: "report-binding.ts", note: "against researchReportDigest" },
+  "ReportClaimEntry.claimDigest": { anchor: "recomputed", by: "report-binding.ts", note: "against claimRecordDigest" },
+  "AdmittedRequestIdentity.requestDigest": { anchor: "recomputed", by: "research-request.ts", note: "against researchRequestDigest" },
+  "OracleContextBinding.contextManifestDigest": { anchor: "recomputed", by: "oracle-context.ts", note: "against the manifest's own bytes" },
+  // ── resolved against a set the caller supplies ──────────────────────────
+  "OutcomeRecord.authorizedWorkRef": { anchor: "resolved", by: "outcome-record.ts", note: "against the authorizedWork argument" },
+  "OutcomeRecord.duplicateOfOutcomeRef": { anchor: "resolved", by: "outcome-record.ts", note: "within the supplied outcome set" },
+  "ReportClaimEntry.assessmentRef": { anchor: "resolved", by: "report-binding.ts", note: "in the supplied assessment set" },
+  "ReportClaimEntry.claimRef": { anchor: "resolved", by: "report-binding.ts", note: "in the supplied claim set, and deduped by identity" },
+  "ClaimAssessment.claimRef": { anchor: "resolved", by: "report-binding.ts", note: "compared to the entry against the recomputed digest" },
+  "DeliveredSourceHandle.runRef": { anchor: "host-state", note: "the delivered set IS the anchor; host-supplied" },
+  "DeliveredSourceHandle.workspaceRef": { anchor: "host-state", note: "the delivered set IS the anchor; host-supplied" },
+  "AuthorizedWork.workRef": { anchor: "host-state", note: "the authorized set IS the anchor; host-supplied" },
+  "AuthorizedWork.runRef": { anchor: "host-state", note: "the anchor's scope, compared to the outcome's run" },
+  "AuthorizedWork.workspaceRef": { anchor: "host-state", note: "the anchor's scope, compared to the outcome's workspace" },
+  "JobShapeAllowlistEntry.jobShapeRef": { anchor: "host-state", note: "the allowlist IS the anchor; host-supplied" },
+  // ── identity: binds a record to exact bytes, no lookup ──────────────────
+  "OutcomeRecord.proposalDigest": { anchor: "identity", note: "binds the outcome to the exact proposal" },
+  "SourceContentBinding.rawDigest": { anchor: "identity", note: "identifies the observed bytes (INV-09)" },
+  "SourceContentBinding.extractedDigest": { anchor: "identity", note: "identifies the extracted text" },
+  "ClaimRecord.contextManifestDigest": { anchor: "limit", note: "compared to the report's; both are in the document" },
+  "ResearchReport.contextManifestDigest": { anchor: "limit", note: "the reference point for a claim's context" },
+  "AttestedEnvelope.contextManifestDigest": { anchor: "limit", note: "host-resolved; resolveContextBinding checks it where a binding is supplied" },
+  // ── scoping identifiers: compared to a sibling record in the document ───
+  "ClaimRecord.runRef": { anchor: "limit", note: "scope check against the report; both are in the document" },
+  "ClaimRecord.workspaceRef": { anchor: "limit", note: "scope check against the report; both are in the document" },
+  "ResearchReport.runRef": { anchor: "limit", note: "the reference point for a claim's run" },
+  "ResearchReport.workspaceRef": { anchor: "limit", note: "the reference point for a claim's workspace" },
+  "ResearchReport.proposalRef": { anchor: "limit", note: "mutual reference with the proposal; both forgeable together" },
+  "DecisionProposalHost.reportRef": { anchor: "limit", note: "mutual reference with the report" },
+  "OutcomeRecord.executionEvidenceRefs": {
+    anchor: "limit",
+    // Was filed as "resolved against a set the caller supplies", which is FALSE:
+    // resolveOutcomeCredits takes one caller-supplied set and it is
+    // `authorizedWork`. Nothing resolves an evidence ref against host state.
+    note: "deduped between records only; DISJOINT descriptions of one run are not caught",
+  },
+  // ── provenance only: nothing in this package resolves them ──────────────
+  "ClaimRecord.requestRef": { anchor: "unresolved", note: "provenance" },
+  "ClaimDerivation.analysisRef": { anchor: "unresolved", note: "external analysis" },
+  "ReportCost.ledgerRef": { anchor: "unresolved", note: "external ledger" },
+  "ReportSourceEntry.citationRefs": {
+    anchor: "unresolved",
+    // Was "names citations resolveCitations answers for", which is unbacked:
+    // nothing links a manifest entry's citationRefs to resolveCitations.
+    note: "manifest bookkeeping; nothing in this package resolves these ids",
+  },
+  "ResearchReport.requestRef": { anchor: "unresolved", note: "provenance" },
+  "OutcomeRecord.proposalRef": { anchor: "unresolved", note: "names the proposal; the DIGEST is what binds" },
+  "OutcomeRecord.reportRef": { anchor: "unresolved", note: "provenance" },
+  "OutcomeRecord.runRef": { anchor: "unresolved", note: "provenance" },
+  "OutcomeRecord.workspaceRef": { anchor: "unresolved", note: "provenance" },
+  "OutcomeRecord.rubricRef": { anchor: "unresolved", note: "external rubric" },
+  "OutcomeEvidence.workRef": { anchor: "unresolved", note: "names the work follow-through was seen on" },
+  "OutcomeEvidence.comparisonRef": { anchor: "unresolved", note: "external counterfactual" },
+  "SourceRecord.requestRef": { anchor: "unresolved", note: "provenance" },
+  "SourceRecord.runRef": { anchor: "unresolved", note: "carried into the delivered handle" },
+  "SourceRecord.workspaceRef": { anchor: "unresolved", note: "carried into the delivered handle" },
+  "SourceContentBinding.rawArtifactRef": { anchor: "unresolved", note: "artifact store" },
+  "SourceContentBinding.extractedArtifactRef": { anchor: "unresolved", note: "artifact store" },
+  "SourceCitationHost.appearsInRef": { anchor: "unresolved", note: "host-resolved location" },
+  "ResearchRequestScope.repositoryRefs": { anchor: "unresolved", note: "policy intersection, host-resolved" },
+  "ResearchRequestScope.evidenceRefs": { anchor: "unresolved", note: "policy intersection, host-resolved" },
+  "ResearchEffort.explorationPortfolioRef": { anchor: "unresolved", note: "approved portfolio, host-resolved" },
+  "RequestLineage.parentInvestigationRef": { anchor: "unresolved", note: "lineage" },
+  "ResearchRequestHost.originatingEventRef": { anchor: "unresolved", note: "provenance" },
+  "ResearchRequestHost.contextSnapshotRefs": { anchor: "unresolved", note: "host-resolved snapshots" },
+  "OracleContextBinding.runRef": { anchor: "unresolved", note: "compared to the manifest's runId by resolveContextBinding" },
+  "OracleContextBinding.missionRefs": { anchor: "unresolved", note: "ratified mission" },
+  "OracleContextBinding.ratifiedPolicyRefs": { anchor: "unresolved", note: "ratified policy" },
+  "OracleContextBinding.publicBriefRef": { anchor: "unresolved", note: "public brief" },
+  "MissingDecision.ruleRef": { anchor: "unresolved", note: "names the rule that cannot admit" },
+  "AttestedEnvelope.workspaceRef": { anchor: "host-state", note: "host-attested envelope field" },
+  "AttestedEnvelope.runRef": { anchor: "host-state", note: "host-attested envelope field" },
+  "AttestedEnvelope.workOrderRef": { anchor: "host-state", note: "host-attested envelope field" },
+  "AttestedEnvelope.policyRef": { anchor: "host-state", note: "host-attested envelope field" },
+  "AttestedEnvelope.grantRefs": { anchor: "host-state", note: "host-attested envelope field" },
+  "AttestedEnvelope.budgetReservationRef": { anchor: "host-state", note: "host-attested envelope field" },
+};
+
+/** The type each field record belongs to, for the per-type checks below. */
+const OWNING_TYPE: Readonly<Record<string, string>> = {
+  ClaimAssessment: "AssessmentCommon",
 };
 
 describe("every cross-record FIELD is accounted for", () => {
-  it("each *Ref/*Digest field on a record type has a written treatment", () => {
-    const files = ["claim.ts", "claim-assessment.ts", "research-report.ts", "outcome-record.ts"];
+  const scanned = new Map<string, Record<string, string[]>>();
+  for (const file of Object.keys(REFERENCE_FIELD_COUNTS)) {
+    scanned.set(file, referenceFieldsIn(readFileSync(join(SRC, file), "utf8")));
+  }
+
+  it("every type yields exactly the number of reference fields declared for it", () => {
+    // PER TYPE, not a total. A total floor read 29 while claim-assessment.ts
+    // yielded zero of its four, which is how a smuggled field stayed invisible.
+    for (const [file, types] of Object.entries(REFERENCE_FIELD_COUNTS)) {
+      const found = scanned.get(file) ?? {};
+      for (const [typeName, expected] of Object.entries(types)) {
+        expect(found[typeName] ?? [], `${file} ${typeName}`).toHaveLength(expected);
+      }
+    }
+  });
+
+  it("no type in a scanned file yields reference fields without being declared", () => {
+    // The other direction: a NEW type carrying references is as invisible as a
+    // new field on an undeclared one.
+    for (const [file, types] of scanned.entries()) {
+      for (const [typeName, fields] of Object.entries(types)) {
+        if (fields.length === 0) continue;
+        expect(
+          Object.keys(REFERENCE_FIELD_COUNTS[file] ?? {}),
+          `${file} declares no count for ${typeName}`,
+        ).toContain(typeName);
+      }
+    }
+  });
+
+  it("each field has a written treatment, under the name it is READ by", () => {
     const unaccounted: string[] = [];
-    let scanned = 0;
-    for (const file of files) {
-      const text = readFileSync(join(SRC, file), "utf8");
-      // `export type X = {` ... `}` blocks, and the fields inside them.
-      for (const block of text.matchAll(/export type (\w+) = \{([\s\S]*?)\n\};/gu)) {
-        const typeName = block[1] ?? "";
-        for (const field of (block[2] ?? "").matchAll(/readonly (\w*(?:Ref|Refs|Digest))\??:/gu)) {
-          scanned += 1;
-          const key = `${typeName}.${field[1] ?? ""}`;
-          if (!Object.hasOwn(CROSS_RECORD_FIELDS, key)) unaccounted.push(key);
+    for (const [file, types] of scanned.entries()) {
+      for (const [typeName, fields] of Object.entries(types)) {
+        for (const field of fields) {
+          // A record whose fields live in a shared base is keyed by the name a
+          // reader knows it as.
+          const owner = Object.entries(OWNING_TYPE).find(([, base]) => base === typeName)?.[0]
+            ?? typeName;
+          const key = `${owner}.${field}`;
+          if (!Object.hasOwn(CROSS_RECORD_FIELDS, key)) unaccounted.push(`${file} ${key}`);
         }
       }
     }
-    // A floor, so a regex that stopped matching cannot report a clean package.
-    expect(scanned, "the field scan must reach a real population").toBeGreaterThan(20);
     expect(unaccounted).toEqual([]);
   });
 
-  it("NON-VACUITY CONTROL: the table does not carry entries for fields that vanished", () => {
-    // The other direction. A stale entry is how a table stops describing the
-    // code without anyone noticing — the same failure as a stale comment.
-    const text = ["claim.ts", "claim-assessment.ts", "research-report.ts", "outcome-record.ts"]
-      .map((f) => readFileSync(join(SRC, f), "utf8"))
-      .join("\n");
+  it("STALE-ENTRY CONTROL: every entry names a field that exists ON ITS OWN TYPE", () => {
+    // The previous control checked `readonly <field>` across the four files
+    // concatenated, so deleting `readonly runRef` from OutcomeRecord left the
+    // entry stale and the control green — three other types carry a `runRef`.
+    // The type half of the key was the half being discarded.
     for (const key of Object.keys(CROSS_RECORD_FIELDS)) {
-      const field = key.split(".")[1] ?? "";
-      expect(text, `${key} is in the table but not in the source`).toContain(`readonly ${field}`);
+      const [owner = "", field = ""] = key.split(".");
+      const typeName = OWNING_TYPE[owner] ?? owner;
+      const found = [...scanned.values()].some((types) => (types[typeName] ?? []).includes(field));
+      expect(found, `${key} is in the table but not on ${typeName}`).toBe(true);
     }
+  });
+
+  it("a treatment naming a mechanism names a module whose source mentions the field", () => {
+    // The weak mechanical link. `reportDigest` claimed to be recomputed in a
+    // module whose text did not contain the word, and `executionEvidenceRefs`
+    // claimed a caller-supplied set that does not exist. Prose nothing checks
+    // has now been wrong twice.
+    let checked = 0;
+    for (const [key, treatment] of Object.entries(CROSS_RECORD_FIELDS)) {
+      if (treatment.anchor !== "recomputed" && treatment.anchor !== "resolved") continue;
+      checked += 1;
+      const field = key.split(".")[1] ?? "";
+      const source = readFileSync(join(SRC, treatment.by), "utf8");
+      expect(source, `${key}: ${treatment.by} never mentions ${field}`).toContain(field);
+    }
+    expect(checked, "the link must cover a real population").toBeGreaterThanOrEqual(8);
   });
 });
 
@@ -571,6 +735,51 @@ describe("LIMITS: rules with no anchor, demonstrated rather than described", () 
     expect(result.issues.map((i) => i.code)).not.toContain("proposal_bound_to_another_report");
   });
 
+  it("LIMIT: two disjoint descriptions of one execution take two credits", () => {
+    // OUT-04, defeated three times, each repair moving the anchor to another
+    // string the record writes: `creditKey`, then `authorizedWorkRef`, then
+    // `executionEvidenceRefs`. This is the third defeat, LEFT OPEN on purpose.
+    //
+    // Both work orders are genuinely host-authorized, so anchor (b) is
+    // satisfied; the evidence sets are disjoint, so the between-record dedup
+    // sees nothing in common. Two accepted-work credits for one run.
+    const base = validOutcomeRecord();
+    const AUTHORIZED = [
+      { workRef: "wo-part1", runRef: base.runRef, workspaceRef: base.workspaceRef },
+      { workRef: "wo-part2", runRef: base.runRef, workspaceRef: base.workspaceRef },
+    ];
+    const part = (id: string, work: string, evidence: string): OutcomeRecord => ({
+      ...base,
+      outcomeId: id,
+      authorizedWorkRef: work,
+      executionEvidenceRefs: [evidence],
+    });
+    const result = resolveOutcomeCredits(
+      [
+        part("oracle-outcome-a", "wo-part1", "evidence-probe-run-77-part1"),
+        part("oracle-outcome-b", "wo-part2", "evidence-probe-run-77-part2"),
+      ],
+      AUTHORIZED,
+    );
+    // The lie SUCCEEDS. Closing it needs a host-attested identity for the
+    // EXECUTION, resolved from outside these records — see the comment in
+    // outcome-record.ts for where that belongs.
+    expect(result.outcome).toBe("CREDITED");
+    if (result.outcome !== "CREDITED") return;
+    expect(result.acceptedWork).toEqual(["oracle-outcome-a", "oracle-outcome-b"]);
+
+    // NON-VACUITY: the rule is not dead. The same two records with OVERLAPPING
+    // evidence are caught, which is the half that is enforceable here.
+    const overlapping = resolveOutcomeCredits(
+      [
+        part("oracle-outcome-a", "wo-part1", "evidence-probe-run-77"),
+        part("oracle-outcome-b", "wo-part2", "evidence-probe-run-77"),
+      ],
+      AUTHORIZED,
+    );
+    expect(overlapping.outcome).toBe("DOUBLE_CREDITED");
+  });
+
   it("LIMIT: one party can write both identities on an outcome under two names", () => {
     // Demonstrated AT THE VALIDATOR, which is where the rule lives. The
     // previous version of this test went through `resolveOutcomeCredits` — an
@@ -629,6 +838,87 @@ describe("LIMITS: rules with no anchor, demonstrated rather than described", () 
     expect(bundle.outcome).toBe("RESOLVED");
     if (bundle.outcome !== "RESOLVED") return;
     expect(bundle.claims[0]?.state).toBe("ASSESSMENT_BINDS_ANOTHER_CLAIM");
+  });
+});
+
+describe("evidenceIsMissing refuses rather than throws, and fails closed", () => {
+  /**
+   * Its own contract says a guard must refuse rather than throw, and it threw
+   * on six INNER shapes: `toPlainRecord` snapshots the top level only, and the
+   * registered probe only ever fed the outer position. Three more shapes
+   * answered the PERMISSIVE `false` — the direction that puts a claim under
+   * "what the evidence establishes".
+   */
+  const THROWING_SHAPES: readonly [string, unknown][] = [
+    ["claim: null", { claim: null, unresolvedSourceIds: [] }],
+    ["sourceSpans: [null]", { claim: { sourceSpans: [null] }, unresolvedSourceIds: [] }],
+    ["assessment: null", { claim: { sourceSpans: [] }, assessment: null, unresolvedSourceIds: [] }],
+    ["assessment: 'str'", { claim: { sourceSpans: [] }, assessment: "str", unresolvedSourceIds: [] }],
+    [
+      "reviewedSpans: null",
+      { claim: { sourceSpans: [] }, assessment: { reviewedSpans: null }, unresolvedSourceIds: [] },
+    ],
+    [
+      "reviewedSpans: [null]",
+      { claim: { sourceSpans: [] }, assessment: { reviewedSpans: [null] }, unresolvedSourceIds: [] },
+    ],
+  ];
+
+  const PERMISSIVE_SHAPES: readonly [string, unknown][] = [
+    // A value guard failing open on a WRONG TYPE: a non-array coerced to the
+    // empty set, which reads as "nothing is unresolved".
+    ["unresolvedSourceIds: 'x'", { claim: { sourceSpans: [{ sourceId: "s1" }] }, unresolvedSourceIds: "x" }],
+    // `undefined` in the cited set, never in the unresolved set.
+    ["a span with no sourceId", { claim: { sourceSpans: [{}] }, unresolvedSourceIds: [] }],
+    // `"xy"` passed an `in` check and iterated as characters.
+    [
+      "reviewedSpans: 'xy'",
+      { claim: { sourceSpans: [] }, assessment: { reviewedSpans: "xy" }, unresolvedSourceIds: [] },
+    ],
+  ];
+
+  it("no inner shape throws", () => {
+    for (const [name, shape] of THROWING_SHAPES) {
+      expect(() => evidenceIsMissing(shape), name).not.toThrow();
+    }
+  });
+
+  it("and every unreadable shape answers `missing`, not `present`", () => {
+    for (const [name, shape] of [...THROWING_SHAPES, ...PERMISSIVE_SHAPES]) {
+      expect(evidenceIsMissing(shape), name).toBe(true);
+    }
+  });
+
+  it("POSITIVE REACHABILITY CONTROL: a well-formed bound claim answers `present`", () => {
+    // Without this, a function returning `true` unconditionally would satisfy
+    // every assertion above and put every claim in the gap section.
+    const claim = validClaimRecord();
+    const resolved = resolveReportBundle({
+      report: {
+        ...validResearchReport(),
+        claims: [
+          { claimRef: claim.claimId, claimDigest: claimRecordDigest(claim), assessmentRef: null },
+        ],
+        assessmentCoverage: { claimsTotal: 1, claimsWithStoredAssessment: 0, claimsNotAssessed: 1 },
+      },
+      claims: [claim],
+      assessments: [],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    expect(resolved.outcome).toBe("RESOLVED");
+    if (resolved.outcome !== "RESOLVED") return;
+    const bound = resolved.claims[0];
+    if (bound === undefined) throw new Error("the bundle must carry the claim");
+    expect(evidenceIsMissing(bound)).toBe(false);
+    // And the same claim with its one cited id unresolved is missing, so the
+    // answer tracks the input rather than the shape.
+    expect(
+      evidenceIsMissing({
+        ...bound,
+        unresolvedSourceIds: bound.claim?.sourceSpans.map((span) => span.sourceId) ?? [],
+      }),
+    ).toBe(true);
   });
 });
 

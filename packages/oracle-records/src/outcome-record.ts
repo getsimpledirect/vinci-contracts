@@ -726,15 +726,38 @@ export function resolveOutcomeCredits(
   if (unauthorized.length > 0) return { outcome: "UNAUTHORIZED_WORK", issues: unauthorized };
 
   const acceptedByAnchor = new Map<string, string>();
-  // The second dedup dimension, and the one the review's repro turned on: two
-  // records naming DIFFERENT authorized work orders while citing the SAME
-  // execution evidence are still one execution. Keying only on the work ref
-  // would let a host that authorized two work orders credit one run twice.
+  // The second dedup dimension: two records naming DIFFERENT authorized work
+  // orders while citing the SAME execution evidence are still one execution.
+  // It is only reachable because an ACCEPTED_WORK record is REQUIRED to carry
+  // evidence — `find` on an empty list returns `undefined` and the guard would
+  // pass, which is how two evidence-free records slipped through it.
   //
-  // This dimension is only reachable because an ACCEPTED_WORK record is
-  // REQUIRED to carry evidence — `find` on an empty list returns `undefined`
-  // and the guard would pass, which is how two evidence-free records slipped
-  // through it. The requirement is the guard; this map is the comparison.
+  // ── A DECLARED LIMIT, NOT A CLOSED RULE ─────────────────────────────────
+  //
+  // OUT-04 has been defeated three times here, and each repair moved the anchor
+  // to a different string the record authors: `creditKey`, then
+  // `authorizedWorkRef`, then these evidence refs. The third defeat is real and
+  // is NOT fixed below: two ACCEPTED_WORK records, two genuinely
+  // host-authorized work orders, and DISJOINT evidence — `[...-part1]` versus
+  // `[...-part2]` — are two accepted-work credits for one run. Overlapping
+  // evidence claims are caught; two disjoint descriptions of one execution are
+  // not.
+  //
+  // A fourth anchor would be a fourth string in the same position, and it would
+  // look closed until someone probed the new dimension. So the rule is stated
+  // as what it is: it catches records that CLAIM the same work or the same
+  // evidence, and it cannot tell that two differently-described runs were one
+  // run. `src/cross-record-anchors.test.ts` carries the demonstration as a
+  // LIMIT rather than a passing rule.
+  //
+  // WHAT WOULD ACTUALLY CLOSE IT: a host-attested identity for the EXECUTION
+  // itself — the run or attempt the work was carried out under — resolved from
+  // outside these records, so two outcomes describing one execution resolve to
+  // one identity whatever they call the evidence. `packages/run-events` already
+  // owns run and attempt identity; the missing piece is a host-supplied
+  // authorized-work-to-execution mapping, which belongs to whatever component
+  // authorizes the work, not to a contracts package. Until such a set can be
+  // passed in beside `authorizedWork`, this rule is partial and says so.
   const acceptedByEvidence = new Map<string, string>();
   const duplicates: ValidationIssue[] = [];
   const acceptedWork: string[] = [];
