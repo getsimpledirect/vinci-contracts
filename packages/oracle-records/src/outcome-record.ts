@@ -76,9 +76,11 @@ export type HypothesisResult = (typeof HYPOTHESIS_RESULTS)[number];
  * "credit-key-alpha" and "credit-key-beta". The rule established only that
  * identical strings collide, which is a property of strings.
  *
- * A consistency rule needs an ANCHOR outside the thing it is checking. The
- * anchor is `outcomeCreditAnchor` — the work order the HOST authorized — and
- * there is no field a record can write to move itself out from under it.
+ * A consistency rule needs an ANCHOR outside the thing it is checking. Naming
+ * the work order was not enough — a record writes that field too — so the
+ * anchor is the authorized-work SET that `resolveOutcomeCredits` takes as its
+ * second argument, resolved by the host. A work ref no host authorized resolves
+ * to nothing and takes no credit.
  *
  * `NO_CREDIT` is the third member and it is not decoration: a NOT_ATTEMPTED
  * outcome authorized no work, so it holds no accepted-work credit and reuses
@@ -531,34 +533,22 @@ export function outcomeRecordDigest(record: OutcomeRecord): string {
 }
 
 /**
- * OUT-04's dedup key: the work the host actually authorized.
+ * OUT-04's dedup key: the work order this outcome claims was authorized.
  *
- * This exists because the field it replaced did not work. `creditKey` was a
- * free string on the record, and two outcomes identical in proposal, digest,
- * authorized work and class took two accepted-work credits by spelling it
- * "credit-key-alpha" and "credit-key-beta". That rule established only that
- * identical strings collide, which is a property of strings. A consistency rule
- * is defeated by a consistent lie unless it is anchored to something outside
- * the record making the claim, and `authorizedWorkRef` names a work order the
- * HOST authorized: there is no field this record can write to move itself out
- * from under the rule.
+ * A PROJECTION, and the name is the whole of what it does. The second review
+ * was right that the previous comment here — "there is no field this record can
+ * write to move itself out from under the rule" — was false: `authorizedWorkRef`
+ * is validated by `isIdentifier` and nothing else, so two outcomes recording
+ * the SAME execution (identical `executionEvidenceRefs`) took two accepted-work
+ * credits by writing different work refs. The test that claimed otherwise
+ * varied five fields and never varied this one; it proved a projection is
+ * stable under changes to fields that are not the projection.
  *
- * WHY NOT `proposalDigest` AS WELL, which is the other host-bound field here.
- * The review that found the defect suggested keying on the pair. The pair is
- * strictly WEAKER for the rule OUT-04 states: two records naming the same
- * authorized work under two different proposals would each take an
- * accepted-work credit, which is exactly "multiple accepted-work credits for
- * the same underlying outcome". It is also wrong in the other direction —
- * OUT-04 exists so that DUPLICATE RECOMMENDATIONS may take reuse credit, and a
- * duplicate recommendation is by definition a different proposal about the same
- * work, so a pair-anchored reuse rule would refuse the case the requirement was
- * written to permit. The proposal binding is still enforced, separately and for
- * its own reason: `proposalDigest` ties this outcome to the exact proposal, so
- * a proposal edited afterwards cannot inherit it.
- *
- * Null exactly when no work was authorized, which is why an `ACCEPTED_WORK`
- * credit requires one: with no authorized work there is no accepted work to
- * credit.
+ * The anchor is therefore NOT this function. It is the `authorizedWork`
+ * argument to `resolveOutcomeCredits`, which the caller supplies from host
+ * state — the same construction as `resolveCitations(citations, delivered)` and
+ * `mapProposalToJobShape(proposal, allowlist)`. This function only says which
+ * work order a record is claiming, so the resolver can look it up.
  */
 export function outcomeCreditAnchor(record: OutcomeRecord): string | null {
   return record.authorizedWorkRef;
@@ -588,10 +578,21 @@ export type OutcomeCreditResolution =
     }
   | { readonly outcome: "DOUBLE_CREDITED"; readonly issues: readonly ValidationIssue[] }
   | { readonly outcome: "MISBOUND_REUSE"; readonly issues: readonly ValidationIssue[] }
+  | { readonly outcome: "UNAUTHORIZED_WORK"; readonly issues: readonly ValidationIssue[] }
   | { readonly outcome: "REFUSED"; readonly issues: readonly ValidationIssue[] };
 
-export function resolveOutcomeCredits(outcomes: unknown): OutcomeCreditResolution {
-  const plain = toPlainRecord({ outcomes });
+/** One work order the host authorized. The anchor the credit rule is keyed on. */
+export type AuthorizedWork = {
+  readonly workRef: string;
+  readonly runRef: string;
+  readonly workspaceRef: string;
+};
+
+export function resolveOutcomeCredits(
+  outcomes: unknown,
+  authorizedWork: unknown,
+): OutcomeCreditResolution {
+  const plain = toPlainRecord({ outcomes, authorizedWork });
   if (!plain.ok) return { outcome: "REFUSED", issues: plain.issues };
   if (!Array.isArray(plain.value.outcomes)) {
     return {
@@ -599,6 +600,44 @@ export function resolveOutcomeCredits(outcomes: unknown): OutcomeCreditResolutio
       issues: [issue("/outcomes", "invalid_type", "outcomes is an array")],
     };
   }
+
+  if (!Array.isArray(plain.value.authorizedWork)) {
+    return {
+      outcome: "REFUSED",
+      issues: [
+        issue(
+          "/authorizedWork",
+          "invalid_type",
+          "the authorized-work set is an array; it is the anchor this rule is keyed on and an "
+            + "omitted one is not an empty one",
+        ),
+      ],
+    };
+  }
+  const authorized = new Map<string, AuthorizedWork>();
+  const authorizedIssues: ValidationIssue[] = [];
+  plain.value.authorizedWork.forEach((raw, i) => {
+    const at = `/authorizedWork/${i}`;
+    if (!isObjectRecord(raw)) {
+      authorizedIssues.push(issue(at, "invalid_type", "an authorized work entry is an object"));
+      return;
+    }
+    rejectUnknownFields(raw, ["workRef", "runRef", "workspaceRef"], at, "authorized work", authorizedIssues);
+    for (const field of ["workRef", "runRef", "workspaceRef"] as const) {
+      if (!isIdentifier(raw[field])) {
+        authorizedIssues.push(issue(`${at}/${field}`, "invalid_id", `${field} is a host-assigned identifier`));
+      }
+    }
+    if (typeof raw.workRef === "string" && typeof raw.runRef === "string"
+      && typeof raw.workspaceRef === "string") {
+      authorized.set(raw.workRef, {
+        workRef: raw.workRef,
+        runRef: raw.runRef,
+        workspaceRef: raw.workspaceRef,
+      });
+    }
+  });
+  if (authorizedIssues.length > 0) return { outcome: "REFUSED", issues: authorizedIssues };
 
   const refusals: ValidationIssue[] = [];
   const parsed: OutcomeRecord[] = [];
@@ -615,7 +654,44 @@ export function resolveOutcomeCredits(outcomes: unknown): OutcomeCreditResolutio
   if (refusals.length > 0) return { outcome: "REFUSED", issues: refusals };
 
   const byId = new Map(parsed.map((record) => [record.outcomeId, record]));
+
+  // (b) THE ANCHOR: every work ref a record claims must be one the HOST
+  // authorized, in this record's own run and workspace. A ref nothing
+  // authorized resolves to nothing, so inventing one no longer buys a credit —
+  // it buys a refusal that names the ref.
+  const unauthorized: ValidationIssue[] = [];
+  parsed.forEach((record, i) => {
+    if (record.authorizedWorkRef === null) return;
+    const work = authorized.get(record.authorizedWorkRef);
+    if (work === undefined) {
+      unauthorized.push(
+        issue(
+          `/outcomes/${i}/authorizedWorkRef`,
+          "work_never_authorized",
+          `OUT-04: no host-authorized work order named ${record.authorizedWorkRef}. An outcome cannot `
+            + "credit work by naming it",
+        ),
+      );
+      return;
+    }
+    if (work.runRef !== record.runRef || work.workspaceRef !== record.workspaceRef) {
+      unauthorized.push(
+        issue(
+          `/outcomes/${i}/authorizedWorkRef`,
+          "work_authorized_elsewhere",
+          `${record.authorizedWorkRef} was authorized in a different run or workspace`,
+        ),
+      );
+    }
+  });
+  if (unauthorized.length > 0) return { outcome: "UNAUTHORIZED_WORK", issues: unauthorized };
+
   const acceptedByAnchor = new Map<string, string>();
+  // The second dedup dimension, and the one the review's repro turned on: two
+  // records naming DIFFERENT authorized work orders while citing the SAME
+  // execution evidence are still one execution. Keying only on the work ref
+  // would let a host that authorized two work orders credit one run twice.
+  const acceptedByEvidence = new Map<string, string>();
   const duplicates: ValidationIssue[] = [];
   const acceptedWork: string[] = [];
   parsed.forEach((record, i) => {
@@ -637,7 +713,21 @@ export function resolveOutcomeCredits(outcomes: unknown): OutcomeCreditResolutio
       );
       return;
     }
+    const sharedEvidence = record.executionEvidenceRefs.find((ref) => acceptedByEvidence.has(ref));
+    if (sharedEvidence !== undefined) {
+      duplicates.push(
+        issue(
+          `/outcomes/${i}/executionEvidenceRefs`,
+          "duplicate_accepted_work_credit",
+          `OUT-04: ${acceptedByEvidence.get(sharedEvidence) ?? "another outcome"} already holds the `
+            + `accepted-work credit for execution evidence ${sharedEvidence}. One execution is one `
+            + "underlying outcome, whatever work orders the two records name",
+        ),
+      );
+      return;
+    }
     acceptedByAnchor.set(anchor, record.outcomeId);
+    for (const ref of record.executionEvidenceRefs) acceptedByEvidence.set(ref, record.outcomeId);
     acceptedWork.push(record.outcomeId);
   });
   if (duplicates.length > 0) return { outcome: "DOUBLE_CREDITED", issues: duplicates };

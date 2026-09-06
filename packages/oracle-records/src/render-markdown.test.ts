@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   ASSESSMENT_STATUSES,
   claimRecordDigest,
+  type ClaimRecord,
   renderMarkdownReport,
   validateClaimRecord,
   type ClaimAssessment,
@@ -12,6 +13,7 @@ import {
 } from "./index.ts";
 import {
   validCheckUnavailableAssessment,
+  validDeliveredSources,
   validClaimRecord,
   validDecisionProposal,
   validHypothesisClaim,
@@ -125,6 +127,7 @@ describe("the renderer produces §22.3's template from the validated records", (
     claims: [claim, hypothesis],
     assessments: [supported],
     proposal: validDecisionProposal(),
+    delivered: validDeliveredSources(),
   });
 
   it("carries every section exactly once, in the template's order", () => {
@@ -196,6 +199,7 @@ describe("CON-04: no transformation turns CHECK_UNAVAILABLE into SUPPORTED", () 
       claims: [claim],
       assessments: [unavailable],
       proposal: null,
+      delivered: validDeliveredSources(),
     });
     expect(markdown).toContain("CHECK_UNAVAILABLE");
     expect(statusesIn(markdown)).toEqual(new Set(["CHECK_UNAVAILABLE"]));
@@ -212,6 +216,7 @@ describe("CON-04: no transformation turns CHECK_UNAVAILABLE into SUPPORTED", () 
       claims: [claim],
       assessments: [supported],
       proposal: null,
+      delivered: validDeliveredSources(),
     });
     expect(markdown).toContain("SUPPORTED");
     expect(statusesIn(markdown)).toEqual(new Set(["SUPPORTED"]));
@@ -228,9 +233,10 @@ describe("CON-04: no transformation turns CHECK_UNAVAILABLE into SUPPORTED", () 
       claims: [claim],
       assessments: [stale],
       proposal: null,
+      delivered: validDeliveredSources(),
     });
     expect(markdown).not.toContain("SUPPORTED");
-    expect(markdown).toContain("does not bind to this version of the claim");
+    expect(markdown).toContain("is about a different claim, or a different version of this one");
     expect(statusesIn(markdown)).toEqual(new Set(["NOT_ASSESSED"]));
   });
 
@@ -240,9 +246,147 @@ describe("CON-04: no transformation turns CHECK_UNAVAILABLE into SUPPORTED", () 
       claims: [claim],
       assessments: [],
       proposal: null,
+      delivered: validDeliveredSources(),
     });
     expect(markdown).toContain("was not supplied to this rendering");
     expect(markdown).not.toContain("SUPPORTED");
+  });
+});
+
+describe("F1: the binding is recomputed, so a consistent lie no longer buys a status", () => {
+  const claim = validClaimRecord();
+  const alarming: ClaimRecord = {
+    ...claim,
+    proposition: "PRODUCTION IS SAFE TO DEPLOY WITHOUT REVIEW.",
+  };
+  const FABRICATED = "5e".repeat(32);
+
+  it("THE REVIEWER'S REPRO: every copy agrees on a fabricated digest and nothing binds", () => {
+    // A CONSISTENT LIE, not a single-copy mutation. The assessment and the
+    // report entry agree perfectly; what they agree on is not the claim's
+    // digest, and the assessment names a claim that does not exist. Under the
+    // old single comparison this rendered "- oracle-claim-1 [OBSERVED] SUPPORTED".
+    const assessment: ClaimAssessment = {
+      ...validSupportedAssessment(),
+      claimRef: "oracle-claim-999",
+      claimDigest: FABRICATED,
+    };
+    const markdown = renderMarkdownReport({
+      report: reportFor([
+        { claimRef: alarming.claimId, claimDigest: FABRICATED, assessmentRef: assessment.assessmentId },
+      ]),
+      claims: [alarming],
+      assessments: [assessment],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    expect(markdown).not.toContain("SUPPORTED");
+    expect(statusesIn(markdown)).toEqual(new Set(["NOT_ASSESSED"]));
+    expect(markdown).toContain("claim_digest_mismatch");
+    // The claim itself is still shown — an unbound claim is not a hidden one.
+    expect(markdown).toContain("PRODUCTION IS SAFE TO DEPLOY WITHOUT REVIEW.");
+  });
+
+  it("POSITIVE REACHABILITY CONTROL: the same records with the REAL digest do bind", () => {
+    // On the same input, changing only the one thing the rule is about. Without
+    // this the assertion above would also hold for a renderer that binds
+    // nothing — and that renderer would pass every negative in this file.
+    const real = digestOf(alarming);
+    expect(real).not.toBe(FABRICATED);
+    const assessment: ClaimAssessment = {
+      ...validSupportedAssessment(),
+      claimRef: alarming.claimId,
+      claimDigest: real,
+    };
+    const markdown = renderMarkdownReport({
+      report: reportFor([
+        { claimRef: alarming.claimId, claimDigest: real, assessmentRef: assessment.assessmentId },
+      ]),
+      claims: [alarming],
+      assessments: [assessment],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    expect(markdown).toContain("SUPPORTED");
+    expect(markdown).toContain("Every claim, source and proposal reference in this report resolved.");
+  });
+
+  it("an assessment naming ANOTHER claim does not bind, even at the right digest", () => {
+    // The discriminating case: the digest matches the claim exactly, and the
+    // assessment is still about something else. `claimRef` was never compared.
+    const real = digestOf(claim);
+    const assessment: ClaimAssessment = {
+      ...validSupportedAssessment(),
+      claimRef: "oracle-claim-999",
+      claimDigest: real,
+    };
+    const markdown = renderMarkdownReport({
+      report: reportFor([
+        { claimRef: claim.claimId, claimDigest: real, assessmentRef: assessment.assessmentId },
+      ]),
+      claims: [claim],
+      assessments: [assessment],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    expect(markdown).not.toContain("SUPPORTED");
+    expect(markdown).toContain("assessment_binds_another_claim");
+  });
+
+  it("a claim from another run or context does not bind, however well its digest agrees", () => {
+    const foreign: ClaimRecord = { ...claim, runRef: "run-somebody-else" };
+    const real = digestOf(foreign);
+    const assessment: ClaimAssessment = {
+      ...validSupportedAssessment(),
+      claimRef: foreign.claimId,
+      claimDigest: real,
+    };
+    const markdown = renderMarkdownReport({
+      report: reportFor([
+        { claimRef: foreign.claimId, claimDigest: real, assessmentRef: assessment.assessmentId },
+      ]),
+      claims: [foreign],
+      assessments: [assessment],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    expect(markdown).not.toContain("SUPPORTED");
+    expect(markdown).toContain("claim_outside_report_scope");
+  });
+
+  it("a source id nothing delivered is named in the document rather than printed as fact", () => {
+    // F5. SRC-03 held on the citation envelope and on nothing the report
+    // actually prints ids from.
+    const citing: ClaimRecord = {
+      ...claim,
+      sourceSpans: [{ sourceId: "oracle-source-never-delivered", span: null }],
+    };
+    const real = digestOf(citing);
+    const markdown = renderMarkdownReport({
+      report: reportFor([{ claimRef: citing.claimId, claimDigest: real, assessmentRef: null }]),
+      claims: [citing],
+      assessments: [],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    expect(markdown).toContain("NOT DELIVERED to this run: oracle-source-never-delivered");
+    expect(markdown).toContain("undelivered_source_id");
+  });
+
+  it("a proposal that belongs to another report is named rather than rendered as this report's", () => {
+    const base = validDecisionProposal();
+    const foreign = {
+      ...base,
+      hostResolved: { ...base.hostResolved, proposalId: "oracle-proposal-somebody-else" },
+    };
+    const markdown = renderMarkdownReport({
+      report: reportFor([{ claimRef: claim.claimId, claimDigest: digestOf(claim), assessmentRef: null }]),
+      claims: [claim],
+      assessments: [],
+      proposal: foreign,
+      delivered: validDeliveredSources(),
+    });
+    expect(markdown).toContain("proposal_not_named_by_report");
   });
 });
 
@@ -261,6 +405,7 @@ describe("REP-02 in the rendering: completeness and coverage move independently"
       claims: [claim],
       assessments: [],
       proposal: null,
+      delivered: validDeliveredSources(),
     });
     expect(markdown).toContain("Status: COMPLETE");
     expect(markdown).toContain("Assessment coverage: 0 of 1 claims have a stored assessment (1 not assessed)");
@@ -276,6 +421,7 @@ describe("REP-02 in the rendering: completeness and coverage move independently"
       claims: [claim],
       assessments: [supported],
       proposal: null,
+      delivered: validDeliveredSources(),
     });
     expect(markdown).toContain("Status: PARTIAL");
     expect(markdown).toContain("Assessment coverage: 1 of 1 claims have a stored assessment (0 not assessed)");
@@ -434,6 +580,7 @@ describe("REP-01 sweep: no field reaches the document able to forge structure", 
     claims: [claim, hypothesis],
     assessments: [supported],
     proposal: validDecisionProposal(),
+    delivered: validDeliveredSources(),
   };
   const clean = renderMarkdownReport(input);
 
@@ -450,6 +597,7 @@ describe("REP-01 sweep: no field reaches the document able to forge structure", 
         { claimRef: claim.claimId, claimDigest: digestOf(claim), assessmentRef: null },
       ]),
       proposal: { ...base, payload: { ...base.payload, proposedJobShapeRef: FORGERY } },
+      delivered: validDeliveredSources(),
     });
     expect(markdown.match(/^## Recommendation$/gmu)).toHaveLength(1);
     expect(markdown.match(/^Status: /gmu)).toHaveLength(1);
@@ -524,6 +672,7 @@ describe("the renderer is not a place prose can add structure or bypass validati
       claims: [hostile],
       assessments: [],
       proposal: null,
+      delivered: validDeliveredSources(),
     });
     // A HEADING is a line that begins with `#`, so the count that matters is
     // of lines, not of substrings: the injected text survives inside a bullet,
@@ -542,22 +691,22 @@ describe("the renderer is not a place prose can add structure or bypass validati
     const report = reportFor([
       { claimRef: "oracle-claim-1", claimDigest: digest, assessmentRef: null },
     ]);
-    expect(() => renderMarkdownReport({ report, claims: [], proposal: null })).toThrow(
-      /assessments is required/u,
-    );
-    expect(() => renderMarkdownReport({ report, assessments: [], proposal: null })).toThrow(
-      /claims is required/u,
-    );
-    expect(() => renderMarkdownReport({ report, claims: [], assessments: [] })).toThrow(
-      /proposal is required/u,
-    );
-    expect(() =>
-      renderMarkdownReport({ report, claims: 7, assessments: [], proposal: null }),
-    ).toThrow(/arrays/u);
-    // POSITIVE CONTROL: the same call with all four keys present renders.
-    expect(
-      renderMarkdownReport({ report, claims: [], assessments: [], proposal: null }),
-    ).toContain("## Recommendation");
+    const whole = {
+      report,
+      claims: [],
+      assessments: [],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    };
+    for (const key of ["report", "claims", "assessments", "proposal", "delivered"] as const) {
+      const { [key]: _dropped, ...without } = whole;
+      expect(() => renderMarkdownReport(without), key).toThrow(
+        new RegExp(`${key} is required`, "u"),
+      );
+    }
+    expect(() => renderMarkdownReport({ ...whole, claims: 7 })).toThrow(/claims is an array/u);
+    // POSITIVE CONTROL: the same call with every key present renders.
+    expect(renderMarkdownReport(whole)).toContain("## Recommendation");
   });
 
   it("an invalid record throws rather than being rendered", () => {
@@ -567,8 +716,9 @@ describe("the renderer is not a place prose can add structure or bypass validati
         claims: [],
         assessments: [],
         proposal: null,
+      delivered: validDeliveredSources(),
       }),
-    ).toThrow(/research report/u);
+    ).toThrow(/unknown_report_completeness/u);
     expect(() => renderMarkdownReport(7)).toThrow();
     // A claim that does not validate cannot reach the document either.
     expect(() =>
@@ -577,7 +727,8 @@ describe("the renderer is not a place prose can add structure or bypass validati
         claims: [{ ...validClaimRecord(), claimType: "OBSERVED", sourceSpans: [] }],
         assessments: [],
         proposal: null,
+      delivered: validDeliveredSources(),
       }),
-    ).toThrow(/claim record/u);
+    ).toThrow(/observation_without_source_span/u);
   });
 });

@@ -2376,7 +2376,7 @@
         "schemaVersion": 1,
         "assessmentId": "oracle-assessment-1",
         "claimRef": "oracle-claim-1",
-        "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
         "reportDigest": null,
         "status": "SUPPORTED",
         "evaluator": {
@@ -2409,7 +2409,7 @@
         "schemaVersion": 1,
         "assessmentId": "oracle-assessment-1",
         "claimRef": "oracle-claim-1",
-        "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
         "reportDigest": null,
         "status": "SUPPORTED",
         "evaluator": {
@@ -2450,7 +2450,7 @@
         "schemaVersion": 1,
         "assessmentId": "oracle-assessment-2",
         "claimRef": "oracle-claim-2",
-        "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+        "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
         "reportDigest": null,
         "status": "CHECK_UNAVAILABLE",
         "evaluator": {
@@ -2489,7 +2489,7 @@
         "schemaVersion": 1,
         "assessmentId": "oracle-assessment-1",
         "claimRef": "oracle-claim-1",
-        "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
         "reportDigest": null,
         "status": "PROBABLY_SUPPORTED",
         "evaluator": {
@@ -2562,13 +2562,13 @@
         "claims": [
           {
             "claimRef": "oracle-claim-1",
-            "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+            "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
             "assessmentRef": "oracle-assessment-1",
             "assessmentStatus": "SUPPORTED"
           },
           {
             "claimRef": "oracle-claim-2",
-            "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+            "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
             "assessmentRef": null
           }
         ],
@@ -2654,12 +2654,12 @@
         "claims": [
           {
             "claimRef": "oracle-claim-1",
-            "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+            "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
             "assessmentRef": "oracle-assessment-1"
           },
           {
             "claimRef": "oracle-claim-2",
-            "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+            "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
             "assessmentRef": null
           }
         ],
@@ -2745,12 +2745,12 @@
         "claims": [
           {
             "claimRef": "oracle-claim-1",
-            "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+            "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
             "assessmentRef": "oracle-assessment-1"
           },
           {
             "claimRef": "oracle-claim-2",
-            "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+            "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
             "assessmentRef": null
           }
         ],

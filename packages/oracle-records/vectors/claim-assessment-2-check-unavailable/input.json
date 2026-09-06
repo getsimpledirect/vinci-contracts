@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "assessmentId": "oracle-assessment-2",
   "claimRef": "oracle-claim-2",
-  "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+  "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
   "reportDigest": null,
   "status": "CHECK_UNAVAILABLE",
   "evaluator": { "kind": "verifier", "verifierId": "oracle-installed-reader-probe", "independent": true },

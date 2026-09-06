@@ -1,5 +1,5 @@
 import { REQUIRED_OUTPUTS } from "./research-request.ts";
-import type { ClaimRecord } from "./claim.ts";
+import { claimRecordDigest, validateClaimRecord, type ClaimRecord } from "./claim.ts";
 import type { ClaimAssessment } from "./claim-assessment.ts";
 import type { DecisionProposal } from "./decision-proposal.ts";
 import type { OracleContextBinding } from "./oracle-context.ts";
@@ -329,16 +329,25 @@ export const validSourceCitation = (): SourceCitation => ({
 });
 
 /**
- * The digests the report's claim entries bind to.
+ * The digests the report's claim entries bind to, COMPUTED from the claims.
  *
- * Fixed literals rather than `claimRecordDigest(validClaimRecord())`, and
- * deliberately: a report whose binding is computed from the claim it is being
- * checked against agrees with itself however wrong both are, and the binding
- * check in `renderMarkdownReport` would then be testing nothing. The tests that
- * need a REAL digest compute it and say so.
+ * These were fabricated literals — `"5e".repeat(32)` — pinned into both the
+ * assessment and the report entry, with a comment explaining that a computed
+ * digest "agrees with itself however wrong both are". That reasoning was right
+ * about a vector test and wrong here, and a review showed why: the production
+ * binding compared those two assertions to each other and never to the claim,
+ * so the honest-path positive control exercised no binding at all. A fixture
+ * whose digests are made up cannot demonstrate a rule about digests.
+ *
+ * Computed, so the positive controls bind for real. The NEGATIVES that need a
+ * wrong digest state one explicitly at the point of use, where it is visible as
+ * the lie it is.
  */
-const CLAIM_ONE_DIGEST = "5e".repeat(32);
-const CLAIM_TWO_DIGEST = "6f".repeat(32);
+const claimDigestOf = (claim: ClaimRecord): string => {
+  const parsed = validateClaimRecord(claim);
+  if (!parsed.ok) throw new Error(`fixture claim is invalid: ${JSON.stringify(parsed.issues)}`);
+  return claimRecordDigest(parsed.value);
+};
 
 /** §5.5's OBSERVED arm: something was read, and the record says where. */
 export const validClaimRecord = (): ClaimRecord => ({
@@ -417,7 +426,7 @@ export const validSupportedAssessment = (): ClaimAssessment => ({
   schemaVersion: 1,
   assessmentId: "oracle-assessment-1",
   claimRef: "oracle-claim-1",
-  claimDigest: CLAIM_ONE_DIGEST,
+  claimDigest: claimDigestOf(validClaimRecord()),
   reportDigest: null,
   status: "SUPPORTED",
   evaluator: { kind: "verifier", verifierId: "oracle-provenance-checker", independent: true },
@@ -436,7 +445,7 @@ export const validCheckUnavailableAssessment = (): ClaimAssessment => ({
   schemaVersion: 1,
   assessmentId: "oracle-assessment-2",
   claimRef: "oracle-claim-2",
-  claimDigest: CLAIM_TWO_DIGEST,
+  claimDigest: claimDigestOf(validHypothesisClaim()),
   reportDigest: null,
   status: "CHECK_UNAVAILABLE",
   evaluator: { kind: "verifier", verifierId: "oracle-installed-reader-probe", independent: true },
@@ -454,7 +463,10 @@ export const validNotAssessedAssessment = (): ClaimAssessment => ({
   schemaVersion: 1,
   assessmentId: "oracle-assessment-3",
   claimRef: "oracle-claim-3",
-  claimDigest: CLAIM_ONE_DIGEST,
+  // The digest of the claim it NAMES. It used to carry claim one's digest while
+  // naming claim three — an inconsistency nothing looked at, because nothing
+  // compared claimRef either.
+  claimDigest: claimDigestOf(validInferredClaim()),
   reportDigest: null,
   status: "NOT_ASSESSED",
   limitations: [],
@@ -488,8 +500,8 @@ export const validResearchReport = (): ResearchReport => ({
   assessmentCoverage: { claimsTotal: 2, claimsWithStoredAssessment: 1, claimsNotAssessed: 1 },
   runTerminal: { kind: "not_terminal" },
   claims: [
-    { claimRef: "oracle-claim-1", claimDigest: CLAIM_ONE_DIGEST, assessmentRef: "oracle-assessment-1" },
-    { claimRef: "oracle-claim-2", claimDigest: CLAIM_TWO_DIGEST, assessmentRef: null },
+    { claimRef: "oracle-claim-1", claimDigest: claimDigestOf(validClaimRecord()), assessmentRef: "oracle-assessment-1" },
+    { claimRef: "oracle-claim-2", claimDigest: claimDigestOf(validHypothesisClaim()), assessmentRef: null },
   ],
   sourceManifest: [
     {
@@ -639,6 +651,21 @@ export const validOutcomeRecord = (): OutcomeRecord => ({
   duplicateOfOutcomeRef: null,
   issuedAt: "2026-09-07T09:30:00.000Z",
 });
+
+/**
+ * The sources the host delivered to this run.
+ *
+ * Every source id the fixture claims cite. Required by the render bundle, so a
+ * test that forgets it fails loudly instead of rendering ids nothing resolved.
+ */
+export const validDeliveredSources = () => [
+  {
+    sourceId: "oracle-source-1",
+    runRef: "run-oracle-1",
+    workspaceRef: "ws-institutional-1",
+    presentationIndex: 1,
+  },
+];
 
 /** Reverse every object's key order, recursively. Same content, different insertion order. */
 export function reversed(value: unknown): unknown {

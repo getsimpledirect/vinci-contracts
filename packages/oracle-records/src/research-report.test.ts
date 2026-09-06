@@ -158,6 +158,34 @@ describe("§22.2: the report references a stored assessment, it does not carry o
   });
 });
 
+describe("F4: a claim listed twice is refused, so the coverage numbers mean something", () => {
+  it("one claim listed three times is refused at the repeats", () => {
+    // It validated, rendered three identical findings, and reported "3 of 3".
+    // The coverage cross-check compares the declared total to `claims.length` —
+    // the list checked against itself — so a duplicated entry inflated both
+    // sides at once and the check agreed with the inflation.
+    const base = validResearchReport();
+    const [first] = base.claims;
+    if (first === undefined) throw new Error("fixture must carry a claim");
+    const result = validateResearchReport({
+      ...base,
+      claims: [first, { ...first }, { ...first }],
+      assessmentCoverage: { claimsTotal: 3, claimsWithStoredAssessment: 3, claimsNotAssessed: 0 },
+    });
+    expect(issuesOf(result)).toEqual([
+      { path: "/claims/1/claimRef", code: "duplicate_claim_entry" },
+      { path: "/claims/2/claimRef", code: "duplicate_claim_entry" },
+    ]);
+  });
+
+  it("POSITIVE CONTROL: two DIFFERENT claims are accepted", () => {
+    // Without this the rule would be satisfied by refusing every report with
+    // more than one claim.
+    expect(issuesOf(validateResearchReport(validResearchReport()))).toEqual([]);
+    expect(validResearchReport().claims).toHaveLength(2);
+  });
+});
+
 describe("a partial report explains what stopped, and a cost says what is known", () => {
   it("a PARTIAL report with no stop explanation is refused", () => {
     const result = validateResearchReport({ ...validResearchReport(), stopExplanation: null });

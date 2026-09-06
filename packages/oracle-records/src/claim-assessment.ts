@@ -60,6 +60,43 @@ import {
  * `NOT_ASSESSED` is deliberately not reachable from any of that. It means
  * nobody looked, which is a different fact from a look that settled nothing,
  * and its arm carries no evaluator at all — because there was none.
+ *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * THE AUTHORING PATH, WHICH THESE THREE LAYERS DO NOT COVER.
+ *
+ * A review asked why `ClaimAssessment` has no `AttestedEnvelope` when
+ * `ResearchRequest`, `SourceCitation` and `DecisionProposal` do, and observed
+ * that anything able to author JSON can write `status: "SUPPORTED"` with a
+ * fabricated evaluator and reviewer run. That is correct, and here is the
+ * precise answer rather than a reassuring one.
+ *
+ * CLM-01's three layers are about ERROR paths: they make it impossible for a
+ * parse failure, a timeout, empty material or an incomplete run to BECOME
+ * support. They say nothing about a record that was simply written saying
+ * SUPPORTED. That is a different attack and it is not closed here.
+ *
+ * WHY AN ENVELOPE WOULD NOT CLOSE IT EITHER, which matters because reaching for
+ * one would look like a fix. `validateAttestedEnvelope` checks the SHAPE of a
+ * host-resolved half; it verifies no signature and consults no key. Its value
+ * is that a consumer can tell which subtree a model wrote, so an authority key
+ * in the model's half is refusable. A forger authoring the whole document
+ * authors the host half too. Moving `status` into `hostResolved` would relabel
+ * the problem, and the comment describing it would be the third comment in this
+ * package asserting a guarantee the code does not have.
+ *
+ * WHAT WOULD CLOSE IT, stated so the gap is owned rather than lost: the
+ * persistence boundary — who may write an assessment record — plus an
+ * attestation something verifies. Neither lives in a contracts package. What
+ * this package can do, and now does, is make sure a forged assessment cannot
+ * BIND: `resolveReportBundle` recomputes the claim digest, so a fabricated
+ * assessment must also name a real claim whose bytes hash to the value it
+ * asserts. `src/cross-record-anchors.test.ts` carries a LIMIT test that
+ * demonstrates the remaining hole rather than describing it.
+ *
+ * A `MODEL`-method assessment is the case where a model genuinely authored part
+ * of this record, which is why CLM-02 makes `method` a required field a
+ * consumer can filter on: the package cannot stop a model critic's opinion
+ * being recorded, so it makes sure nobody can mistake it for an execution.
  */
 
 /** §5.5's five statuses. None of them is a default. */

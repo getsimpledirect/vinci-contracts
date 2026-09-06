@@ -64,15 +64,15 @@ EXPECTED_VECTORS = [
 # src/vectors.test.ts pins the identical values from the other language: a
 # regeneration must be typed into both, which is what makes it a deliberate act.
 PINNED_DIGESTS = {
-    "claim-assessment-1-supported": "a08b1e31fffc816ce69d987e3150a6acb192b26688dc7351daa52f251da628b0",
-    "claim-assessment-2-check-unavailable": "0da93a35f4d2dba1049bba747e18162c0773cc44e8bf294169e87d24bfdd740f",
-    "claim-assessment-3-not-assessed": "56a03d670b42375b9aa4bea4dec5f9a80464ae7cf16e7071d822ea127505998f",
+    "claim-assessment-1-supported": "6aa5ad100be98f6fbcedd1460da2e98b26076f8f0a23d09eee3849cbb2eaeb61",
+    "claim-assessment-2-check-unavailable": "cc9a5d13aacaf7362d3ca979387a3d53d4f0592419148c3f22ddabc7a4739e68",
+    "claim-assessment-3-not-assessed": "0a9d9e27219a3a6f33e06f1663506e5eceb0aa0e99ba1a1e48b3311ee62b282c",
     "claim-record-1-observed": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
     "claim-record-2-hypothesis": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
     "decision-proposal-1-request-observation": "2b1a89a24fd1254e4afd578271bc42dbd8f074e4a4bcadda3df9889063179cf0",
     "decision-proposal-2-no-change": "8262f70dc99b4ccee8da357a29dec6a043145b03ff5656237ab8aebbdb3ceed6",
     "outcome-record-1-helpful-disproved": "44ce14449cb847a37b9786f91500cdc7f6a2eb91289f382aa9aa073c9767a8b6",
-    "research-report-1-partial": "af1b7f8dc27e9e638b43a7d4bf25856e5aa440cb6185030ac235862d92d38fb5",
+    "research-report-1-partial": "77dfc2c019b9f0bf604b936f9d95b4ba36e09d6dd31a970ab58899990c3f59ce",
     "context-binding-1-complete": "95c49a42f4ce350d3113ea6ba5210a6db7a8c12096c36150dcf4b293132389f7",
     "context-binding-2-incomplete": "362feb622e1e54719d884e5ddf893332a9408e3c85a8f156a2b4907015096497",
     "research-request-1-admitted": "a722101e72a63e022944a3a7fc336d86c6410efb93751a015d74f94017a34bb0",
@@ -83,93 +83,73 @@ PINNED_DIGESTS = {
     "source-record-3-unsupported-format": "32cf1b46f8ad43128a37de1012bd36b53320812a6be042cb505ff2a4ee539c2b",
 }
 
-# The closed vocabularies, pinned HERE rather than read from anything the
-# TypeScript side produces. Deriving them from the vectors would make the
-# membership checks below vacuous — a renamed member would move on both sides at
-# once and every assertion would still pass.
+# The closed vocabularies, PARSED FROM THE TYPESCRIPT SOURCE.
+#
+# They used to be a hand-typed dict, and a mutation control showed what that was
+# worth: dropping CONTRADICTED and INSUFFICIENT_EVIDENCE, renaming
+# OBSERVATION_UNAVAILABLE and adding a fabricated CLAIM_TYPES member each left
+# 17/17 green against the real committed vectors. The docstring above claimed
+# enum drift was "a checked property rather than a claim"; it was a claim. A
+# second copy of a vocabulary is only a pin if something compares it to the
+# first, and `check-duplicate-vocabularies.mjs` walks packages/*/src and never
+# python/.
+#
+# Reading the members from the TypeScript makes drift fail here instead: a
+# member renamed on one side no longer exists on the other. What is pinned in
+# THIS file is the set of vocabulary NAMES and a floor on each one's size, so a
+# parse that silently returned nothing fails rather than blessing an empty sweep.
+_SRC = os.path.join(REPO, "packages", "oracle-records", "src")
+
+# name -> (file, minimum member count). The floors are the independent half:
+# they are what a broken parse or a quietly emptied vocabulary trips over.
+_VOCABULARY_SOURCES = {
+    "ATTESTED_ENVELOPE_KINDS": ("envelope.ts", 3),
+    "RESEARCH_MODES": ("research-request.ts", 4),
+    "ORACLE_PROPOSE_SCOPES": ("research-request.ts", 2),
+    "SOURCE_MATCH_STATES": ("source-record.ts", 3),
+    "SOURCE_READ_OUTCOMES": ("source-record.ts", 7),
+    "SOURCE_COMPLETENESS": ("source-record.ts", 4),
+    "SOURCE_OBSERVATION_MODES": ("source-record.ts", 2),
+    "CONTEXT_COMPLETENESS": ("oracle-context.ts", 2),
+    "ASSESSMENT_STATUSES": ("claim-assessment.ts", 5),
+    "ASSESSMENT_METHODS": ("claim-assessment.ts", 4),
+    "CHECK_UNAVAILABLE_REASONS": ("claim-assessment.ts", 6),
+    "REVIEWER_OUTCOME_KINDS": ("claim-assessment.ts", 6),
+    "CLAIM_TYPES": ("claim.ts", 5),
+    "CLAIM_MATERIALITY": ("claim.ts", 3),
+    "PROPOSAL_KINDS": ("decision-proposal.ts", 8),
+    "PROPOSAL_ADMISSIBILITY": ("decision-proposal.ts", 2),
+    "OUTCOME_CLASSES": ("outcome-record.ts", 5),
+    "OUTCOME_CREDIT_KINDS": ("outcome-record.ts", 3),
+    "HYPOTHESIS_RESULTS": ("outcome-record.ts", 3),
+    "REPORT_COMPLETENESS": ("research-report.ts", 3),
+    "REPORT_COST_STATES": ("research-report.ts", 4),
+    "RUN_TERMINAL_KINDS": ("research-report.ts", 3),
+    "CLAIM_BINDING_STATES": ("report-binding.ts", 7),
+    # run-events owns these two; the report reuses them rather than restating
+    # them, so this file reads them from their OWNER.
+    "RUN_OUTCOMES": (os.path.join("..", "..", "run-events", "src", "payload.ts"), 6),
+    "RUN_FAILURE_CODES": (os.path.join("..", "..", "run-events", "src", "payload.ts"), 6),
+}
+
+
+def _parse_ts_vocabulary(name, filename):
+    """Read `export const NAME = [...] as const;` out of a TypeScript source."""
+    path = os.path.join(_SRC, filename)
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    marker = "export const %s = [" % name
+    start = text.index(marker)
+    end = text.index("] as const;", start)
+    body = text[start + len(marker):end]
+    # Members only: strip // comments so a commented-out member is not counted.
+    body = re.sub(r"//[^\n]*", "", body)
+    return re.findall(r'"([^"]+)"', body)
+
+
 VOCABULARIES = {
-    "ATTESTED_ENVELOPE_KINDS": [
-        "oracle_research_request",
-        "oracle_source_citation",
-        "oracle_decision_proposal",
-    ],
-    "RESEARCH_MODES": ["investigation", "verification", "monitoring", "exploration"],
-    "SOURCE_MATCH_STATES": ["MATCHED", "NO_MATCH", "NOT_SEARCHED"],
-    "SOURCE_READ_OUTCOMES": [
-        "READ_COMPLETE",
-        "READ_PARTIAL",
-        "SEARCH_NO_RESULTS",
-        "SEARCH_FAILED",
-        "FETCH_FAILED",
-        "UNSUPPORTED_FORMAT",
-        "ACCESS_DENIED",
-    ],
-    "SOURCE_COMPLETENESS": [
-        "FULL_REQUESTED_RANGE",
-        "PARTIAL",
-        "SNIPPET_ONLY",
-        "NOT_OBTAINED",
-    ],
-    "CONTEXT_COMPLETENESS": ["CONTEXT_COMPLETE", "CONTEXT_INCOMPLETE"],
-    "SOURCE_OBSERVATION_MODES": ["INDEPENDENT_RETRIEVAL", "PROVIDER_REPORTED"],
-    "ASSESSMENT_STATUSES": [
-        "SUPPORTED",
-        "CONTRADICTED",
-        "INSUFFICIENT_EVIDENCE",
-        "CHECK_UNAVAILABLE",
-        "NOT_ASSESSED",
-    ],
-    "ASSESSMENT_METHODS": ["DETERMINISTIC", "EXECUTION", "MODEL", "HUMAN"],
-    "CLAIM_TYPES": [
-        "OBSERVED",
-        "EXTERNALLY_REPORTED",
-        "INFERRED",
-        "HYPOTHESIS",
-        "RECOMMENDATION",
-    ],
-    "PROPOSAL_KINDS": [
-        "ANSWER_ONLY",
-        "REQUEST_OBSERVATION",
-        "EXPERIMENT_PROPOSAL",
-        "IMPLEMENTATION_PROPOSAL",
-        "NO_CHANGE",
-        "DEFER",
-        "STOP_PROPOSAL",
-        "ESCALATE",
-    ],
-    "PROPOSAL_ADMISSIBILITY": ["ADMISSIBLE", "INADMISSIBLE_RETAINED_AS_ADVISORY"],
-    "ORACLE_PROPOSE_SCOPES": ["advisory_only", "advisory_with_job_shape_ref"],
-    "OUTCOME_CLASSES": [
-        "HELPFUL_OBSERVED",
-        "NOT_HELPFUL_OBSERVED",
-        "INCONCLUSIVE",
-        "NOT_ATTEMPTED",
-        "OBSERVATION_UNAVAILABLE",
-    ],
-    "HYPOTHESIS_RESULTS": ["SUPPORTED_BY_RESULT", "DISPROVED_BY_RESULT", "NOT_APPLICABLE"],
-    "REPORT_COMPLETENESS": ["COMPLETE", "PARTIAL", "FAILED"],
-    # run-events' OWN vocabularies, pinned here independently. The report used
-    # to carry a private four-member list that contradicted these: only
-    # SUCCEEDED overlapped, so a report could not say a run ended SUPERSEDED or
-    # DUPLICATE at all. A member renamed on either side now breaks here.
-    "RUN_OUTCOMES": [
-        "SUCCEEDED",
-        "DO_NOT_START",
-        "DUPLICATE",
-        "NO_LONGER_VALUABLE",
-        "SUPERSEDED",
-        "CLOSE_WITH_NEGATIVE_RESULT",
-    ],
-    "RUN_FAILURE_CODES": [
-        "worker_crashed",
-        "worker_unreachable",
-        "provider_error",
-        "budget_exhausted",
-        "runtime_exceeded",
-        "internal_error",
-    ],
-    "RUN_TERMINAL_KINDS": ["completed", "failed", "not_terminal"],
-    "OUTCOME_CREDIT_KINDS": ["ACCEPTED_WORK", "REUSE", "NO_CREDIT"],
+    name: _parse_ts_vocabulary(name, filename)
+    for name, (filename, _floor) in _VOCABULARY_SOURCES.items()
 }
 
 
@@ -437,12 +417,7 @@ class SharedVocabularies(unittest.TestCase):
         this file asserting something about a rule that no longer exists. The
         parse is deliberately narrow and fails loudly.
         """
-        source = os.path.join(REPO, "packages", "oracle-records", "src", "lib", "validate.ts")
-        with open(source, encoding="utf-8") as f:
-            text = f.read()
-        start = text.index("export const AUTHORITY_TERMS = [")
-        end = text.index("] as const;", start)
-        terms = re.findall(r'"([a-z_]+)"', text[start:end])
+        terms = _parse_ts_vocabulary("AUTHORITY_TERMS", os.path.join("lib", "validate.ts"))
         # A floor, so a broken parse fails rather than blessing an empty sweep.
         self.assertGreaterEqual(len(terms), 10)
         self.assertIn("authority", terms)
@@ -533,6 +508,78 @@ class SharedVocabularies(unittest.TestCase):
         self.assertEqual(obtained["completeness"], "FULL_REQUESTED_RANGE")
         self.assertEqual(obtained["matchState"], "MATCHED")
         self.assertIs(obtained["coversEntireDocument"], False)
+
+
+class ParsedVocabularies(unittest.TestCase):
+    """The vocabularies are read from the TypeScript, so this checks the READER.
+
+    A parse that returned nothing would make every membership assertion in this
+    file vacuously true, which is precisely the failure the hand-typed dict had.
+    The floors are declared beside each name and are the independent half.
+    """
+
+    def test_every_vocabulary_parsed_and_meets_its_floor(self):
+        self.assertGreaterEqual(len(VOCABULARIES), 20)
+        for name, (_filename, floor) in _VOCABULARY_SOURCES.items():
+            with self.subTest(vocabulary=name):
+                members = VOCABULARIES[name]
+                self.assertGreaterEqual(len(members), floor, name)
+                self.assertEqual(len(set(members)), len(members), "%s has a repeated member" % name)
+                for member in members:
+                    self.assertIsInstance(member, str)
+                    self.assertNotEqual(member.strip(), "")
+
+    def test_the_parser_finds_the_members_it_should_and_no_others(self):
+        """Non-vacuity, against values checked into the source by hand."""
+        statuses = VOCABULARIES["ASSESSMENT_STATUSES"]
+        self.assertEqual(
+            sorted(statuses),
+            sorted(["SUPPORTED", "CONTRADICTED", "INSUFFICIENT_EVIDENCE",
+                    "CHECK_UNAVAILABLE", "NOT_ASSESSED"]),
+        )
+        # And a vocabulary owned by ANOTHER package, read from its owner.
+        self.assertIn("SUPERSEDED", VOCABULARIES["RUN_OUTCOMES"])
+        self.assertNotIn("SUPERSEDED", VOCABULARIES["RUN_FAILURE_CODES"])
+
+    def test_a_missing_vocabulary_raises_rather_than_returning_empty(self):
+        """The parse fails loudly. An empty list would be a silent green."""
+        with self.assertRaises(ValueError):
+            _parse_ts_vocabulary("A_VOCABULARY_THAT_DOES_NOT_EXIST", "claim.ts")
+
+
+class CrossRecordBindings(unittest.TestCase):
+    """The committed vectors agree with each other, checked from the other language.
+
+    This is the cross-record property the TypeScript side now recomputes: a
+    report's claim entry asserts a digest, and the claim vector's own canonical
+    bytes are what that assertion has to match. Python can verify it because it
+    has the canonicalizer, and doing it here means a fabricated digest in a
+    committed vector fails in BOTH languages.
+    """
+
+    def test_the_report_claim_digests_are_the_claims_own_digests(self):
+        report = _read_json("research-report-1-partial", "input.json")
+        claims = {
+            "oracle-claim-1": _read_json("claim-record-1-observed", "input.json"),
+            "oracle-claim-2": _read_json("claim-record-2-hypothesis", "input.json"),
+        }
+        self.assertEqual(len(report["claims"]), 2)
+        for entry in report["claims"]:
+            with self.subTest(claim=entry["claimRef"]):
+                claim = claims[entry["claimRef"]]
+                self.assertEqual(entry["claimDigest"], digest(claim))
+
+    def test_the_supported_assessment_binds_to_the_claim_it_names(self):
+        assessment = _read_json("claim-assessment-1-supported", "input.json")
+        claim = _read_json("claim-record-1-observed", "input.json")
+        self.assertEqual(assessment["claimRef"], claim["claimId"])
+        self.assertEqual(assessment["claimDigest"], digest(claim))
+
+    def test_NEGATIVE_CONTROL_a_different_claim_has_a_different_digest(self):
+        """Without this the two assertions above would hold for a constant digest."""
+        one = _read_json("claim-record-1-observed", "input.json")
+        two = _read_json("claim-record-2-hypothesis", "input.json")
+        self.assertNotEqual(digest(one), digest(two))
 
 
 class RefusalCases(unittest.TestCase):

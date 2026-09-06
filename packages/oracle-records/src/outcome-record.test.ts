@@ -18,6 +18,15 @@ import { reversed, validOutcomeRecord } from "./fixtures.test-helpers.ts";
  * which is the other way this record can fail.
  */
 
+/**
+ * The work orders the HOST authorized. The anchor the credit rule is keyed on,
+ * supplied as a second argument exactly as `resolveCitations` takes `delivered`.
+ */
+const AUTHORIZED = [
+  { workRef: "wo-installed-reader-probe", runRef: "run-oracle-1", workspaceRef: "ws-institutional-1" },
+  { workRef: "wo-a-different-piece-of-work", runRef: "run-oracle-1", workspaceRef: "ws-institutional-1" },
+];
+
 function issuesOf(result: ReturnType<typeof validateOutcomeRecord>) {
   return result.ok ? [] : result.issues.map((i) => ({ path: i.path, code: i.code }));
 }
@@ -203,7 +212,7 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
   });
 
   it("POSITIVE CONTROL: one accepted-work credit alongside a reuse of it is CREDITED", () => {
-    const result = resolveOutcomeCredits([validOutcomeRecord(), reuse()]);
+    const result = resolveOutcomeCredits([validOutcomeRecord(), reuse()], AUTHORIZED);
     expect(result).toEqual({
       outcome: "CREDITED",
       acceptedWork: ["oracle-outcome-1"],
@@ -214,7 +223,7 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
 
   it("two accepted-work credits for the same underlying outcome are DOUBLE_CREDITED", () => {
     const second: OutcomeRecord = { ...validOutcomeRecord(), outcomeId: "oracle-outcome-7" };
-    const result = resolveOutcomeCredits([validOutcomeRecord(), second]);
+    const result = resolveOutcomeCredits([validOutcomeRecord(), second], AUTHORIZED);
     expect(result.outcome).toBe("DOUBLE_CREDITED");
     if (result.outcome !== "DOUBLE_CREDITED") return;
     expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
@@ -239,25 +248,35 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
     expect(alpha.proposalDigest).toBe(beta.proposalDigest);
     expect(alpha.authorizedWorkRef).toBe(beta.authorizedWorkRef);
     expect(outcomeCreditAnchor(alpha)).toBe(outcomeCreditAnchor(beta));
-    const result = resolveOutcomeCredits([alpha, beta]);
+    const result = resolveOutcomeCredits([alpha, beta], AUTHORIZED);
     expect(result.outcome).toBe("DOUBLE_CREDITED");
   });
 
-  it("the anchor is host-bound: no field the record authors can move it", () => {
-    // The property that makes the rule survive a consistent lie. Every field a
-    // record writes about ITSELF may differ; the anchor does not move, so the
-    // two still collide.
+  it("the anchor is the AUTHORIZED SET, and varying the field the record writes proves it", () => {
+    // The test this replaces varied outcomeId, justification, rubricRef,
+    // issuedAt and hypothesisResult — and never varied `authorizedWorkRef`,
+    // the field it claimed nothing could move. It proved a projection is
+    // stable under changes to fields that are not the projection. The review
+    // was right, and the name asserting the property is what got it accepted.
+    //
+    // So: vary the field itself. The projection MOVES, which is the honest
+    // fact about it...
     const base = validOutcomeRecord();
-    const rebranded: OutcomeRecord = {
-      ...base,
-      outcomeId: "oracle-outcome-rebranded",
-      justification: "A differently worded account of the very same probe run.",
-      rubricRef: "rubric:a-different-rubric",
-      issuedAt: "2026-09-08T09:30:00.000Z",
-      hypothesisResult: "NOT_APPLICABLE",
-    };
-    expect(outcomeCreditAnchor(rebranded)).toBe(outcomeCreditAnchor(base));
-    expect(resolveOutcomeCredits([base, rebranded]).outcome).toBe("DOUBLE_CREDITED");
+    const renamed: OutcomeRecord = { ...base, authorizedWorkRef: "wo-a-different-piece-of-work" };
+    expect(outcomeCreditAnchor(renamed)).not.toBe(outcomeCreditAnchor(base));
+
+    // ...and the RULE does not, because the resolver looks the ref up in the
+    // host-authorized set rather than trusting it. A ref nothing authorized
+    // takes no credit at all.
+    const invented: OutcomeRecord = { ...base, authorizedWorkRef: "wo-i-made-this-up" };
+    expect(resolveOutcomeCredits([invented], AUTHORIZED).outcome).toBe("UNAUTHORIZED_WORK");
+
+    // POSITIVE REACHABILITY CONTROL on the same input: the unchanged record,
+    // whose ref IS in the set, is credited.
+    const credited = resolveOutcomeCredits([base], AUTHORIZED);
+    expect(credited.outcome).toBe("CREDITED");
+    if (credited.outcome !== "CREDITED") return;
+    expect(credited.acceptedWork).toEqual(["oracle-outcome-1"]);
   });
 
   it("an ACCEPTED_WORK credit with no authorized work is refused: there is nothing to credit", () => {
@@ -271,18 +290,76 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
     ]);
   });
 
-  it("two accepted-work credits for DIFFERENT keys are both credited", () => {
-    // The discriminating control for the rule above: it is about the key, not
-    // about two records sharing a shape.
+  it("two accepted-work credits for genuinely different work are both credited", () => {
+    // The discriminating control for the rule above: it is about the underlying
+    // outcome, not about two records sharing a shape. Different authorized work
+    // AND different execution evidence — a second work order that reused the
+    // first one's evidence would be the same execution wearing a second name,
+    // which the rule below covers.
     const other: OutcomeRecord = {
       ...validOutcomeRecord(),
       outcomeId: "oracle-outcome-8",
       authorizedWorkRef: "wo-a-different-piece-of-work",
+      executionEvidenceRefs: ["evidence-probe-run-91"],
     };
-    const result = resolveOutcomeCredits([validOutcomeRecord(), other]);
+    const result = resolveOutcomeCredits([validOutcomeRecord(), other], AUTHORIZED);
     expect(result.outcome).toBe("CREDITED");
     if (result.outcome !== "CREDITED") return;
     expect(result.acceptedWork).toEqual(["oracle-outcome-1", "oracle-outcome-8"]);
+  });
+
+  it("THE SECOND REVIEW'S REPRO: an invented work ref takes no credit", () => {
+    // The anchor used to be `authorizedWorkRef` read off the record, so two
+    // outcomes recording the SAME execution took two accepted-work credits by
+    // writing different work refs. The resolver now looks each one up in the
+    // host-authorized set it is handed.
+    const base = validOutcomeRecord();
+    const a: OutcomeRecord = { ...base, outcomeId: "oracle-outcome-a", authorizedWorkRef: "wo-alpha" };
+    const b: OutcomeRecord = { ...base, outcomeId: "oracle-outcome-b", authorizedWorkRef: "wo-beta" };
+    // Both name the SAME execution evidence, which is what makes them one
+    // underlying outcome however they describe the work.
+    expect(a.executionEvidenceRefs).toEqual(b.executionEvidenceRefs);
+    const result = resolveOutcomeCredits([a, b], AUTHORIZED);
+    expect(result.outcome).toBe("UNAUTHORIZED_WORK");
+    if (result.outcome !== "UNAUTHORIZED_WORK") return;
+    expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
+      { path: "/outcomes/0/authorizedWorkRef", code: "work_never_authorized" },
+      { path: "/outcomes/1/authorizedWorkRef", code: "work_never_authorized" },
+    ]);
+  });
+
+  it("and even when BOTH work refs are host-authorized, one execution is one credit", () => {
+    // The case the work-ref lookup alone does not close: a host that authorized
+    // two work orders, and two outcomes citing the same execution evidence.
+    const base = validOutcomeRecord();
+    const a: OutcomeRecord = { ...base, outcomeId: "oracle-outcome-a" };
+    const b: OutcomeRecord = {
+      ...base,
+      outcomeId: "oracle-outcome-b",
+      authorizedWorkRef: "wo-a-different-piece-of-work",
+    };
+    const result = resolveOutcomeCredits([a, b], AUTHORIZED);
+    expect(result.outcome).toBe("DOUBLE_CREDITED");
+    if (result.outcome !== "DOUBLE_CREDITED") return;
+    expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
+      { path: "/outcomes/1/executionEvidenceRefs", code: "duplicate_accepted_work_credit" },
+    ]);
+  });
+
+  it("work authorized in another run does not count here", () => {
+    const foreign = [
+      { workRef: "wo-installed-reader-probe", runRef: "run-somebody-else", workspaceRef: "ws-institutional-1" },
+    ];
+    const result = resolveOutcomeCredits([validOutcomeRecord()], foreign);
+    expect(result.outcome).toBe("UNAUTHORIZED_WORK");
+    if (result.outcome !== "UNAUTHORIZED_WORK") return;
+    expect(result.issues.map((i) => i.code)).toEqual(["work_authorized_elsewhere"]);
+  });
+
+  it("an omitted authorized-work set is REFUSED, not read as an empty one", () => {
+    expect(resolveOutcomeCredits([validOutcomeRecord()], undefined).outcome).toBe("REFUSED");
+    const malformed = resolveOutcomeCredits([validOutcomeRecord()], [{ workRef: "wo-x" }]);
+    expect(malformed.outcome).toBe("REFUSED");
   });
 
   it("a reuse that names no original is refused: unnamed reuse is a second credit renamed", () => {
@@ -312,7 +389,7 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
       outcomeId: "oracle-outcome-10",
       duplicateOfOutcomeRef: first.outcomeId,
     };
-    const result = resolveOutcomeCredits([validOutcomeRecord(), first, second]);
+    const result = resolveOutcomeCredits([validOutcomeRecord(), first, second], AUTHORIZED);
     expect(result.outcome).toBe("MISBOUND_REUSE");
     if (result.outcome !== "MISBOUND_REUSE") return;
     expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
@@ -328,28 +405,28 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
       ...reuse(),
       duplicateOfOutcomeRef: "oracle-outcome-nowhere",
     };
-    const result = resolveOutcomeCredits([validOutcomeRecord(), dangling]);
+    const result = resolveOutcomeCredits([validOutcomeRecord(), dangling], AUTHORIZED);
     expect(result.outcome).toBe("CREDITED");
     if (result.outcome !== "CREDITED") return;
     expect(result.unresolvedReuse).toEqual(["oracle-outcome-6"]);
     expect(result.reuse).toEqual(["oracle-outcome-6"]);
     // POSITIVE CONTROL: the resolvable reuse leaves the list empty, so the
     // field means something rather than always being populated.
-    const resolvedResult = resolveOutcomeCredits([validOutcomeRecord(), reuse()]);
+    const resolvedResult = resolveOutcomeCredits([validOutcomeRecord(), reuse()], AUTHORIZED);
     expect(resolvedResult.outcome === "CREDITED" ? resolvedResult.unresolvedReuse : null).toEqual([]);
   });
 
   it("a malformed outcome is REFUSED rather than counted as a credit", () => {
     // REFUSED and DOUBLE_CREDITED are different answers; collapsing them would
     // let a broken record read as a clean ledger.
-    const result = resolveOutcomeCredits([validOutcomeRecord(), { outcomeId: 7 }]);
+    const result = resolveOutcomeCredits([validOutcomeRecord(), { outcomeId: 7 }], AUTHORIZED);
     expect(result.outcome).toBe("REFUSED");
     for (const hostile of [null, 7, "CREDITED", { outcomes: [] }]) {
-      expect(resolveOutcomeCredits(hostile).outcome).toBe("REFUSED");
+      expect(resolveOutcomeCredits(hostile, AUTHORIZED).outcome).toBe("REFUSED");
     }
     // And the empty ledger is CREDITED with nothing, not refused: no outcomes
     // is a real state and not an error.
-    expect(resolveOutcomeCredits([])).toEqual({
+    expect(resolveOutcomeCredits([], AUTHORIZED)).toEqual({
       outcome: "CREDITED",
       acceptedWork: [],
       reuse: [],
@@ -412,7 +489,7 @@ describe("OUT-04 mutation control (QUAL-03): the assertions fail against the old
   });
 
   it("the shipped resolver DOUBLE_CREDITS them, for the intended reason", () => {
-    const result = resolveOutcomeCredits([alpha, beta]);
+    const result = resolveOutcomeCredits([alpha, beta], AUTHORIZED);
     expect(result.outcome).toBe("DOUBLE_CREDITED");
     if (result.outcome !== "DOUBLE_CREDITED") return;
     expect(result.issues.map((i) => i.code)).toEqual(["duplicate_accepted_work_credit"]);
@@ -436,7 +513,7 @@ describe("OUT-04 mutation control (QUAL-03): the assertions fail against the old
     expect(issuesOf(stored)).toEqual([
       { path: "/duplicateOfOutcomeRef", code: "self_referential_reuse" },
     ]);
-    expect(resolveOutcomeCredits([self]).outcome).toBe("REFUSED");
+    expect(resolveOutcomeCredits([self], AUTHORIZED).outcome).toBe("REFUSED");
     // And the removed field is genuinely gone: a record still carrying it is
     // refused rather than quietly ignored, so no producer keeps writing one.
     const stillKeyed = validateOutcomeRecord(keyed(validOutcomeRecord(), "credit-key-legacy"));

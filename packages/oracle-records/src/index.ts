@@ -7,6 +7,7 @@ export * from "./json-ingress.ts";
 export * from "./oracle-context.ts";
 export * from "./outcome-record.ts";
 export * from "./render-markdown.ts";
+export * from "./report-binding.ts";
 export * from "./research-report.ts";
 export * from "./research-request.ts";
 export * from "./source-record.ts";

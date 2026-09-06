@@ -94,9 +94,9 @@ const EXPECTED_VECTORS = [
  * so the two languages cannot drift apart quietly either.
  */
 const PINNED_DIGESTS: Readonly<Record<(typeof EXPECTED_VECTORS)[number], string>> = {
-  "claim-assessment-1-supported": "a08b1e31fffc816ce69d987e3150a6acb192b26688dc7351daa52f251da628b0",
-  "claim-assessment-2-check-unavailable": "0da93a35f4d2dba1049bba747e18162c0773cc44e8bf294169e87d24bfdd740f",
-  "claim-assessment-3-not-assessed": "56a03d670b42375b9aa4bea4dec5f9a80464ae7cf16e7071d822ea127505998f",
+  "claim-assessment-1-supported": "6aa5ad100be98f6fbcedd1460da2e98b26076f8f0a23d09eee3849cbb2eaeb61",
+  "claim-assessment-2-check-unavailable": "cc9a5d13aacaf7362d3ca979387a3d53d4f0592419148c3f22ddabc7a4739e68",
+  "claim-assessment-3-not-assessed": "0a9d9e27219a3a6f33e06f1663506e5eceb0aa0e99ba1a1e48b3311ee62b282c",
   "claim-record-1-observed": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
   "claim-record-2-hypothesis": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
   "decision-proposal-1-request-observation":
@@ -104,7 +104,7 @@ const PINNED_DIGESTS: Readonly<Record<(typeof EXPECTED_VECTORS)[number], string>
   "decision-proposal-2-no-change": "8262f70dc99b4ccee8da357a29dec6a043145b03ff5656237ab8aebbdb3ceed6",
   "outcome-record-1-helpful-disproved":
     "44ce14449cb847a37b9786f91500cdc7f6a2eb91289f382aa9aa073c9767a8b6",
-  "research-report-1-partial": "af1b7f8dc27e9e638b43a7d4bf25856e5aa440cb6185030ac235862d92d38fb5",
+  "research-report-1-partial": "77dfc2c019b9f0bf604b936f9d95b4ba36e09d6dd31a970ab58899990c3f59ce",
   "context-binding-1-complete": "95c49a42f4ce350d3113ea6ba5210a6db7a8c12096c36150dcf4b293132389f7",
   "context-binding-2-incomplete": "362feb622e1e54719d884e5ddf893332a9408e3c85a8f156a2b4907015096497",
   "research-request-1-admitted": "a722101e72a63e022944a3a7fc336d86c6410efb93751a015d74f94017a34bb0",

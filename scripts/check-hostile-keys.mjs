@@ -120,6 +120,28 @@ const ORACLE_CLAIM = oracleVector("claim-record-1-observed");
 const ORACLE_PROPOSAL = oracleVector("decision-proposal-1-request-observation");
 const ORACLE_OUTCOME = oracleVector("outcome-record-1-helpful-disproved");
 /** The S3 job-shape allowlist PROP-03 maps against. One kind, one shape. */
+/** The work orders a host authorized, and the report bundle, for the guards below. */
+const ORACLE_AUTHORIZED_WORK = [
+  {
+    workRef: ORACLE_OUTCOME.authorizedWorkRef,
+    runRef: ORACLE_OUTCOME.runRef,
+    workspaceRef: ORACLE_OUTCOME.workspaceRef,
+  },
+];
+const ORACLE_BUNDLE = {
+  report: oracleVector("research-report-1-partial"),
+  claims: [oracleVector("claim-record-1-observed"), oracleVector("claim-record-2-hypothesis")],
+  assessments: [oracleVector("claim-assessment-1-supported")],
+  proposal: null,
+  delivered: [
+    {
+      sourceId: ORACLE_SOURCE.sourceId,
+      runRef: ORACLE_SOURCE.runRef,
+      workspaceRef: ORACLE_SOURCE.workspaceRef,
+      presentationIndex: ORACLE_SOURCE.presentationIndex,
+    },
+  ],
+};
 const ORACLE_JOB_SHAPES = [
   { kind: ORACLE_PROPOSAL.payload.kind, jobShapeRef: ORACLE_PROPOSAL.payload.proposedJobShapeRef },
 ];
@@ -954,12 +976,53 @@ const AUTHORITY_GUARDS = [
   {
     pkg: "@getsimpledirect/vinci-oracle-records",
     export: "resolveOutcomeCredits",
-    label: "resolveOutcomeCredits(outcomes).outcome === CREDITED",
-    call: (fn, hostile) => fn(hostile).outcome === "CREDITED",
+    label: "resolveOutcomeCredits(hostile outcomes, authorizedWork).outcome === CREDITED",
+    call: (fn, hostile) => fn(hostile, ORACLE_AUTHORIZED_WORK).outcome === "CREDITED",
     control: (fn) =>
-      fn([ORACLE_OUTCOME]).outcome === "CREDITED"
-      && fn([ORACLE_OUTCOME, { ...ORACLE_OUTCOME, outcomeId: "oracle-outcome-99" }]).outcome
-        === "DOUBLE_CREDITED",
+      fn([ORACLE_OUTCOME], ORACLE_AUTHORIZED_WORK).outcome === "CREDITED"
+      && fn([ORACLE_OUTCOME, { ...ORACLE_OUTCOME, outcomeId: "oracle-outcome-99" }],
+        ORACLE_AUTHORIZED_WORK).outcome === "DOUBLE_CREDITED"
+      && fn([{ ...ORACLE_OUTCOME, authorizedWorkRef: "wo-invented" }],
+        ORACLE_AUTHORIZED_WORK).outcome === "UNAUTHORIZED_WORK",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveOutcomeCredits",
+    label: "resolveOutcomeCredits(outcomes, hostile authorizedWork).outcome === CREDITED",
+    // The ANCHOR argument, probed in its own right. A hostile authorized-work
+    // set must never let a credit through: it is the whole reason the rule
+    // stopped being keyed on a string the record writes.
+    call: (fn, hostile) => fn([ORACLE_OUTCOME], hostile).outcome === "CREDITED",
+    control: (fn) =>
+      fn([ORACLE_OUTCOME], ORACLE_AUTHORIZED_WORK).outcome === "CREDITED"
+      && fn([ORACLE_OUTCOME], []).outcome === "UNAUTHORIZED_WORK",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveReportBundle",
+    label: "resolveReportBundle(bundle) binds a claim",
+    // "Granted a yes" for this one is not RESOLVED — a well-formed bundle whose
+    // bindings all fail is still RESOLVED, with the failures named. The yes is
+    // BINDING a claim, which is what lets a status be printed.
+    call: (fn, hostile) => {
+      const result = fn(hostile);
+      return result.outcome === "RESOLVED" && result.claims.some((c) => c.state === "BOUND");
+    },
+    control: (fn) => {
+      const bound = fn(ORACLE_BUNDLE);
+      if (bound.outcome !== "RESOLVED" || !bound.claims.some((c) => c.state === "BOUND")) return false;
+      // A CONSISTENT LIE: report and assessment agree on a digest that is not
+      // the claim's. Nothing binds, and the record set is otherwise valid.
+      const lying = fn({
+        ...ORACLE_BUNDLE,
+        report: {
+          ...ORACLE_BUNDLE.report,
+          claims: ORACLE_BUNDLE.report.claims.map((c) => ({ ...c, claimDigest: "5e".repeat(32) })),
+        },
+        assessments: ORACLE_BUNDLE.assessments.map((a) => ({ ...a, claimDigest: "5e".repeat(32) })),
+      });
+      return lying.outcome === "RESOLVED" && !lying.claims.some((c) => c.state === "BOUND");
+    },
   },
 ];
 
@@ -997,7 +1060,9 @@ const REQUIRED_GUARDS = [
   "statusForReviewerOutcome(outcome) === SUPPORTED",
   "mapProposalToJobShape(hostile proposal, allowlist).outcome === MAPPED",
   "mapProposalToJobShape(proposal, hostile allowlist).outcome === MAPPED",
-  "resolveOutcomeCredits(outcomes).outcome === CREDITED",
+  "resolveOutcomeCredits(hostile outcomes, authorizedWork).outcome === CREDITED",
+  "resolveOutcomeCredits(outcomes, hostile authorizedWork).outcome === CREDITED",
+  "resolveReportBundle(bundle) binds a claim",
   "isKeyUsableAt(entry with hostile status, now, role)",
   "isKeyUsableAt(entry with hostile role, now, role)",
   "isKeyUsableAt(entry, now, hostile role)",
@@ -1228,7 +1293,15 @@ const NOT_AUTHORITY_GUARDS = {
   // caller-supplied value becomes one, so an unguarded interpolation does not
   // compile. src/render-markdown.test.ts now also sweeps every string field of
   // a whole render input and requires the line count to be unchanged.
-  "@getsimpledirect/vinci-oracle-records.renderMarkdownReport": "a formatter over already-validated records: it re-validates every record it is handed and THROWS rather than rendering an invalid one, so no input shape can obtain a document, and it grants nothing. It cannot be probed as a guard because every answer it gives is a string; what replaces the probe is a compile-time chokepoint (the document is a branded Rendered[], and safe() is the only producer) plus a behavioural sweep over every string field in src/render-markdown.test.ts",
+  // REVISED TWICE. The first version rested on a test's existence and the test
+  // was exercising the wrong path. The second rested on the injection
+  // chokepoint -- true, and it did not cover the defect found next: an unearned
+  // SUPPORTED rendered because this function DECIDED THE BINDING itself, which
+  // is not an injection question at all. It no longer decides anything: the
+  // binding moved to resolveReportBundle, which IS registered as an authority
+  // guard above and probed in the argument position that matters. What is left
+  // here is formatting, and the two properties below are about formatting.
+  "@getsimpledirect/vinci-oracle-records.renderMarkdownReport": "a formatter over records resolveReportBundle has already validated AND BOUND: it decides nothing, and it cannot print a status for an assessment the resolver did not bind, because the resolver returns one only for a BOUND claim. It cannot be probed as a guard because every answer it gives is a string; the binding decision it used to make is probed as resolveReportBundle, and its formatting properties are a compile-time chokepoint (the document is a branded Rendered[], safe() its only producer) plus a behavioural sweep over every string field in src/render-markdown.test.ts",
   "@getsimpledirect/vinci-oracle-records.outcomeCreditAnchor": "projection over an already-validated outcome: it returns the host-authorized work ref and grants nothing. It is the ANCHOR the credit rule keys on rather than the rule itself; whether an outcome takes a credit is resolveOutcomeCredits' decision, which is probed",
   "@getsimpledirect/vinci-oracle-records.runTerminalLabel": "total projection over an already-validated report's run terminal: it names the run-events vocabulary member the record carries and decides nothing",
 };

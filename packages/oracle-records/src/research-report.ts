@@ -329,6 +329,12 @@ function validateClaimEntries(value: unknown, issues: ValidationIssue[]): number
     return -1;
   }
   let withAssessment = 0;
+  // One claim, one entry. `validateSourceManifest` deduped `sourceId` and the
+  // claim loop had no equivalent, so one claim listed three times validated,
+  // rendered three identical findings, and reported "3 of 3" coverage — the
+  // coverage cross-check compares the declared total to `claims.length`, which
+  // is the list checked against itself.
+  const seen = new Set<string>();
   value.forEach((raw, i) => {
     const at = `/claims/${i}`;
     if (!isObjectRecord(raw)) {
@@ -362,6 +368,17 @@ function validateClaimEntries(value: unknown, issues: ValidationIssue[]): number
     );
     if (!isIdentifier(raw.claimRef)) {
       issues.push(issue(`${at}/claimRef`, "invalid_id", "claimRef is a host-assigned claim id"));
+    } else if (seen.has(raw.claimRef)) {
+      issues.push(
+        issue(
+          `${at}/claimRef`,
+          "duplicate_claim_entry",
+          "a report lists each claim once; a repeated entry inflates both the rendered findings and "
+            + "the coverage numbers a reader weighs the report by",
+        ),
+      );
+    } else {
+      seen.add(raw.claimRef);
     }
     if (!isDigest(raw.claimDigest)) {
       issues.push(

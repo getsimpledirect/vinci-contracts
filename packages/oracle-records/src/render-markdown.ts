@@ -1,17 +1,9 @@
-import { toPlainRecord, type ValidationResult } from "@getsimpledirect/vinci-contracts";
-import { validateClaimRecord, type ClaimRecord, type ClaimSourceSpan } from "./claim.ts";
-import {
-  validateClaimAssessment,
-  type AssessmentStatus,
-  type ClaimAssessment,
-} from "./claim-assessment.ts";
-import { validateDecisionProposal, type DecisionProposal } from "./decision-proposal.ts";
-import {
-  runTerminalLabel,
-  validateResearchReport,
-  type ReportClaimEntry,
-  type ResearchReport,
-} from "./research-report.ts";
+import type { ClaimRecord, ClaimSourceSpan } from "./claim.ts";
+import type { ClaimAssessment } from "./claim-assessment.ts";
+import type { DecisionProposal } from "./decision-proposal.ts";
+import { resolveReportBundle, type BoundClaim } from "./report-binding.ts";
+import { runTerminalLabel, type ResearchReport } from "./research-report.ts";
+import type { DeliveredSourceHandle } from "./source-record.ts";
 
 /**
  * §22.3's Markdown, rendered from the SAME validated records the JSON comes
@@ -65,9 +57,17 @@ import {
  * The rest of REP-01 is asserted as a set equality in both directions: the
  * assessment statuses appearing in the document are exactly the statuses the
  * records carry. CON-04's specific case — no transformation converts
- * CHECK_UNAVAILABLE into SUPPORTED — is that property in one direction, and it
- * is also why a claim whose stored assessment does not bind to it renders as
- * unassessed rather than as whatever the unbound assessment said.
+ * CHECK_UNAVAILABLE into SUPPORTED — is that property in one direction.
+ *
+ * A claim whose stored assessment does not bind to it renders as unassessed,
+ * and THAT SENTENCE USED TO BE FALSE. This file decided the binding itself,
+ * with one comparison between two model-authored assertions, so an assessment
+ * of a claim that did not exist rendered as `SUPPORTED` whenever the report
+ * agreed with it. The binding now happens in `report-binding.ts`, which
+ * recomputes the claim's digest from the claim's own bytes; this file may only
+ * read the answer, and `assessment` is defined there exactly when the state is
+ * `BOUND`. `src/cross-record-anchors.test.ts` tests it with a consistent lie
+ * rather than a single-copy mutation, which is what the old check passed.
  *
  * The renderer takes ALREADY-VALIDATED records and re-validates them anyway,
  * throwing rather than rendering an invalid one. Same discipline, and the same
@@ -80,6 +80,15 @@ export type ReportRenderInput = {
   readonly claims: readonly ClaimRecord[];
   readonly assessments: readonly ClaimAssessment[];
   readonly proposal: DecisionProposal | null;
+  /**
+   * The sources the host actually delivered to this run.
+   *
+   * Required, and required for the same reason `assessments` is: a renderer
+   * that treated an omitted delivered set as "nothing to check" would print
+   * source ids nothing had resolved, which is the state SRC-03 exists to make
+   * impossible.
+   */
+  readonly delivered: readonly DeliveredSourceHandle[];
 };
 
 // ─── RENDERED PRIMITIVES: the only place `as Rendered` appears ───────────────
@@ -166,16 +175,6 @@ function bullets(items: readonly Rendered[], whenEmpty: Rendered): Rendered {
   return join(stack(...items.map((item) => join(own("- "), item))), own("\n"));
 }
 
-function parsed<T>(label: string, result: ValidationResult<T>): T {
-  if (!result.ok) {
-    const first = result.issues[0];
-    throw new Error(
-      `cannot render an invalid ${label}: ${first?.path ?? "/"} ${first?.code ?? "invalid"}`,
-    );
-  }
-  return result.value;
-}
-
 function spanText(spans: readonly ClaimSourceSpan[]): Rendered {
   if (spans.length === 0) return own("no source span");
   const parts = spans.map((span) =>
@@ -193,67 +192,21 @@ function spanText(spans: readonly ClaimSourceSpan[]): Rendered {
 }
 
 /**
- * What a report says about one claim, after the bindings are checked.
+ * What a report says about one claim, after `resolveReportBundle` has bound it.
  *
- * `status` is null exactly when no assessment stands for this claim — no
- * reference, no record supplied, or a record that does not bind to this version
- * of the claim. All three render as unassessed and none of them renders as the
- * status of an assessment that was not about this claim.
+ * This file no longer decides whether an assessment belongs to a claim. It
+ * used to, with one comparison between two model-authored assertions, and a
+ * consistent lie walked through it. The binding is now recomputed from the
+ * claim's own bytes in report-binding.ts, and this file may only READ the
+ * answer: `assessment` is defined exactly when `state` is `BOUND`.
  */
-type ResolvedClaim = {
-  readonly entry: ReportClaimEntry;
-  readonly claim: ClaimRecord | undefined;
-  readonly assessment: ClaimAssessment | undefined;
-  readonly status: AssessmentStatus | null;
-  readonly note: Rendered;
-};
 
-function resolveClaim(
-  entry: ReportClaimEntry,
-  claims: ReadonlyMap<string, ClaimRecord>,
-  assessments: ReadonlyMap<string, ClaimAssessment>,
-): ResolvedClaim {
-  const claim = claims.get(entry.claimRef);
-  if (entry.assessmentRef === null) {
-    return { entry, claim, assessment: undefined, status: null, note: own("no stored assessment") };
-  }
-  const assessment = assessments.get(entry.assessmentRef);
-  if (assessment === undefined) {
-    return {
-      entry,
-      claim,
-      assessment: undefined,
-      status: null,
-      note: join(
-        own("assessment "),
-        safe(entry.assessmentRef),
-        own(" was not supplied to this rendering"),
-      ),
-    };
-  }
-  if (assessment.claimDigest !== entry.claimDigest) {
-    // T12's stale-binding case, reached through the renderer. The assessment is
-    // a real, valid assessment — of a different version of this claim — and
-    // printing its status here would be the confidence upgrade REP-01 forbids,
-    // arriving from a record that never made the claim.
-    return {
-      entry,
-      claim,
-      assessment: undefined,
-      status: null,
-      note: join(
-        own("assessment "),
-        safe(entry.assessmentRef),
-        own(" does not bind to this version of the claim"),
-      ),
-    };
-  }
-  return { entry, claim, assessment, status: assessment.status, note: own("") };
-}
-
-function claimLine(resolved: ResolvedClaim): Rendered {
-  const { entry, claim, status, note } = resolved;
-  const label = status === null ? join(own("NOT_ASSESSED ("), note, own(")")) : safe(status);
+function claimLine(resolved: BoundClaim): Rendered {
+  const { entry, claim, assessment, state, detail } = resolved;
+  const label =
+    assessment === undefined
+      ? join(own("NOT_ASSESSED ("), safe(detail === "" ? state : detail), own(")"))
+      : safe(assessment.status);
   if (claim === undefined) {
     return join(
       safe(entry.claimRef),
@@ -272,20 +225,30 @@ function claimLine(resolved: ResolvedClaim): Rendered {
       spanText(claim.sourceSpans),
     ),
   ];
+  if (resolved.unresolvedSourceIds.length > 0) {
+    // SRC-03, printed rather than swallowed: a reader must see that an id the
+    // claim cites was never delivered to this run.
+    parts.push(
+      join(
+        own("  - NOT DELIVERED to this run: "),
+        listText(resolved.unresolvedSourceIds, own(", ")),
+      ),
+    );
+  }
   if (claim.contradictingEvidence.length > 0) {
     parts.push(join(own("  - contradicting evidence: "), spanText(claim.contradictingEvidence)));
   }
   if (claim.assumptions.length > 0) {
     parts.push(join(own("  - assumptions: "), listText(claim.assumptions, own("; "))));
   }
-  if (resolved.assessment !== undefined && "method" in resolved.assessment) {
+  if (assessment !== undefined && "method" in assessment) {
     // CLM-02: which method produced this result, beside the result.
     parts.push(
       join(
         own("  - method: "),
-        safe(resolved.assessment.method),
+        safe(assessment.method),
         own("; evaluator: "),
-        safe(resolved.assessment.evaluatorVersion),
+        safe(assessment.evaluatorVersion),
       ),
     );
   }
@@ -301,46 +264,27 @@ function listText(values: readonly string[], separator: Rendered): Rendered {
 
 /** Render the §22.3 decision-facing Markdown report from validated records. */
 export function renderMarkdownReport(input: unknown): string {
-  const plain = toPlainRecord(input);
-  if (!plain.ok) {
-    const first = plain.issues[0];
-    throw new Error(`cannot render: ${first?.path ?? "/"} ${first?.code ?? "invalid"}`);
+  // The bindings are recomputed here, not compared. `resolveReportBundle`
+  // validates every record, derives each claim's digest from its own bytes, and
+  // returns an assessment ONLY for a claim it actually binds to — so there is
+  // no path through this function that can print a status for an assessment
+  // about a different claim, however many of the document's own fields agree
+  // with each other.
+  const resolution = resolveReportBundle(input);
+  if (resolution.outcome === "REFUSED") {
+    const first = resolution.issues[0];
+    throw new Error(
+      `cannot render: ${first?.path ?? "/"} ${first?.code ?? "invalid"} ${first?.message ?? ""}`.trim(),
+    );
   }
-  const snapshot = plain.value;
-  // Every key REQUIRED, and each of the three lists required to be a list.
-  //
-  // The lenient reading — treat a missing `assessments` as an empty one — is
-  // the defect this package is about, one level out: a caller that forgot to
-  // pass the assessments would get a document rendering every claim as
-  // unassessed, which is a true-looking statement about the records and a false
-  // one about the world. An omission has to be loud.
-  for (const key of ["report", "claims", "assessments", "proposal"] as const) {
-    if (!Object.hasOwn(snapshot, key)) {
-      throw new Error(`cannot render: ${key} is required; omitting it is not the same as empty`);
-    }
-  }
-  const report = parsed("research report", validateResearchReport(snapshot.report));
-  if (!Array.isArray(snapshot.claims) || !Array.isArray(snapshot.assessments)) {
-    throw new Error("cannot render: claims and assessments are arrays");
-  }
-  const claims = new Map<string, ClaimRecord>();
-  for (const raw of snapshot.claims) {
-    const claim = parsed("claim record", validateClaimRecord(raw));
-    claims.set(claim.claimId, claim);
-  }
-  const assessments = new Map<string, ClaimAssessment>();
-  for (const raw of snapshot.assessments) {
-    const assessment = parsed("claim assessment", validateClaimAssessment(raw));
-    assessments.set(assessment.assessmentId, assessment);
-  }
-  const proposal =
-    snapshot.proposal === null
-      ? null
-      : parsed("decision proposal", validateDecisionProposal(snapshot.proposal));
-
-  const resolved = report.claims.map((entry) => resolveClaim(entry, claims, assessments));
-  const established = resolved.filter((item) => item.status === "SUPPORTED");
-  const outstanding = resolved.filter((item) => item.status !== "SUPPORTED");
+  const { report, proposal } = resolution;
+  const resolved = resolution.claims;
+  const established = resolved.filter(
+    (item) => item.assessment !== undefined && item.assessment.status === "SUPPORTED",
+  );
+  const outstanding = resolved.filter(
+    (item) => item.assessment === undefined || item.assessment.status !== "SUPPORTED",
+  );
   const coverage = report.assessmentCoverage;
 
   const sections: Rendered[] = [];
@@ -535,7 +479,12 @@ export function renderMarkdownReport(input: unknown): string {
       bullets(
         resolved.map((item) => {
           if (item.assessment === undefined) {
-            return join(safe(item.entry.claimRef), own(" — NOT_ASSESSED ("), item.note, own(")"));
+            return join(
+              safe(item.entry.claimRef),
+              own(" — NOT_ASSESSED ("),
+              safe(item.detail === "" ? item.state : item.detail),
+              own(")"),
+            );
           }
           return join(
             safe(item.entry.claimRef),
@@ -561,6 +510,21 @@ export function renderMarkdownReport(input: unknown): string {
     join(
       own("\nInvalidation conditions:\n"),
       bullets(report.invalidationConditions.map(safe), own("None recorded.")),
+    ),
+  );
+  // The bindings that did NOT hold, printed. A rendering that dropped them
+  // would be a document whose gaps are visible only to whoever called the
+  // resolver — and the whole point of recomputing the bindings is that the
+  // reader gets to see the answer.
+  sections.push(
+    join(
+      own("\nBinding findings:\n"),
+      bullets(
+        resolution.issues.map((finding) =>
+          join(safe(finding.path), own(" — "), safe(finding.code), own(": "), safe(finding.message)),
+        ),
+        own("Every claim, source and proposal reference in this report resolved."),
+      ),
     ),
   );
 
