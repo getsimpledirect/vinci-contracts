@@ -21,6 +21,7 @@ that does not exist here.
 """
 import json
 import os
+import re
 import sys
 import unittest
 
@@ -70,8 +71,8 @@ PINNED_DIGESTS = {
     "claim-record-2-hypothesis": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
     "decision-proposal-1-request-observation": "2b1a89a24fd1254e4afd578271bc42dbd8f074e4a4bcadda3df9889063179cf0",
     "decision-proposal-2-no-change": "8262f70dc99b4ccee8da357a29dec6a043145b03ff5656237ab8aebbdb3ceed6",
-    "outcome-record-1-helpful-disproved": "ba3d60a5e63aff08b67ba5bea2f589ce767b48e41719edb9965b20282144a76d",
-    "research-report-1-partial": "53daedc62d8b5919fd498d34ccd062196b2f55c38bcfbec18400fdc259e0753c",
+    "outcome-record-1-helpful-disproved": "44ce14449cb847a37b9786f91500cdc7f6a2eb91289f382aa9aa073c9767a8b6",
+    "research-report-1-partial": "af1b7f8dc27e9e638b43a7d4bf25856e5aa440cb6185030ac235862d92d38fb5",
     "context-binding-1-complete": "95c49a42f4ce350d3113ea6ba5210a6db7a8c12096c36150dcf4b293132389f7",
     "context-binding-2-incomplete": "362feb622e1e54719d884e5ddf893332a9408e3c85a8f156a2b4907015096497",
     "research-request-1-admitted": "a722101e72a63e022944a3a7fc336d86c6410efb93751a015d74f94017a34bb0",
@@ -147,7 +148,28 @@ VOCABULARIES = {
     ],
     "HYPOTHESIS_RESULTS": ["SUPPORTED_BY_RESULT", "DISPROVED_BY_RESULT", "NOT_APPLICABLE"],
     "REPORT_COMPLETENESS": ["COMPLETE", "PARTIAL", "FAILED"],
-    "RUN_TERMINAL_STATES": ["SUCCEEDED", "PARTIALLY_COMPLETED", "FAILED", "ABORTED"],
+    # run-events' OWN vocabularies, pinned here independently. The report used
+    # to carry a private four-member list that contradicted these: only
+    # SUCCEEDED overlapped, so a report could not say a run ended SUPERSEDED or
+    # DUPLICATE at all. A member renamed on either side now breaks here.
+    "RUN_OUTCOMES": [
+        "SUCCEEDED",
+        "DO_NOT_START",
+        "DUPLICATE",
+        "NO_LONGER_VALUABLE",
+        "SUPERSEDED",
+        "CLOSE_WITH_NEGATIVE_RESULT",
+    ],
+    "RUN_FAILURE_CODES": [
+        "worker_crashed",
+        "worker_unreachable",
+        "provider_error",
+        "budget_exhausted",
+        "runtime_exceeded",
+        "internal_error",
+    ],
+    "RUN_TERMINAL_KINDS": ["completed", "failed", "not_terminal"],
+    "OUTCOME_CREDIT_KINDS": ["ACCEPTED_WORK", "REUSE", "NO_CREDIT"],
 }
 
 
@@ -406,10 +428,28 @@ class SharedVocabularies(unittest.TestCase):
         self.assertIsNotNone(inadmissible["missingDecision"])
         self.assertNotEqual(inadmissible["missingDecision"]["owner"].strip(), "")
 
+    def _authority_terms(self):
+        """Read AUTHORITY_TERMS out of the TypeScript source rather than restating it.
+
+        A second literal copy here was a place the two sides could drift apart
+        silently: the list is a contract about which spellings carry a distinct
+        issue code, and a term added on one side and not the other would leave
+        this file asserting something about a rule that no longer exists. The
+        parse is deliberately narrow and fails loudly.
+        """
+        source = os.path.join(REPO, "packages", "oracle-records", "src", "lib", "validate.ts")
+        with open(source, encoding="utf-8") as f:
+            text = f.read()
+        start = text.index("export const AUTHORITY_TERMS = [")
+        end = text.index("] as const;", start)
+        terms = re.findall(r'"([a-z_]+)"', text[start:end])
+        # A floor, so a broken parse fails rather than blessing an empty sweep.
+        self.assertGreaterEqual(len(terms), 10)
+        self.assertIn("authority", terms)
+        return terms
+
     def _assert_no_authority_key(self, node, path):
-        terms = ["authority", "principal", "workspace", "grant", "budget", "digest",
-                 "policy", "credential", "token", "actor", "attest", "signature",
-                 "permission", "receipt"]
+        terms = self._authority_terms()
         if isinstance(node, list):
             for i, child in enumerate(node):
                 self._assert_no_authority_key(child, "%s/%d" % (path, i))
@@ -426,9 +466,16 @@ class SharedVocabularies(unittest.TestCase):
         """REP-02, as committed data: the three fields disagree on purpose."""
         report = _read_json("research-report-1-partial", "input.json")
         self.assertIn(report["reportCompleteness"], VOCABULARIES["REPORT_COMPLETENESS"])
-        self.assertIn(report["runTerminalState"], VOCABULARIES["RUN_TERMINAL_STATES"])
+        terminal = report["runTerminal"]
+        self.assertIn(terminal["kind"], VOCABULARIES["RUN_TERMINAL_KINDS"])
+        if terminal["kind"] == "completed":
+            self.assertIn(terminal["outcome"], VOCABULARIES["RUN_OUTCOMES"])
+        if terminal["kind"] == "failed":
+            self.assertIn(terminal["failureCode"], VOCABULARIES["RUN_FAILURE_CODES"])
         self.assertEqual(report["reportCompleteness"], "PARTIAL")
-        self.assertEqual(report["runTerminalState"], "PARTIALLY_COMPLETED")
+        # SUPERSEDED is the case the private vocabulary could not express: a
+        # PRODUCTIVE terminal that is neither a success nor a failure.
+        self.assertEqual(terminal, {"kind": "completed", "outcome": "SUPERSEDED"})
         self.assertEqual(
             report["assessmentCoverage"],
             {"claimsTotal": 2, "claimsWithStoredAssessment": 1, "claimsNotAssessed": 1},
@@ -459,6 +506,12 @@ class SharedVocabularies(unittest.TestCase):
             ["linkedFollowThrough", "measuredCounterfactual", "temporalAssociation"],
         )
         self.assertIs(outcome["causationClaimed"], False)
+        # OUT-04: the dedup key the record used to author about itself is GONE.
+        # `resolveOutcomeCredits` keys on the host-authorized work instead, and
+        # a field nothing keys on would be a trap for the next reader.
+        self.assertNotIn("creditKey", outcome)
+        self.assertIn(outcome["creditKind"], VOCABULARIES["OUTCOME_CREDIT_KINDS"])
+        self.assertIsNotNone(outcome["authorizedWorkRef"])
 
     def test_the_failed_read_carries_no_content_at_all(self):
         """SRC-04, checked from the data rather than from a validator.

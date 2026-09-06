@@ -25,7 +25,8 @@
   },
   "dependencies": {
     "@getsimpledirect/vinci-contracts": "0.4.0",
-    "@getsimpledirect/vinci-run": "0.4.0"
+    "@getsimpledirect/vinci-run": "0.4.0",
+    "@getsimpledirect/vinci-run-events": "0.4.0"
   },
   "devDependencies": {
     "typescript": "5.9.3"

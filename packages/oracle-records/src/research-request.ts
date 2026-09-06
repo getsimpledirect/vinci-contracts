@@ -834,7 +834,18 @@ export function admitResearchRequest(input: unknown): RequestAdmission {
       value !== undefined
       && value !== null
       && !(typeof value === "string" && value.trim() === "")
-      && !(Array.isArray(value) && value.length === 0);
+      && !(Array.isArray(value) && value.length === 0)
+      // An empty OBJECT was missing from this list, and it is REQ-02's
+      // headline case: `hostResolved.authority = {}` is a request that states
+      // no read or propose scope, and it was reported as REFUSED with whatever
+      // the validator reached first rather than as INCOMPLETE naming
+      // `authority`. Three of the eleven critical elements are objects, so the
+      // omission covered `authority`, `scope` and both actor fields.
+      && !(
+        typeof value === "object"
+        && !Array.isArray(value)
+        && Object.keys(value as Record<string, unknown>).length === 0
+      );
     if (!stated) missing.push({ element: element.element, path: element.path, reason: element.reason });
   }
   if (missing.length > 0) return { outcome: "INCOMPLETE", missing };
@@ -878,6 +889,25 @@ export function resolveIdempotency(prior: unknown, incoming: unknown): Idempoten
     return { outcome: "NEW_REQUEST", requestDigest: digest };
   }
   if (priorIdentity.value.requestDigest === digest) {
+    // The prior identity's `requestId` is an assertion ALONGSIDE the digest,
+    // not covered by it from this function's point of view, and it was returned
+    // to the caller unchecked. A stored identity naming a different request id
+    // than the record its own digest identifies is internally inconsistent, and
+    // handing that id back would attach this request to whatever the caller
+    // then looked up.
+    if (priorIdentity.value.requestId !== request.value.hostResolved.requestId) {
+      return {
+        outcome: "KEY_CONFLICT",
+        issues: [
+          issue(
+            "/requestId",
+            "prior_identity_request_id_mismatch",
+            "REQ-03: the stored identity's digest matches this request but its requestId names a "
+              + "different one; a conflict is reported, never resolved by preferring one of them",
+          ),
+        ],
+      };
+    }
     return {
       outcome: "SAME_REQUEST",
       requestId: priorIdentity.value.requestId,

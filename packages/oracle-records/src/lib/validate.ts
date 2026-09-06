@@ -137,17 +137,30 @@ export function readRefArray(
 /**
  * The first term in `terms` that appears in `key`, case-folded, or null.
  *
- * Substring rather than exact match, and that is the point. The defect this
- * guards against is not one known field name arriving in the wrong half of a
- * record: it is that a producer with something to smuggle picks a NEW spelling.
- * `policyRef`, `policy_ref`, `applicablePolicy` and `policyRefsResolved` are
- * one idea under four names, and a list of exact names covers whichever three
- * nobody thought of. So the term, not the field, is what is forbidden.
+ * Substring rather than exact match, so `policyRef`, `policy_ref`,
+ * `applicablePolicy` and `policyRefsResolved` are one forbidden idea rather
+ * than four names somebody has to have thought of.
  *
- * The cost is that a legitimate field may not contain one of these words. That
- * cost is paid deliberately and is asserted rather than assumed — see the
- * conformance tests, which check every declared field name of every record in
- * this package against both term lists.
+ * WHAT THIS IS NOT. An earlier version of this comment claimed "the term, not
+ * the field, is what is forbidden", which reads as a rule about authority. It
+ * is a rule about FOURTEEN WORD STEMS. A review found twenty-one
+ * authority-bearing key names it does not match — `authorizedBy`,
+ * `authorization`, `approvalRef`, `entitlements`, `privileges`, `capabilities`,
+ * `roleAssignment`, `clearance`, `canMerge`, `signedBy`, `sudo`, `runAs` and
+ * more — in minutes, because "authorized" does not contain "authority". A stem
+ * list cannot be completed by adding stems; that is the same defect one level
+ * up, and the next reviewer would find the twenty-second spelling just as fast.
+ *
+ * So this is a NAMING net over the common spellings, and its value is the
+ * distinct issue code: a caller learns "you put an authority field in the model
+ * half" instead of "unknown field". The DEFENCE is each record's own payload
+ * allowlist, which is a closed list of declared names and therefore refuses
+ * every spelling including the twenty-one above. `src/authority-terms.test.ts`
+ * pins both halves of that, in both directions.
+ *
+ * The cost of the substring rule is that a legitimate field may not contain one
+ * of these words. That cost is asserted rather than assumed — see
+ * `src/conformance.test.ts`.
  */
 export function forbiddenTermIn(key: string, terms: readonly string[]): string | null {
   const folded = key.toLowerCase();

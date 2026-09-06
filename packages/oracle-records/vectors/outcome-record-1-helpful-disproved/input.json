@@ -30,7 +30,6 @@
   "assessingIdentity": { "kind": "verifier", "verifierId": "release-verifier-2", "independent": true },
   "rubricRef": "rubric:oracle-usefulness-v1",
   "creditKind": "ACCEPTED_WORK",
-  "creditKey": "installed-reader-limitation-2026-09",
   "duplicateOfOutcomeRef": null,
   "issuedAt": "2026-09-07T09:30:00.000Z"
 }

@@ -257,6 +257,48 @@ describe("T04 negative: a parse error, a timeout and empty material never become
     ]);
   });
 
+  it("an ABSENT reviewedSpans on a SUPPORTED record is refused with the CLM-01 code", () => {
+    // Diagnostic, not a hole: the record was refused either way. But the shape
+    // check ran first and reported `invalid_type`, so `unearned_support` was
+    // unreachable for the case that most obviously belongs to it, and a value
+    // guard that only fires when the value is PRESENT says nothing about
+    // absence.
+    const { reviewedSpans: _dropped, ...withoutSpans } = validSupportedAssessment() as Record<
+      string,
+      unknown
+    >;
+    const result = validateClaimAssessment(withoutSpans);
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
+      { path: "/reviewedSpans", code: "unearned_support" },
+    ]);
+  });
+
+  it("the two halves of CLM-01 agree on which spans count", () => {
+    // `statusForReviewerOutcome` said SUPPORTED for a span the validator
+    // refuses as `inverted_range`, so a producer following the derivation would
+    // have written a record this package will not store. Fewer spans is the
+    // safe direction, but a disagreement in either direction is a defect.
+    const inverted = { sourceId: "oracle-source-1", span: { startOffset: 9, endOffset: 1 } };
+    expect(
+      statusForReviewerOutcome({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: [inverted] }),
+    ).toBe("INSUFFICIENT_EVIDENCE");
+    const stored = validateClaimAssessment({
+      ...validSupportedAssessment(),
+      reviewedSpans: [inverted],
+    });
+    expect(stored.ok).toBe(false);
+    if (stored.ok) return;
+    expect(stored.issues.map((i) => i.code)).toContain("inverted_range");
+    // POSITIVE CONTROL on the same pair: a well-formed span is SUPPORTED by
+    // one half and stored by the other.
+    expect(
+      statusForReviewerOutcome({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: [SPAN] }),
+    ).toBe("SUPPORTED");
+    expect(validateClaimAssessment(validSupportedAssessment()).ok).toBe(true);
+  });
+
   it("POSITIVE CONTROL for all three refusals: the unchanged fixtures still validate", () => {
     expect(validateClaimAssessment(validSupportedAssessment()).ok).toBe(true);
     expect(validateClaimAssessment(validCheckUnavailableAssessment()).ok).toBe(true);

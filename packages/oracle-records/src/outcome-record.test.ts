@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   OUTCOME_CLASSES,
+  outcomeCreditAnchor,
   outcomeRecordDigest,
   resolveOutcomeCredits,
   validateOutcomeRecord,
@@ -33,7 +34,8 @@ const notAttempted = (): OutcomeRecord => ({
   uncertaintyResolved: null,
   hypothesisResult: "NOT_APPLICABLE",
   evidence: { linkedFollowThrough: null, temporalAssociation: null, measuredCounterfactual: null },
-  creditKey: "installed-reader-limitation-2026-09-not-attempted",
+  creditKind: "NO_CREDIT",
+  duplicateOfOutcomeRef: null,
 });
 
 const observationUnavailable = (): OutcomeRecord => ({
@@ -43,7 +45,6 @@ const observationUnavailable = (): OutcomeRecord => ({
   executionEvidenceRefs: ["evidence-probe-run-78"],
   outcomeClass: "OBSERVATION_UNAVAILABLE",
   justification: "The probe ran, but the telemetry it would have been judged by was never collected.",
-  creditKey: "installed-reader-limitation-2026-09-unobserved",
 });
 
 describe("OUT-01: not attempted is not failed, and unavailable is not zero benefit", () => {
@@ -67,7 +68,6 @@ describe("OUT-01: not attempted is not failed, and unavailable is not zero benef
         outcomeClass: "NOT_HELPFUL_OBSERVED",
         justification: "The probe ran and told the decision nothing it did not already have.",
         uncertaintyResolved: false,
-        creditKey: "installed-reader-limitation-2026-09-nothelpful",
       },
       INCONCLUSIVE: {
         ...validOutcomeRecord(),
@@ -75,7 +75,6 @@ describe("OUT-01: not attempted is not failed, and unavailable is not zero benef
         outcomeClass: "INCONCLUSIVE",
         justification: "The probe produced a result the rubric does not classify either way.",
         uncertaintyResolved: null,
-        creditKey: "installed-reader-limitation-2026-09-inconclusive",
       },
       NOT_ATTEMPTED: notAttempted(),
       OBSERVATION_UNAVAILABLE: observationUnavailable(),
@@ -203,25 +202,73 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
     justification: "The same recommendation was reissued for a second repository and reused the result.",
   });
 
-  it("POSITIVE CONTROL: one accepted-work credit alongside a reuse of the same key is CREDITED", () => {
+  it("POSITIVE CONTROL: one accepted-work credit alongside a reuse of it is CREDITED", () => {
     const result = resolveOutcomeCredits([validOutcomeRecord(), reuse()]);
     expect(result).toEqual({
       outcome: "CREDITED",
       acceptedWork: ["oracle-outcome-1"],
       reuse: ["oracle-outcome-6"],
+      unresolvedReuse: [],
     });
   });
 
-  it("two accepted-work credits for the same underlying outcome are DOUBLE_CREDITED, by key", () => {
+  it("two accepted-work credits for the same underlying outcome are DOUBLE_CREDITED", () => {
     const second: OutcomeRecord = { ...validOutcomeRecord(), outcomeId: "oracle-outcome-7" };
     const result = resolveOutcomeCredits([validOutcomeRecord(), second]);
     expect(result.outcome).toBe("DOUBLE_CREDITED");
     if (result.outcome !== "DOUBLE_CREDITED") return;
     expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
-      { path: "/outcomes/1/creditKey", code: "duplicate_accepted_work_credit" },
+      { path: "/outcomes/1/authorizedWorkRef", code: "duplicate_accepted_work_credit" },
     ]);
     // Naming which one, because "some duplicate exists" is not actionable.
     expect(result.issues[0]?.message).toContain("oracle-outcome-1");
+  });
+
+  it("THE REVIEWER'S REPRO: two records that differ ONLY in what they call themselves", () => {
+    // The defect the first version shipped. `creditKey` was a free string on
+    // the record, so two outcomes with identical proposalRef, proposalDigest,
+    // authorizedWorkRef and outcomeClass — provably one underlying outcome —
+    // took two accepted-work credits by writing different keys. The rule
+    // established that identical strings collide, which is a property of
+    // strings and not of outcomes.
+    //
+    // The anchor is now the work order the HOST authorized, so there is nothing
+    // left for the two records to disagree about.
+    const alpha: OutcomeRecord = { ...validOutcomeRecord(), outcomeId: "oracle-outcome-alpha" };
+    const beta: OutcomeRecord = { ...validOutcomeRecord(), outcomeId: "oracle-outcome-beta" };
+    expect(alpha.proposalDigest).toBe(beta.proposalDigest);
+    expect(alpha.authorizedWorkRef).toBe(beta.authorizedWorkRef);
+    expect(outcomeCreditAnchor(alpha)).toBe(outcomeCreditAnchor(beta));
+    const result = resolveOutcomeCredits([alpha, beta]);
+    expect(result.outcome).toBe("DOUBLE_CREDITED");
+  });
+
+  it("the anchor is host-bound: no field the record authors can move it", () => {
+    // The property that makes the rule survive a consistent lie. Every field a
+    // record writes about ITSELF may differ; the anchor does not move, so the
+    // two still collide.
+    const base = validOutcomeRecord();
+    const rebranded: OutcomeRecord = {
+      ...base,
+      outcomeId: "oracle-outcome-rebranded",
+      justification: "A differently worded account of the very same probe run.",
+      rubricRef: "rubric:a-different-rubric",
+      issuedAt: "2026-09-08T09:30:00.000Z",
+      hypothesisResult: "NOT_APPLICABLE",
+    };
+    expect(outcomeCreditAnchor(rebranded)).toBe(outcomeCreditAnchor(base));
+    expect(resolveOutcomeCredits([base, rebranded]).outcome).toBe("DOUBLE_CREDITED");
+  });
+
+  it("an ACCEPTED_WORK credit with no authorized work is refused: there is nothing to credit", () => {
+    const result = validateOutcomeRecord({
+      ...notAttempted(),
+      creditKind: "ACCEPTED_WORK",
+      duplicateOfOutcomeRef: null,
+    });
+    expect(issuesOf(result)).toEqual([
+      { path: "/authorizedWorkRef", code: "accepted_credit_without_authorized_work" },
+    ]);
   });
 
   it("two accepted-work credits for DIFFERENT keys are both credited", () => {
@@ -230,7 +277,7 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
     const other: OutcomeRecord = {
       ...validOutcomeRecord(),
       outcomeId: "oracle-outcome-8",
-      creditKey: "a-different-underlying-outcome",
+      authorizedWorkRef: "wo-a-different-piece-of-work",
     };
     const result = resolveOutcomeCredits([validOutcomeRecord(), other]);
     expect(result.outcome).toBe("CREDITED");
@@ -245,6 +292,53 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
     ]);
   });
 
+  it("a reuse of ITSELF is refused", () => {
+    // The first version returned before any comparison for every REUSE, so an
+    // outcome naming its own id took reuse credit for work nothing else had
+    // credited. Checkable inside one record, and it was not checked.
+    const self = reuse();
+    const result = validateOutcomeRecord({ ...self, duplicateOfOutcomeRef: self.outcomeId });
+    expect(issuesOf(result)).toEqual([
+      { path: "/duplicateOfOutcomeRef", code: "self_referential_reuse" },
+    ]);
+  });
+
+  it("a reuse of an outcome that holds no credit to reuse is MISBOUND_REUSE", () => {
+    // A chain of reuses ending at nothing credits an underlying outcome nobody
+    // ever credited.
+    const first = reuse();
+    const second: OutcomeRecord = {
+      ...reuse(),
+      outcomeId: "oracle-outcome-10",
+      duplicateOfOutcomeRef: first.outcomeId,
+    };
+    const result = resolveOutcomeCredits([validOutcomeRecord(), first, second]);
+    expect(result.outcome).toBe("MISBOUND_REUSE");
+    if (result.outcome !== "MISBOUND_REUSE") return;
+    expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
+      { path: "/outcomes/2/duplicateOfOutcomeRef", code: "reuse_of_uncredited_outcome" },
+    ]);
+  });
+
+  it("a reuse whose original is not in the set is REPORTED rather than silently credited", () => {
+    // Not refused: the original may live in a part of the ledger this caller
+    // did not pass. But the first version returned CREDITED with nothing said,
+    // which is the silence this package exists to remove.
+    const dangling: OutcomeRecord = {
+      ...reuse(),
+      duplicateOfOutcomeRef: "oracle-outcome-nowhere",
+    };
+    const result = resolveOutcomeCredits([validOutcomeRecord(), dangling]);
+    expect(result.outcome).toBe("CREDITED");
+    if (result.outcome !== "CREDITED") return;
+    expect(result.unresolvedReuse).toEqual(["oracle-outcome-6"]);
+    expect(result.reuse).toEqual(["oracle-outcome-6"]);
+    // POSITIVE CONTROL: the resolvable reuse leaves the list empty, so the
+    // field means something rather than always being populated.
+    const resolvedResult = resolveOutcomeCredits([validOutcomeRecord(), reuse()]);
+    expect(resolvedResult.outcome === "CREDITED" ? resolvedResult.unresolvedReuse : null).toEqual([]);
+  });
+
   it("a malformed outcome is REFUSED rather than counted as a credit", () => {
     // REFUSED and DOUBLE_CREDITED are different answers; collapsing them would
     // let a broken record read as a clean ledger.
@@ -255,7 +349,98 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
     }
     // And the empty ledger is CREDITED with nothing, not refused: no outcomes
     // is a real state and not an error.
-    expect(resolveOutcomeCredits([])).toEqual({ outcome: "CREDITED", acceptedWork: [], reuse: [] });
+    expect(resolveOutcomeCredits([])).toEqual({
+      outcome: "CREDITED",
+      acceptedWork: [],
+      reuse: [],
+      unresolvedReuse: [],
+    });
+  });
+});
+
+describe("OUT-04 mutation control (QUAL-03): the assertions fail against the old behaviour", () => {
+  /**
+   * The shipped defect, restored.
+   *
+   * The first version keyed the accepted-work rule on `creditKey`, a free
+   * string the record wrote about itself, and returned early on every REUSE
+   * before any comparison. This is that logic, with a local key field standing
+   * in for the removed one, so the assertions above can be pointed at it.
+   *
+   * Disposable and local: never exported, never reachable from the package.
+   */
+  type Keyed = OutcomeRecord & { readonly creditKey: string };
+  function resolveByAuthoredKey(records: readonly Keyed[]): {
+    outcome: string;
+    acceptedWork: string[];
+  } {
+    const acceptedByKey = new Map<string, string>();
+    const acceptedWork: string[] = [];
+    for (const record of records) {
+      if (record.creditKind === "REUSE") continue; // returned before any comparison
+      if (acceptedByKey.has(record.creditKey)) return { outcome: "DOUBLE_CREDITED", acceptedWork };
+      acceptedByKey.set(record.creditKey, record.outcomeId);
+      acceptedWork.push(record.outcomeId);
+    }
+    return { outcome: "CREDITED", acceptedWork };
+  }
+
+  // The two records, VALID under the shipped schema. The old dedup key is added
+  // only where the old resolver is called: the field no longer exists, and
+  // `validateOutcomeRecord` refuses it as an unknown field — which is itself
+  // part of the repair, so the fixtures must not carry it into the new path.
+  const alpha: OutcomeRecord = { ...validOutcomeRecord(), outcomeId: "oracle-outcome-alpha" };
+  const beta: OutcomeRecord = { ...validOutcomeRecord(), outcomeId: "oracle-outcome-beta" };
+  const keyed = (record: OutcomeRecord, creditKey: string): Keyed => ({ ...record, creditKey });
+
+  it("the restored defect is genuinely the old behaviour: it credits both", () => {
+    // Not the discrimination — the check that the mutant is the mutation it
+    // claims to be, so a failure below cannot be a typing or setup error
+    // wearing the costume of a caught defect.
+    const old = resolveByAuthoredKey([
+      keyed(alpha, "credit-key-alpha"),
+      keyed(beta, "credit-key-beta"),
+    ]);
+    expect(old.outcome).toBe("CREDITED");
+    expect(old.acceptedWork).toEqual(["oracle-outcome-alpha", "oracle-outcome-beta"]);
+    // And the two records ARE one underlying outcome, by every host-bound
+    // field there is.
+    expect(alpha.proposalRef).toBe(beta.proposalRef);
+    expect(alpha.proposalDigest).toBe(beta.proposalDigest);
+    expect(alpha.authorizedWorkRef).toBe(beta.authorizedWorkRef);
+    expect(alpha.outcomeClass).toBe(beta.outcomeClass);
+  });
+
+  it("the shipped resolver DOUBLE_CREDITS them, for the intended reason", () => {
+    const result = resolveOutcomeCredits([alpha, beta]);
+    expect(result.outcome).toBe("DOUBLE_CREDITED");
+    if (result.outcome !== "DOUBLE_CREDITED") return;
+    expect(result.issues.map((i) => i.code)).toEqual(["duplicate_accepted_work_credit"]);
+    // Named at the host-bound field the rule now keys on, not at a string the
+    // record chose.
+    expect(result.issues[0]?.path).toBe("/outcomes/1/authorizedWorkRef");
+  });
+
+  it("and the old resolver credited a self-referential reuse, which is now refused", () => {
+    // MEDIUM-3's half: the early return meant no REUSE was ever compared, so an
+    // outcome naming its own id took reuse credit for work nothing credited.
+    const self: OutcomeRecord = {
+      ...validOutcomeRecord(),
+      outcomeId: "oracle-outcome-self",
+      creditKind: "REUSE",
+      duplicateOfOutcomeRef: "oracle-outcome-self",
+    };
+    expect(resolveByAuthoredKey([keyed(self, "credit-key-self")]).outcome).toBe("CREDITED");
+    // The repair refuses it one layer earlier, at the record.
+    const stored = validateOutcomeRecord(self);
+    expect(issuesOf(stored)).toEqual([
+      { path: "/duplicateOfOutcomeRef", code: "self_referential_reuse" },
+    ]);
+    expect(resolveOutcomeCredits([self]).outcome).toBe("REFUSED");
+    // And the removed field is genuinely gone: a record still carrying it is
+    // refused rather than quietly ignored, so no producer keeps writing one.
+    const stillKeyed = validateOutcomeRecord(keyed(validOutcomeRecord(), "credit-key-legacy"));
+    expect(issuesOf(stillKeyed)).toEqual([{ path: "/creditKey", code: "unknown_field" }]);
   });
 });
 

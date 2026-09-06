@@ -486,7 +486,7 @@ export const validResearchReport = (): ResearchReport => ({
   },
   reportCompleteness: "PARTIAL",
   assessmentCoverage: { claimsTotal: 2, claimsWithStoredAssessment: 1, claimsNotAssessed: 1 },
-  runTerminalState: "PARTIALLY_COMPLETED",
+  runTerminal: { kind: "not_terminal" },
   claims: [
     { claimRef: "oracle-claim-1", claimDigest: CLAIM_ONE_DIGEST, assessmentRef: "oracle-assessment-1" },
     { claimRef: "oracle-claim-2", claimDigest: CLAIM_TWO_DIGEST, assessmentRef: null },
@@ -636,7 +636,6 @@ export const validOutcomeRecord = (): OutcomeRecord => ({
   assessingIdentity: { kind: "verifier", verifierId: "release-verifier-2", independent: true },
   rubricRef: "rubric:oracle-usefulness-v1",
   creditKind: "ACCEPTED_WORK",
-  creditKey: "installed-reader-limitation-2026-09",
   duplicateOfOutcomeRef: null,
   issuedAt: "2026-09-07T09:30:00.000Z",
 });

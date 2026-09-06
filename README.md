@@ -531,7 +531,9 @@ A `HYPOTHESIS` claim is valid with NO source spans: it is not required to be tru
 
 ### ResearchReport and DecisionProposal
 
-A report's completeness, its assessment coverage and its run's terminal state are **three separate fields**, and nothing here derives one from another. A `COMPLETE` report of an `ABORTED` run with zero assessments is a valid record — the run stopped, and the report still said everything it set out to say. A schema with one `status` field forces whoever writes it to pick one, and the one they pick is the flattering one.
+A report's completeness, its assessment coverage and its run's terminal state are **three separate fields**, and nothing here derives one from another. A `COMPLETE` report of a run that ended `SUPERSEDED`, with zero assessments, is a valid record — the run stopped being worth doing, and the report still said everything it set out to say. A schema with one `status` field forces whoever writes it to pick one, and the one they pick is the flattering one.
+
+`runTerminal` reuses `packages/run-events`' own vocabularies rather than a fourth private list: `{ kind: "completed", outcome }` from `RUN_OUTCOMES`, `{ kind: "failed", failureCode }` from `RUN_FAILURE_CODES`, or `{ kind: "not_terminal" }` for a report written while the run is still open. The first version of this field was a private four-member list that contradicted run-events on five of its six members, so a report could not say a run ended `SUPERSEDED` or `DUPLICATE` at all — and those are productive terminals, not failures.
 
 Coverage is counts, not a label, and the counts are cross-checked against the claim list: a report cannot declare coverage its own claims contradict. Claim entries REFERENCE a stored assessment; a field named `assessmentStatus` on one is refused by that name (`inline_assessment_status`), because §22.2's warning is that a strict implementation uses the canonical independently stored assessment rather than an inline model-written status.
 
@@ -550,7 +552,9 @@ Whether the proposal actually helped, observed rather than assumed. Four distinc
 
 The report's author cannot self-certify accepted usefulness: a `HELPFUL_OBSERVED` record whose assessing identity equals its authoring identity is refused. That rule is scoped to the class that claims usefulness — the same pair of identities is accepted on `NOT_HELPFUL_OBSERVED`, because a team reporting that its own work did not help is not the failure OUT-02 exists for.
 
-`resolveOutcomeCredits` answers the cross-record half: a duplicate recommendation may take reuse credit, but two accepted-work credits for one `creditKey` is `DOUBLE_CREDITED`, naming which record already holds it.
+`resolveOutcomeCredits` answers the cross-record half, and it keys on `outcomeCreditAnchor` — the work order the **host** authorized. The first version carried a `creditKey` string on the record and keyed on that, which meant two outcomes with identical `proposalRef`, `proposalDigest`, `authorizedWorkRef` and `outcomeClass` took two accepted-work credits by spelling the key differently. A consistency rule is defeated by a consistent lie unless it is anchored to something outside the record making the claim, so the field was removed rather than kept as a label nothing keys on.
+
+Four answers, not two: `REFUSED` (malformed), `DOUBLE_CREDITED` (two accepted-work credits for one underlying outcome, naming which record already holds it), `MISBOUND_REUSE` (a reuse naming an outcome that holds no credit to reuse), and `CREDITED` — which carries `unresolvedReuse`, the reuses whose original is not in the set handed in. Those are reported rather than refused, because the original may live in a part of the ledger the caller did not pass.
 
 ## Handling Validation Failures
 

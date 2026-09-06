@@ -2555,7 +2555,10 @@
           "claimsWithStoredAssessment": 1,
           "claimsNotAssessed": 1
         },
-        "runTerminalState": "PARTIALLY_COMPLETED",
+        "runTerminal": {
+          "kind": "completed",
+          "outcome": "SUPERSEDED"
+        },
         "claims": [
           {
             "claimRef": "oracle-claim-1",
@@ -2644,7 +2647,10 @@
           "claimsWithStoredAssessment": 2,
           "claimsNotAssessed": 1
         },
-        "runTerminalState": "PARTIALLY_COMPLETED",
+        "runTerminal": {
+          "kind": "completed",
+          "outcome": "SUPERSEDED"
+        },
         "claims": [
           {
             "claimRef": "oracle-claim-1",
@@ -2732,7 +2738,10 @@
           "claimsWithStoredAssessment": 1,
           "claimsNotAssessed": 1
         },
-        "runTerminalState": "PARTIALLY_COMPLETED",
+        "runTerminal": {
+          "kind": "completed",
+          "outcome": "SUPERSEDED"
+        },
         "claims": [
           {
             "claimRef": "oracle-claim-1",
@@ -3189,7 +3198,6 @@
         },
         "rubricRef": "rubric:oracle-usefulness-v1",
         "creditKind": "ACCEPTED_WORK",
-        "creditKey": "installed-reader-limitation-2026-09",
         "duplicateOfOutcomeRef": null,
         "issuedAt": "2026-09-07T09:30:00.000Z"
       },
@@ -3242,7 +3250,6 @@
         },
         "rubricRef": "rubric:oracle-usefulness-v1",
         "creditKind": "ACCEPTED_WORK",
-        "creditKey": "installed-reader-limitation-2026-09",
         "duplicateOfOutcomeRef": null,
         "issuedAt": "2026-09-07T09:30:00.000Z"
       },
@@ -3295,7 +3302,6 @@
         },
         "rubricRef": "rubric:oracle-usefulness-v1",
         "creditKind": "ACCEPTED_WORK",
-        "creditKey": "installed-reader-limitation-2026-09",
         "duplicateOfOutcomeRef": null,
         "issuedAt": "2026-09-07T09:30:00.000Z"
       },

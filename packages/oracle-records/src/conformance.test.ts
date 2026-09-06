@@ -52,6 +52,25 @@ const VALIDATORS = [
   ["outcome record", validateOutcomeRecord],
 ] as const;
 
+/**
+ * WHAT THIS BLOCK MEASURES, AND WHAT IT DOES NOT.
+ *
+ * It checks that no field name this package declares trips the stem list. That
+ * is a property of OUR NAMES — the cost of the substring rule, paid and
+ * asserted — and it is worth having, because `ModelAuthored` maps such a field
+ * to `never` and the failure without this test is a record type nobody can
+ * construct, reported as a compile error far from the field that caused it.
+ *
+ * It is NOT evidence that the stem list catches authority fields. A review
+ * pointed out that this block compares a declared field list against a term
+ * list and calls the agreement coverage — a list checked against itself. It
+ * would pass unchanged if the stem list were empty, and it passed while
+ * twenty-one authority-bearing spellings went unmatched.
+ *
+ * The check with an external reference is `src/authority-terms.test.ts`: it
+ * names those twenty-one, shows the stem walk does not fire on them, and shows
+ * the record allowlist does. This block keeps the narrower claim it can support.
+ */
 describe("the substring authority rule is affordable for the fields this package declares", () => {
   it("names no model-authored payload field that would trip it", () => {
     // The cost of a substring rule, paid explicitly. `ModelAuthored` maps such

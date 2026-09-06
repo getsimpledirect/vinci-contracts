@@ -103,8 +103,8 @@ const PINNED_DIGESTS: Readonly<Record<(typeof EXPECTED_VECTORS)[number], string>
     "2b1a89a24fd1254e4afd578271bc42dbd8f074e4a4bcadda3df9889063179cf0",
   "decision-proposal-2-no-change": "8262f70dc99b4ccee8da357a29dec6a043145b03ff5656237ab8aebbdb3ceed6",
   "outcome-record-1-helpful-disproved":
-    "ba3d60a5e63aff08b67ba5bea2f589ce767b48e41719edb9965b20282144a76d",
-  "research-report-1-partial": "53daedc62d8b5919fd498d34ccd062196b2f55c38bcfbec18400fdc259e0753c",
+    "44ce14449cb847a37b9786f91500cdc7f6a2eb91289f382aa9aa073c9767a8b6",
+  "research-report-1-partial": "af1b7f8dc27e9e638b43a7d4bf25856e5aa440cb6185030ac235862d92d38fb5",
   "context-binding-1-complete": "95c49a42f4ce350d3113ea6ba5210a6db7a8c12096c36150dcf4b293132389f7",
   "context-binding-2-incomplete": "362feb622e1e54719d884e5ddf893332a9408e3c85a8f156a2b4907015096497",
   "research-request-1-admitted": "a722101e72a63e022944a3a7fc336d86c6410efb93751a015d74f94017a34bb0",
@@ -419,7 +419,9 @@ describe("the vectors exercise the closed vocabularies, not a corner of each", (
     // purpose, in committed data.
     const report = readVector("research-report-1-partial");
     expect(report.reportCompleteness).toBe("PARTIAL");
-    expect(report.runTerminalState).toBe("PARTIALLY_COMPLETED");
+    // SUPERSEDED is the case the private vocabulary could not express at all:
+    // a productive terminal that is not a success and not a failure.
+    expect(report.runTerminal).toEqual({ kind: "completed", outcome: "SUPERSEDED" });
     expect(report.assessmentCoverage).toEqual({
       claimsTotal: 2,
       claimsWithStoredAssessment: 1,

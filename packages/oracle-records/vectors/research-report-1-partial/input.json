@@ -23,7 +23,7 @@
     "claimsWithStoredAssessment": 1,
     "claimsNotAssessed": 1
   },
-  "runTerminalState": "PARTIALLY_COMPLETED",
+  "runTerminal": { "kind": "completed", "outcome": "SUPERSEDED" },
   "claims": [
     {
       "claimRef": "oracle-claim-1",

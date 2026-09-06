@@ -344,3 +344,85 @@ describe("REQ-03: an idempotency key resolves to one identity, and a conflict is
     }
   });
 });
+
+describe("REQ-02: an empty object is 'not stated', which is the headline case", () => {
+  it("an empty authority object is INCOMPLETE naming authority, not REFUSED", () => {
+    // The `stated` test covered undefined, null, blank strings and empty
+    // ARRAYS, and missed the empty OBJECT — so `hostResolved.authority = {}`,
+    // a request stating no read or propose scope, came back REFUSED with
+    // whatever the validator reached first. REQ-02's whole point is that the
+    // answer names the element that cannot be guessed.
+    const base = validResearchRequest();
+    const admission = admitResearchRequest({
+      ...base,
+      hostResolved: { ...base.hostResolved, authority: {} },
+    });
+    expect(admission.outcome).toBe("INCOMPLETE");
+    if (admission.outcome !== "INCOMPLETE") return;
+    expect(admission.missing.map((m) => ({ element: m.element, path: m.path }))).toEqual([
+      { element: "authority", path: "/hostResolved/authority" },
+    ]);
+  });
+
+  it("and the same holds for the other object-valued critical elements", () => {
+    // Three of the eleven critical elements are objects, so the omission
+    // covered more than one field. The sweep is over the table rather than over
+    // the one example the finding named.
+    const base = validResearchRequest();
+    const cases: [string, unknown][] = [
+      ["/hostResolved/scope", { ...base.hostResolved, scope: {} }],
+      ["/hostResolved/missionOwner", { ...base.hostResolved, missionOwner: {} }],
+      ["/hostResolved/intendedRecipient", { ...base.hostResolved, intendedRecipient: {} }],
+    ];
+    for (const [path, hostResolved] of cases) {
+      const admission = admitResearchRequest({ ...base, hostResolved });
+      expect(admission.outcome, path).toBe("INCOMPLETE");
+      if (admission.outcome !== "INCOMPLETE") continue;
+      expect(admission.missing.map((m) => m.path), path).toEqual([path]);
+    }
+  });
+
+  it("POSITIVE CONTROL: a populated authority is ADMITTED", () => {
+    // Without this, an `admitResearchRequest` that called everything
+    // incomplete would satisfy every assertion above.
+    expect(admitResearchRequest(validResearchRequest()).outcome).toBe("ADMITTED");
+  });
+});
+
+describe("REQ-03: a stored identity whose id disagrees with its own digest", () => {
+  it("is a KEY_CONFLICT rather than a SAME_REQUEST returning the wrong id", () => {
+    // `requestId` rode alongside the digest and was handed back unchecked, so a
+    // stored identity naming a different request than the one its digest
+    // identifies would attach this request to whatever the caller looked up.
+    const request = validResearchRequest();
+    const admitted = admitResearchRequest(request);
+    expect(admitted.outcome).toBe("ADMITTED");
+    if (admitted.outcome !== "ADMITTED") return;
+    const prior = {
+      schemaVersion: 1 as const,
+      idempotencyKey: request.hostResolved.lineage.idempotencyKey,
+      requestId: "oracle-request-somebody-else",
+      requestDigest: admitted.requestDigest,
+    };
+    const result = resolveIdempotency(prior, request);
+    expect(result.outcome).toBe("KEY_CONFLICT");
+    if (result.outcome !== "KEY_CONFLICT") return;
+    expect(result.issues.map((i) => i.code)).toEqual(["prior_identity_request_id_mismatch"]);
+  });
+
+  it("POSITIVE CONTROL: the matching identity still resolves to SAME_REQUEST", () => {
+    const request = validResearchRequest();
+    const admitted = admitResearchRequest(request);
+    if (admitted.outcome !== "ADMITTED") throw new Error("fixture must be admissible");
+    const result = resolveIdempotency(
+      {
+        schemaVersion: 1 as const,
+        idempotencyKey: request.hostResolved.lineage.idempotencyKey,
+        requestId: request.hostResolved.requestId,
+        requestDigest: admitted.requestDigest,
+      },
+      request,
+    );
+    expect(result.outcome).toBe("SAME_REQUEST");
+  });
+});

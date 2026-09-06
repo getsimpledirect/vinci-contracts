@@ -15,6 +15,7 @@ import {
   isDigest,
   isEnumMember,
   isIdentifier,
+  isNonNegativeInt,
   isObjectRecord,
   isProseText,
   isRefText,
@@ -198,7 +199,24 @@ export function statusForReviewerOutcome(outcome: unknown): AssessmentStatus {
   // them apart.
   const spans = snapshot.reviewedSpans;
   if (!Array.isArray(spans)) return "INSUFFICIENT_EVIDENCE";
-  const usable = spans.filter((span) => isObjectRecord(span) && isIdentifier(span.sourceId));
+  // WELL-FORMED spans, on the same terms `validateClaimAssessment` uses.
+  //
+  // A span counted here but refused there would make the two halves disagree:
+  // this function said SUPPORTED for `{startOffset: 9, endOffset: 1}` while the
+  // validator refused the stored record as `inverted_range`, so a producer
+  // following the derivation would write a record the package will not accept.
+  // Fewer spans is the safe direction — it can only move a status away from
+  // support — but a disagreement in either direction is a defect.
+  const usable = spans.filter(
+    (span) =>
+      isObjectRecord(span)
+      && isIdentifier(span.sourceId)
+      && (span.span === null
+        || (isObjectRecord(span.span)
+          && isNonNegativeInt(span.span.startOffset)
+          && isNonNegativeInt(span.span.endOffset)
+          && span.span.endOffset >= span.span.startOffset)),
+  );
   if (usable.length === 0) return "INSUFFICIENT_EVIDENCE";
   return "SUPPORTED";
 }
@@ -416,12 +434,41 @@ export function validateClaimAssessment(input: unknown): ValidationResult<ClaimA
     }
   }
 
+  const spansPresent = Object.hasOwn(record, "reviewedSpans");
   if (assessed === "SUPPORTED" || assessed === "CONTRADICTED" || assessed === "INSUFFICIENT_EVIDENCE") {
-    readSourceSpans(record.reviewedSpans, "/reviewedSpans", "reviewedSpans", issues);
+    // ABSENT is diagnosed by the rule it belongs to, not by the shape check.
+    //
+    // A SUPPORTED record with no `reviewedSpans` key at all was refused as
+    // `invalid_type` — "reviewedSpans is an array" — because the shape check
+    // ran first and the anti-unearned-support rule read `Array.isArray`, which
+    // is false for an absent field. The record was refused either way, so this
+    // is a diagnostic defect rather than a hole: the caller was told the wrong
+    // reason, and the CLM-01 code was unreachable for the case that most
+    // obviously belongs to it. A value guard that only fires when the value is
+    // present says nothing about absence, which is the class this repository
+    // has already been bitten by.
+    if (spansPresent) {
+      readSourceSpans(record.reviewedSpans, "/reviewedSpans", "reviewedSpans", issues);
+    } else if (assessed !== "SUPPORTED") {
+      issues.push(
+        issue("/reviewedSpans", "required_field", "reviewedSpans is required on this status"),
+      );
+    }
   }
 
   // --- the anti-unearned-support rules, enforced rather than documented ----
   if (assessed === "SUPPORTED") {
+    if (!spansPresent) {
+      issues.push(
+        issue(
+          "/reviewedSpans",
+          "unearned_support",
+          "CLM-01: SUPPORTED names the spans that were actually reviewed. An absent list is not an "
+            + "empty one and neither earns support; a check that read nothing is INSUFFICIENT_EVIDENCE "
+            + "and one that could not read is CHECK_UNAVAILABLE",
+        ),
+      );
+    }
     if (Array.isArray(record.reviewedSpans) && record.reviewedSpans.length === 0) {
       issues.push(
         issue(

@@ -46,10 +46,29 @@ import {
  *      everything a model or a requester wrote. There is no third place.
  *   2. `ModelAuthored<T>` maps any authority-bearing key name in a payload type
  *      to `never`, so a payload type that declares one does not COMPILE.
- *   3. `validateAttestedEnvelope` walks the whole payload subtree at runtime and
- *      refuses an authority-bearing key by name, at any depth, with its own
- *      issue code — because the compiler is not present when JSON arrives from
- *      a model.
+ *   3. Each RECORD's own payload allowlist runs at every depth, so a key the
+ *      schema does not declare is refused wherever it appears. This is the
+ *      layer that actually holds: it is a closed list of what a payload MAY
+ *      carry, so it does not depend on anyone predicting what an attacker
+ *      would call the thing they are smuggling.
+ *   4. `validateAttestedEnvelope` additionally walks the payload subtree and
+ *      refuses a key containing one of `AUTHORITY_TERMS`' fourteen word stems,
+ *      with its own issue code, so the common spellings are named rather than
+ *      reported as unknown fields.
+ *
+ * LAYER 4 IS A NET, NOT A DEFINITION OF AUTHORITY, and an earlier version of
+ * this comment overstated it as "refuses an authority-bearing key by name, at
+ * any depth". A review refuted that in minutes: `authorizedBy`, `approvalRef`,
+ * `entitlements`, `privileges`, `capabilities`, `roleAssignment`, `clearance`,
+ * `canMerge`, `signedBy`, `sudo` and `runAs` all pass it — "authorized" does
+ * not contain the stem "authority". Twenty-one such spellings were found. NO
+ * RECORD IN THIS PACKAGE IS EXPLOITABLE BY THEM, because layer 3 refuses every
+ * undeclared key regardless of spelling, and `src/authority-terms.test.ts`
+ * pins exactly that: it shows the stem walk does NOT fire on
+ * `payload.completion.authorizedBy` and that the record's allowlist does. The
+ * day someone adds a free-form payload subtree — a map, a passthrough object —
+ * layer 3 stops covering it and layer 4 will not catch what it lets through.
+ * Enumerating more stems would be the same defect one level up.
  *
  * The positive reachability control for all three is that the SAME field name
  * is accepted on the envelope: `contextManifestDigest` is a required host field

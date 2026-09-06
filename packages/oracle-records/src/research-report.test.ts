@@ -3,17 +3,20 @@ import { canonicalize } from "@getsimpledirect/vinci-contracts";
 import {
   REPORT_COMPLETENESS,
   REPORT_COST_STATES,
-  RUN_TERMINAL_STATES,
   researchReportDigest,
   validateResearchReport,
 } from "./index.ts";
+// Imported from run-events ITSELF, not re-exported through this package: the
+// point of the reconciliation is that these members have ONE owner, and a
+// local copy in the assertion would hide the day they stop agreeing.
+import { RUN_FAILURE_CODES, RUN_OUTCOMES } from "@getsimpledirect/vinci-run-events";
 import { reversed, validResearchReport } from "./fixtures.test-helpers.ts";
 
 /**
  * §5.6 and REP-02.
  *
  * The centre of this file is the absence of a rule: `reportCompleteness`,
- * `assessmentCoverage` and `runTerminalState` are never checked against each
+ * `assessmentCoverage` and `runTerminal` are never checked against each
  * other, and the sweep below asserts that as a property over every combination
  * rather than trusting that nobody added one. A single cross-rule would make
  * one of the three derivable from another, and the derivable one always ends up
@@ -44,10 +47,18 @@ describe("REP-02: three separate fields, none derived from another", () => {
     // everything it set out to say — and a schema that refused it would be
     // teaching its writers to pick the flattering field.
     const base = validResearchReport();
+    // Every terminal run-events can express, not a private four-member list:
+    // the six RUN_OUTCOMES, the six RUN_FAILURE_CODES, and the open run.
+    const terminals = [
+      ...RUN_OUTCOMES.map((outcome) => ({ kind: "completed", outcome })),
+      ...RUN_FAILURE_CODES.map((failureCode) => ({ kind: "failed", failureCode })),
+      { kind: "not_terminal" },
+    ];
+    expect(terminals.length).toBe(RUN_OUTCOMES.length + RUN_FAILURE_CODES.length + 1);
     for (const reportCompleteness of REPORT_COMPLETENESS) {
-      for (const runTerminalState of RUN_TERMINAL_STATES) {
-        const result = validateResearchReport({ ...base, reportCompleteness, runTerminalState });
-        expect(issuesOf(result), `${reportCompleteness}/${runTerminalState}`).toEqual([]);
+      for (const runTerminal of terminals) {
+        const result = validateResearchReport({ ...base, reportCompleteness, runTerminal });
+        expect(issuesOf(result), `${reportCompleteness}/${JSON.stringify(runTerminal)}`).toEqual([]);
       }
     }
   });

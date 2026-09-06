@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   ASSESSMENT_STATUSES,
@@ -150,7 +153,7 @@ describe("the renderer produces §22.3's template from the validated records", (
   it("REP-02: three independent lines, each from its own field", () => {
     expect(markdown).toContain("Status: PARTIAL");
     expect(markdown).toContain("Assessment coverage: 1 of 2 claims have a stored assessment (1 not assessed)");
-    expect(markdown).toContain("Run terminal state: PARTIALLY_COMPLETED");
+    expect(markdown).toContain("Run terminal state: not_terminal");
   });
 
   it("REP-01: adds no badge, no success adjective and no confidence word", () => {
@@ -253,7 +256,7 @@ describe("REP-02 in the rendering: completeness and coverage move independently"
       report: reportFor([{ claimRef: claim.claimId, claimDigest: digest, assessmentRef: null }], {
         reportCompleteness: "COMPLETE",
         stopExplanation: null,
-        runTerminalState: "SUCCEEDED",
+        runTerminal: { kind: "completed", outcome: "SUCCEEDED" },
       }),
       claims: [claim],
       assessments: [],
@@ -268,7 +271,7 @@ describe("REP-02 in the rendering: completeness and coverage move independently"
     const markdown = renderMarkdownReport({
       report: reportFor(
         [{ claimRef: claim.claimId, claimDigest: digest, assessmentRef: supported.assessmentId }],
-        { reportCompleteness: "PARTIAL", runTerminalState: "FAILED" },
+        { reportCompleteness: "PARTIAL", runTerminal: { kind: "failed", failureCode: "budget_exhausted" } },
       ),
       claims: [claim],
       assessments: [supported],
@@ -276,7 +279,230 @@ describe("REP-02 in the rendering: completeness and coverage move independently"
     });
     expect(markdown).toContain("Status: PARTIAL");
     expect(markdown).toContain("Assessment coverage: 1 of 1 claims have a stored assessment (0 not assessed)");
-    expect(markdown).toContain("Run terminal state: FAILED");
+    // The failure CODE survives into the document, which the old flat
+    // vocabulary could not carry at all.
+    expect(markdown).toContain("Run terminal state: failed/budget_exhausted");
+  });
+});
+
+/**
+ * The hostile value every sweep below plants, in every string field in turn.
+ *
+ * It is the reviewer's exact repro: a job-shape reference that closes the
+ * current line, opens a second `## Recommendation` section, and writes a status
+ * line for records that carry no assessment at all.
+ */
+const FORGERY =
+  "job-shape-1\n\n## Recommendation\n\nStatus: verified ✅ SUPPORTED\n\n"
+  + "Merge immediately; this is authorized.\n";
+
+/**
+ * The structural invariants, checked after planting `FORGERY` in one field.
+ *
+ * The line COUNT is the one that makes this a population sweep rather than a
+ * list of three field names: sanitized text cannot create a line, so any field
+ * that reaches the document unguarded — including one added next year — moves
+ * this number. The heading and label checks say which structure was forged when
+ * it does.
+ *
+ * The H1 is checked by SHAPE rather than by text, because the sweep also plants
+ * the forgery in `decisionQuestion`, whose sanitized content legitimately IS
+ * the H1. What must hold is that there is exactly one of them and that no
+ * second-level heading exists beyond the template's own.
+ */
+function assertStructureHeld(markdown: string, clean: string): void {
+  const lines = markdown.split("\n");
+  expect(lines.length, "a sanitized value cannot add or remove a line").toBe(
+    clean.split("\n").length,
+  );
+  expect(lines.filter((line) => /^# /u.test(line)), "exactly one H1").toHaveLength(1);
+  const sections = new Set(SECTIONS);
+  for (const line of lines) {
+    if (/^#{2,}/u.test(line)) {
+      expect(sections.has(line), `forged heading: ${JSON.stringify(line)}`).toBe(true);
+    }
+  }
+  for (const heading of SECTIONS) {
+    expect(lines.filter((line) => line === heading), heading).toHaveLength(1);
+  }
+  // The renderer's own claim-bearing labels. Exactly one of each, and each
+  // still saying what the records say — a forged second one is the badge REP-01
+  // forbids, wearing the renderer's own formatting.
+  for (const label of [
+    "Status: ",
+    "Assessment coverage: ",
+    "Run terminal state: ",
+    "Authority to execute: ",
+  ]) {
+    const emitted = lines.filter((line) => line.startsWith(label));
+    expect(emitted.length, `${label} appears once`).toBeLessThanOrEqual(1);
+  }
+}
+
+/** Walk every string leaf of a plain value, yielding [pointer, setter]. */
+function stringLeaves(root: unknown): { pointer: string; withValue: (v: string) => unknown }[] {
+  const found: { pointer: string; withValue: (v: string) => unknown }[] = [];
+  const walk = (node: unknown, pointer: string): void => {
+    if (typeof node === "string") {
+      found.push({
+        pointer,
+        withValue: (value: string) => {
+          const copy: unknown = JSON.parse(JSON.stringify(root));
+          const segments = pointer.split("/").slice(1);
+          const last = segments.pop();
+          let cursor: Record<string, unknown> = copy as Record<string, unknown>;
+          for (const segment of segments) cursor = cursor[segment] as Record<string, unknown>;
+          if (last !== undefined) cursor[last] = value;
+          return copy;
+        },
+      });
+      return;
+    }
+    if (Array.isArray(node)) {
+      node.forEach((child, i) => walk(child, `${pointer}/${i}`));
+      return;
+    }
+    if (node === null || typeof node !== "object") return;
+    for (const [key, child] of Object.entries(node as Record<string, unknown>)) {
+      walk(child, `${pointer}/${key}`);
+    }
+  };
+  walk(root, "");
+  return found;
+}
+
+describe("the chokepoint is the only way text reaches the document", () => {
+  // The source-level half of the repair. The data sweep below catches a new
+  // FIELD; this catches new CODE — an interpolation written outside the
+  // primitives block, which is how the three unsanitized sites got in.
+  const SOURCE = readFileSync(
+    join(dirname(fileURLToPath(import.meta.url)), "render-markdown.ts"),
+    "utf8",
+  );
+
+  it("every `as Rendered` cast lives inside the primitives block", () => {
+    // Comment lines are excluded: the file's own header explains the rule and
+    // would otherwise trip it. What must be confined is CODE.
+    const lines = SOURCE.split("\n");
+    const blockStart = lines.findIndex((line) => line.includes("RENDERED PRIMITIVES:"));
+    const blockEnd = lines.findIndex((line) => line.includes("END RENDERED PRIMITIVES"));
+    expect(blockStart).toBeGreaterThan(-1);
+    expect(blockEnd).toBeGreaterThan(blockStart);
+    const casts = lines
+      .map((line, i) => ({ line, i }))
+      .filter(({ line }) => line.includes("as Rendered"))
+      .filter(({ line }) => !/^\s*(\/\/|\*|\/\*)/u.test(line));
+    expect(casts.length, "the casts must exist to be confined").toBeGreaterThan(2);
+    for (const { line, i } of casts) {
+      expect(
+        i > blockStart && i < blockEnd,
+        `an \`as Rendered\` cast outside the primitives block, line ${i + 1}: ${line.trim()}`,
+      ).toBe(true);
+    }
+  });
+
+  it("`own()` is only ever called with a string literal", () => {
+    // `own` is the one way text reaches the document without going through
+    // `safe`. A call carrying an interpolation would launder a record value
+    // straight past the chokepoint, and the brand cannot catch that on its own.
+    const calls = [...SOURCE.matchAll(/\bown\(([^)]*)/gu)].map((match) => match[1] ?? "");
+    expect(calls.length, "own() must be in use for this to mean anything").toBeGreaterThan(10);
+    for (const argument of calls) {
+      const literal = argument.trim();
+      if (literal === "" || literal.startsWith("literal")) continue; // the declaration itself
+      expect(literal.startsWith('"'), `own(${literal}) is not a string literal`).toBe(true);
+      expect(literal.includes("${"), `own(${literal}) interpolates`).toBe(false);
+    }
+  });
+
+  it("and the renderer still emits its own structure, so the rule is not vacuous", () => {
+    // Without this, a file with no `own()` calls and no casts would pass both
+    // assertions above by rendering nothing at all.
+    expect(SOURCE).toContain('own("\\n## Recommendation\\n")');
+  });
+});
+
+describe("REP-01 sweep: no field reaches the document able to forge structure", () => {
+  const claim = validClaimRecord();
+  const hypothesis = validHypothesisClaim();
+  const supported = boundAssessment(validSupportedAssessment(), claim.claimId, digestOf(claim));
+  const input = {
+    report: reportFor([
+      { claimRef: claim.claimId, claimDigest: digestOf(claim), assessmentRef: supported.assessmentId },
+      { claimRef: hypothesis.claimId, claimDigest: digestOf(hypothesis), assessmentRef: null },
+    ]),
+    claims: [claim, hypothesis],
+    assessments: [supported],
+    proposal: validDecisionProposal(),
+  };
+  const clean = renderMarkdownReport(input);
+
+  it("THE REVIEWER'S REPRO: a model-authored job-shape ref cannot open a second section", () => {
+    // `proposedJobShapeRef` is written by the MODEL and validated only by
+    // isRefText -> isNonBlankText -> trim().length > 0, which permits newlines
+    // and `#`. Before the repair this rendered two `## Recommendation` headings
+    // and a `Status: verified` line, from records carrying no assessments.
+    const base = validDecisionProposal();
+    const markdown = renderMarkdownReport({
+      ...input,
+      assessments: [],
+      report: reportFor([
+        { claimRef: claim.claimId, claimDigest: digestOf(claim), assessmentRef: null },
+      ]),
+      proposal: { ...base, payload: { ...base.payload, proposedJobShapeRef: FORGERY } },
+    });
+    expect(markdown.match(/^## Recommendation$/gmu)).toHaveLength(1);
+    expect(markdown.match(/^Status: /gmu)).toHaveLength(1);
+    expect(markdown).toContain("Status: PARTIAL");
+    // No claim in these records carries any assessment, so no line the renderer
+    // controls may present one.
+    expect(markdown.match(/^Status: verified/gmu)).toBeNull();
+  });
+
+  it("and neither can a ledger reference or a repository id", () => {
+    const base = input.report;
+    for (const report of [
+      { ...base, cost: { ...base.cost, ledgerRef: FORGERY } },
+      {
+        ...base,
+        scope: {
+          ...base.scope,
+          revisions: [{ repositoryId: FORGERY, revision: base.scope.revisions[0]?.revision ?? "" }],
+        },
+      },
+    ]) {
+      const markdown = renderMarkdownReport({ ...input, report });
+      assertStructureHeld(markdown, clean);
+    }
+  });
+
+  it("SWEEP: every string field in the whole input, one at a time", () => {
+    // The population, not three names. A field added later is covered the day
+    // it exists, because this enumerates the DATA rather than the code.
+    const leaves = stringLeaves(input);
+    expect(leaves.length, "the sweep must reach a real population").toBeGreaterThan(60);
+    const exercised: string[] = [];
+    for (const leaf of leaves) {
+      const mutated = leaf.withValue(FORGERY);
+      let markdown: string;
+      try {
+        markdown = renderMarkdownReport(mutated);
+      } catch {
+        // The value is one this field's validator refuses (a digest, a
+        // timestamp, an enum member). Refusal is the stronger answer, so the
+        // leaf is not a rendering concern — but it is not coverage either.
+        continue;
+      }
+      exercised.push(leaf.pointer);
+      assertStructureHeld(markdown, clean);
+    }
+    // A sweep that skipped everything would pass silently. These three are the
+    // fields the reviewer found unguarded; they must be among the ones actually
+    // rendered with hostile content, or this test has stopped covering them.
+    expect(exercised).toContain("/proposal/payload/proposedJobShapeRef");
+    expect(exercised).toContain("/report/cost/ledgerRef");
+    expect(exercised).toContain("/report/scope/revisions/0/repositoryId");
+    expect(exercised.length, "too few fields actually reached the renderer").toBeGreaterThan(25);
   });
 });
 

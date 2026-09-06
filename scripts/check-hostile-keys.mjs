@@ -1218,7 +1218,19 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-oracle-records.researchReportDigest": "identity, not authority: validates and throws rather than digesting an invalid report",
   "@getsimpledirect/vinci-oracle-records.decisionProposalDigest": "identity, not authority: validates and throws rather than digesting an invalid proposal. Whether a proposal may be carried into a job shape is decided by mapProposalToJobShape, which is probed in both argument positions",
   "@getsimpledirect/vinci-oracle-records.outcomeRecordDigest": "identity, not authority: validates and throws rather than digesting an invalid outcome. Whether an outcome takes an accepted-work credit is decided by resolveOutcomeCredits, which is probed",
-  "@getsimpledirect/vinci-oracle-records.renderMarkdownReport": "a formatter over already-validated records: it re-validates every record it is handed and THROWS rather than rendering an invalid one, so no input shape can obtain a document. It permits nothing, and REP-01's property -- that the statuses in the document are exactly the statuses in the records, in both directions -- is asserted in src/render-markdown.test.ts, where a rendered document can actually be read",
+  // The FIRST version of this waiver said REP-01 "is asserted in
+  // src/render-markdown.test.ts", and that sentence was load-bearing and wrong:
+  // the only hostile-prose test there mutated a field that WAS sanitized, so it
+  // exercised the path that worked while three unsanitized interpolations
+  // shipped. A waiver may not rest on a test's existence. This one rests on a
+  // property of the CODE that a probe here could not check anyway: the document
+  // is `Rendered[]`, a branded type, and `safe()` is the only way a
+  // caller-supplied value becomes one, so an unguarded interpolation does not
+  // compile. src/render-markdown.test.ts now also sweeps every string field of
+  // a whole render input and requires the line count to be unchanged.
+  "@getsimpledirect/vinci-oracle-records.renderMarkdownReport": "a formatter over already-validated records: it re-validates every record it is handed and THROWS rather than rendering an invalid one, so no input shape can obtain a document, and it grants nothing. It cannot be probed as a guard because every answer it gives is a string; what replaces the probe is a compile-time chokepoint (the document is a branded Rendered[], and safe() is the only producer) plus a behavioural sweep over every string field in src/render-markdown.test.ts",
+  "@getsimpledirect/vinci-oracle-records.outcomeCreditAnchor": "projection over an already-validated outcome: it returns the host-authorized work ref and grants nothing. It is the ANCHOR the credit rule keys on rather than the rule itself; whether an outcome takes a credit is resolveOutcomeCredits' decision, which is probed",
+  "@getsimpledirect/vinci-oracle-records.runTerminalLabel": "total projection over an already-validated report's run terminal: it names the run-events vocabulary member the record carries and decides nothing",
 };
 
 /**

@@ -7,6 +7,7 @@ import {
   type ValidationIssue,
   type ValidationResult,
 } from "@getsimpledirect/vinci-contracts";
+import { RUN_FAILURE_CODES, RUN_OUTCOMES } from "@getsimpledirect/vinci-run-events";
 import { digestValidated } from "./digest.ts";
 import type { ObservationWindow } from "./oracle-context.ts";
 import {
@@ -38,7 +39,7 @@ import {
  * §5.6. The decision-facing record, and the three fields REP-02 refuses to let
  * anyone collapse.
  *
- * `reportCompleteness`, `assessmentCoverage` and `runTerminalState` answer three
+ * `reportCompleteness`, `assessmentCoverage` and `runTerminal` answer three
  * different questions — did the report say everything it set out to say, was
  * every claim in it actually checked, and did the run finish — and INV-10 says
  * a completed Run, a supported claim, an authorized action and an accepted
@@ -56,9 +57,65 @@ import {
 export const REPORT_COMPLETENESS = ["COMPLETE", "PARTIAL", "FAILED"] as const;
 export type ReportCompleteness = (typeof REPORT_COMPLETENESS)[number];
 
-/** How the operational run ended. Nothing about whether the findings are any good. */
-export const RUN_TERMINAL_STATES = ["SUCCEEDED", "PARTIALLY_COMPLETED", "FAILED", "ABORTED"] as const;
-export type RunTerminalState = (typeof RUN_TERMINAL_STATES)[number];
+/**
+ * How the operational run ended — in the vocabulary that already owns the
+ * question, not a fourth one.
+ *
+ * The first version of this field was a private four-member list
+ * (`SUCCEEDED`, `PARTIALLY_COMPLETED`, `FAILED`, `ABORTED`). It duplicated
+ * `packages/run-events`'s concept and CONTRADICTED it: `RUN_OUTCOMES` is
+ * `SUCCEEDED, DO_NOT_START, DUPLICATE, NO_LONGER_VALUABLE, SUPERSEDED,
+ * CLOSE_WITH_NEGATIVE_RESULT`, with failures carried separately in
+ * `RUN_FAILURE_CODES`. Only `SUCCEEDED` overlapped, so a report could not
+ * represent a run that ended `SUPERSEDED` or `DUPLICATE` at all — and those
+ * are productive terminals, not failures, which is exactly the distinction a
+ * decision-facing report must not lose. CON-01 says new records extend the
+ * system rather than duplicating it; the duplicate-vocabulary checker did not
+ * catch it because the two lists are not literally equal, which is the
+ * difference between a literal duplicate and a semantic one.
+ *
+ * A union rather than one flat list, because `run.completed` and `run.failed`
+ * carry different vocabularies in run-events and flattening them here would
+ * re-create the same defect one level down. `not_terminal` is the third arm and
+ * is not a value run-events has: a report written while the run is still open
+ * has to say so rather than picking the nearest terminal.
+ */
+/**
+ * Derived from the IMPORTED arrays, never restated.
+ *
+ * `packages/run-events` exports the members but not these type aliases, and a
+ * hand-written union here would be the same duplication one level down —
+ * `check-duplicate-vocabularies.mjs` treats `(typeof XS)[number]` as a
+ * derivation rather than a second declaration for exactly this reason.
+ */
+export type RunOutcome = (typeof RUN_OUTCOMES)[number];
+export type RunFailureCode = (typeof RUN_FAILURE_CODES)[number];
+
+export type RunTerminal =
+  | { readonly kind: "completed"; readonly outcome: RunOutcome }
+  | { readonly kind: "failed"; readonly failureCode: RunFailureCode }
+  | { readonly kind: "not_terminal" };
+
+/** The three arms' discriminators. The MEMBERS of two of them are run-events'. */
+export const RUN_TERMINAL_KINDS = ["completed", "failed", "not_terminal"] as const;
+export type RunTerminalKind = (typeof RUN_TERMINAL_KINDS)[number];
+
+const RUN_TERMINAL_FIELDS: Readonly<Record<RunTerminalKind, readonly string[]>> = {
+  completed: ["kind", "outcome"],
+  failed: ["kind", "failureCode"],
+  not_terminal: ["kind"],
+};
+
+/**
+ * The one-line label a reader sees. A projection, and deliberately lossless:
+ * every arm names the vocabulary member it carries rather than collapsing to a
+ * word, because "failed" and "budget_exhausted" answer different questions.
+ */
+export function runTerminalLabel(terminal: RunTerminal): string {
+  if (terminal.kind === "completed") return `completed/${terminal.outcome}`;
+  if (terminal.kind === "failed") return `failed/${terminal.failureCode}`;
+  return "not_terminal";
+}
 
 /**
  * §22.2's `cost.state`. What is actually known about what this cost.
@@ -154,7 +211,7 @@ export type ResearchReport = {
   readonly scope: ReportScope;
   readonly reportCompleteness: ReportCompleteness;
   readonly assessmentCoverage: AssessmentCoverage;
-  readonly runTerminalState: RunTerminalState;
+  readonly runTerminal: RunTerminal;
   readonly claims: readonly ReportClaimEntry[];
   readonly sourceManifest: readonly ReportSourceEntry[];
   readonly alternatives: readonly string[];
@@ -181,7 +238,7 @@ const REPORT_FIELDS = [
   "scope",
   "reportCompleteness",
   "assessmentCoverage",
-  "runTerminalState",
+  "runTerminal",
   "claims",
   "sourceManifest",
   "alternatives",
@@ -205,6 +262,66 @@ const CLAIM_ENTRY_FIELDS = ["claimRef", "claimDigest", "assessmentRef"] as const
  * nobody thought of.
  */
 const INLINE_ASSESSMENT_TERMS = ["assessmentstatus", "assessment_status", "status"] as const;
+
+/**
+ * Validate the run-terminal union, refusing an unrecognised discriminator on
+ * its own rather than producing findings about arms nobody asked for.
+ */
+function validateRunTerminal(value: unknown, issues: ValidationIssue[]): void {
+  if (!isObjectRecord(value)) {
+    issues.push(
+      issue(
+        "/runTerminal",
+        "invalid_type",
+        "runTerminal is an object; INV-10 keeps a finished run and a finished report apart, so the "
+          + "report states the run's terminal separately and in run-events' own vocabulary",
+      ),
+    );
+    return;
+  }
+  const kind = value.kind;
+  if (!isEnumMember(kind, RUN_TERMINAL_KINDS)) {
+    issues.push(
+      issue(
+        "/runTerminal/kind",
+        "unknown_run_terminal_kind",
+        "kind must come from RUN_TERMINAL_KINDS; an unrecognised discriminator is refused, not "
+          + "approximately matched onto the nearest terminal",
+      ),
+    );
+    return;
+  }
+  rejectUnknownFields(
+    value,
+    RUN_TERMINAL_FIELDS[kind as RunTerminalKind],
+    "/runTerminal",
+    "a run terminal",
+    issues,
+  );
+  if (kind === "completed") {
+    readEnum(
+      value.outcome,
+      RUN_OUTCOMES,
+      "/runTerminal/outcome",
+      "unknown_run_outcome",
+      "outcome must come from run-events' RUN_OUTCOMES. DO_NOT_START, DUPLICATE, "
+        + "NO_LONGER_VALUABLE and SUPERSEDED are PRODUCTIVE terminals, not failures, and a report "
+        + "that cannot say so has lost the distinction its reader needs",
+      issues,
+    );
+  }
+  if (kind === "failed") {
+    readEnum(
+      value.failureCode,
+      RUN_FAILURE_CODES,
+      "/runTerminal/failureCode",
+      "unknown_run_failure_code",
+      "failureCode must come from run-events' RUN_FAILURE_CODES; a failure is a different fact from "
+        + "a not-doing outcome and carries a different vocabulary",
+      issues,
+    );
+  }
+}
 
 function validateClaimEntries(value: unknown, issues: ValidationIssue[]): number {
   if (!Array.isArray(value)) {
@@ -429,15 +546,7 @@ export function validateResearchReport(input: unknown): ValidationResult<Researc
     "reportCompleteness must come from REPORT_COMPLETENESS",
     issues,
   );
-  readEnum(
-    record.runTerminalState,
-    RUN_TERMINAL_STATES,
-    "/runTerminalState",
-    "unknown_run_terminal_state",
-    "runTerminalState must come from RUN_TERMINAL_STATES; INV-10 keeps a finished run and a finished "
-      + "report apart",
-    issues,
-  );
+  validateRunTerminal(record.runTerminal, issues);
 
   const withAssessment = validateClaimEntries(record.claims, issues);
   validateSourceManifest(record.sourceManifest, issues);

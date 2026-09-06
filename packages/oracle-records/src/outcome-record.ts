@@ -65,11 +65,28 @@ export type HypothesisResult = (typeof HYPOTHESIS_RESULTS)[number];
  *
  * "Duplicate recommendations may receive reuse credit but not multiple
  * accepted-work credits for the same underlying outcome." The two kinds are
- * separate values rather than a flag because they are separate claims, and
- * `creditKey` is the field that makes the rule CHECKABLE from outside a single
- * record — see `resolveOutcomeCredits`.
+ * separate values rather than a flag because they are separate claims.
+ *
+ * THE FIRST VERSION OF THIS RECORD CARRIED A `creditKey` STRING AND KEYED THE
+ * RULE ON IT, and the comment there said that field was "what makes the rule
+ * checkable from outside a single record". It was authored INSIDE the record it
+ * was supposed to check. Two outcomes with identical `proposalRef`,
+ * `proposalDigest`, `authorizedWorkRef` and `outcomeClass` — provably one
+ * underlying outcome — took two accepted-work credits by writing
+ * "credit-key-alpha" and "credit-key-beta". The rule established only that
+ * identical strings collide, which is a property of strings.
+ *
+ * A consistency rule needs an ANCHOR outside the thing it is checking. The
+ * anchor is `outcomeCreditAnchor` — the work order the HOST authorized — and
+ * there is no field a record can write to move itself out from under it.
+ *
+ * `NO_CREDIT` is the third member and it is not decoration: a NOT_ATTEMPTED
+ * outcome authorized no work, so it holds no accepted-work credit and reuses
+ * nothing. Without this member the only way to write that record would be to
+ * claim one of the other two, which is how a vocabulary teaches its writers to
+ * overstate.
  */
-export const OUTCOME_CREDIT_KINDS = ["ACCEPTED_WORK", "REUSE"] as const;
+export const OUTCOME_CREDIT_KINDS = ["ACCEPTED_WORK", "REUSE", "NO_CREDIT"] as const;
 export type OutcomeCreditKind = (typeof OUTCOME_CREDIT_KINDS)[number];
 
 /**
@@ -128,13 +145,14 @@ export type OutcomeRecord = {
   readonly rubricRef: string;
   readonly creditKind: OutcomeCreditKind;
   /**
-   * OUT-04's dedup key: what underlying outcome this credit is for.
+   * The outcome this record reuses, when `creditKind` is `REUSE`.
    *
-   * Exported as a FIELD rather than derived, because the thing two duplicate
-   * recommendations share is a judgement about which underlying outcome they
-   * are the same as, and a derivation would have to guess it.
+   * Null on an `ACCEPTED_WORK` credit, and never this record's own id: an
+   * outcome that reuses itself is a second credit wearing a different word.
+   * There is deliberately no `creditKey` field beside it — see
+   * `outcomeCreditAnchor` for why a self-authored dedup key was removed rather
+   * than kept as a label nobody keys on.
    */
-  readonly creditKey: string;
   readonly duplicateOfOutcomeRef: string | null;
   readonly issuedAt: string;
 };
@@ -161,7 +179,6 @@ const OUTCOME_FIELDS = [
   "assessingIdentity",
   "rubricRef",
   "creditKind",
-  "creditKey",
   "duplicateOfOutcomeRef",
   "issuedAt",
 ] as const;
@@ -277,15 +294,6 @@ export function validateOutcomeRecord(input: unknown): ValidationResult<OutcomeR
         "/rubricRef",
         "required_field",
         "OUT-02: the rubric is predeclared. Judging against one written after the result is judging from it",
-      ),
-    );
-  }
-  if (!isRefText(record.creditKey)) {
-    issues.push(
-      issue(
-        "/creditKey",
-        "required_field",
-        "OUT-04: the dedup key naming the underlying outcome this credit is for",
       ),
     );
   }
@@ -470,12 +478,44 @@ export function validateOutcomeRecord(input: unknown): ValidationResult<OutcomeR
         ),
       );
     }
+    if (record.creditKind === "ACCEPTED_WORK" && record.authorizedWorkRef === null) {
+      issues.push(
+        issue(
+          "/authorizedWorkRef",
+          "accepted_credit_without_authorized_work",
+          "OUT-04: an accepted-WORK credit is for work the host authorized. With none there is nothing "
+            + "to credit, and NO_CREDIT is the member that says so",
+        ),
+      );
+    }
+    if (record.creditKind === "NO_CREDIT" && record.duplicateOfOutcomeRef !== null) {
+      issues.push(
+        issue(
+          "/duplicateOfOutcomeRef",
+          "no_credit_names_original",
+          "this record takes no credit at all; naming an outcome it reuses contradicts that",
+        ),
+      );
+    }
     if (record.creditKind === "ACCEPTED_WORK" && record.duplicateOfOutcomeRef !== null) {
       issues.push(
         issue(
           "/duplicateOfOutcomeRef",
           "accepted_credit_names_original",
           "an accepted-work credit is for the underlying outcome itself; naming another outcome makes it a reuse",
+        ),
+      );
+    }
+    // A reuse of ITSELF. Checkable inside one record, and it was not checked:
+    // `resolveOutcomeCredits` returned early on every REUSE, so an outcome
+    // naming its own id took reuse credit for work nothing else had credited.
+    if (record.duplicateOfOutcomeRef !== null && record.duplicateOfOutcomeRef === record.outcomeId) {
+      issues.push(
+        issue(
+          "/duplicateOfOutcomeRef",
+          "self_referential_reuse",
+          "OUT-04: an outcome does not reuse itself; a self-reference is a second credit wearing a "
+            + "different word",
         ),
       );
     }
@@ -491,21 +531,63 @@ export function outcomeRecordDigest(record: OutcomeRecord): string {
 }
 
 /**
+ * OUT-04's dedup key: the work the host actually authorized.
+ *
+ * This exists because the field it replaced did not work. `creditKey` was a
+ * free string on the record, and two outcomes identical in proposal, digest,
+ * authorized work and class took two accepted-work credits by spelling it
+ * "credit-key-alpha" and "credit-key-beta". That rule established only that
+ * identical strings collide, which is a property of strings. A consistency rule
+ * is defeated by a consistent lie unless it is anchored to something outside
+ * the record making the claim, and `authorizedWorkRef` names a work order the
+ * HOST authorized: there is no field this record can write to move itself out
+ * from under the rule.
+ *
+ * WHY NOT `proposalDigest` AS WELL, which is the other host-bound field here.
+ * The review that found the defect suggested keying on the pair. The pair is
+ * strictly WEAKER for the rule OUT-04 states: two records naming the same
+ * authorized work under two different proposals would each take an
+ * accepted-work credit, which is exactly "multiple accepted-work credits for
+ * the same underlying outcome". It is also wrong in the other direction —
+ * OUT-04 exists so that DUPLICATE RECOMMENDATIONS may take reuse credit, and a
+ * duplicate recommendation is by definition a different proposal about the same
+ * work, so a pair-anchored reuse rule would refuse the case the requirement was
+ * written to permit. The proposal binding is still enforced, separately and for
+ * its own reason: `proposalDigest` ties this outcome to the exact proposal, so
+ * a proposal edited afterwards cannot inherit it.
+ *
+ * Null exactly when no work was authorized, which is why an `ACCEPTED_WORK`
+ * credit requires one: with no authorized work there is no accepted work to
+ * credit.
+ */
+export function outcomeCreditAnchor(record: OutcomeRecord): string | null {
+  return record.authorizedWorkRef;
+}
+
+/**
  * OUT-04 across records: one underlying outcome, one accepted-work credit.
  *
- * `DOUBLE_CREDITED` is a distinct outcome from `REFUSED` for the reason
- * `resolveCitations` separates UNRESOLVED from REFUSED: a malformed record is
- * not a duplicate credit, and a caller that cannot tell them apart cannot act
- * on either. The issues name WHICH key was credited twice, because "some
- * duplicate exists" is not actionable.
+ * Four outcomes, because there are four different things to say and a caller
+ * that cannot tell them apart cannot act on any of them. `REFUSED` means a
+ * record is malformed. `DOUBLE_CREDITED` means two accepted-work credits name
+ * one underlying outcome. `MISBOUND_REUSE` means a reuse names an outcome that
+ * is present here and holds no accepted-work credit to reuse: a chain of reuses
+ * ending at nothing, crediting work nobody ever credited.
+ *
+ * `CREDITED` carries `unresolvedReuse`: reuses whose original is not in the set
+ * handed in. Those are REPORTED rather than refused, because the original may
+ * legitimately live in a part of the ledger the caller did not pass — but they
+ * are not silently counted as sound, which is what the first version did.
  */
 export type OutcomeCreditResolution =
   | {
       readonly outcome: "CREDITED";
       readonly acceptedWork: readonly string[];
       readonly reuse: readonly string[];
+      readonly unresolvedReuse: readonly string[];
     }
   | { readonly outcome: "DOUBLE_CREDITED"; readonly issues: readonly ValidationIssue[] }
+  | { readonly outcome: "MISBOUND_REUSE"; readonly issues: readonly ValidationIssue[] }
   | { readonly outcome: "REFUSED"; readonly issues: readonly ValidationIssue[] };
 
 export function resolveOutcomeCredits(outcomes: unknown): OutcomeCreditResolution {
@@ -532,32 +614,70 @@ export function resolveOutcomeCredits(outcomes: unknown): OutcomeCreditResolutio
   });
   if (refusals.length > 0) return { outcome: "REFUSED", issues: refusals };
 
-  const acceptedByKey = new Map<string, string>();
+  const byId = new Map(parsed.map((record) => [record.outcomeId, record]));
+  const acceptedByAnchor = new Map<string, string>();
   const duplicates: ValidationIssue[] = [];
   const acceptedWork: string[] = [];
-  const reuse: string[] = [];
   parsed.forEach((record, i) => {
-    if (record.creditKind === "REUSE") {
-      reuse.push(record.outcomeId);
-      return;
-    }
-    const already = acceptedByKey.get(record.creditKey);
+    if (record.creditKind !== "ACCEPTED_WORK") return;
+    const anchor = outcomeCreditAnchor(record);
+    // Unreachable while the validator requires authorized work for this kind;
+    // read the value rather than assume which guard is holding it up.
+    if (anchor === null) return;
+    const already = acceptedByAnchor.get(anchor);
     if (already !== undefined) {
       duplicates.push(
         issue(
-          `/outcomes/${i}/creditKey`,
+          `/outcomes/${i}/authorizedWorkRef`,
           "duplicate_accepted_work_credit",
-          `OUT-04: ${already} already holds the accepted-work credit for ${record.creditKey}. A duplicate `
-            + "recommendation may take reuse credit; it does not produce a second accepted-work credit",
+          `OUT-04: ${already} already holds the accepted-work credit for ${anchor}. A duplicate `
+            + "recommendation may take reuse credit; it does not produce a second accepted-work "
+            + "credit for one underlying outcome, however the two records describe themselves",
         ),
       );
       return;
     }
-    acceptedByKey.set(record.creditKey, record.outcomeId);
+    acceptedByAnchor.set(anchor, record.outcomeId);
     acceptedWork.push(record.outcomeId);
   });
   if (duplicates.length > 0) return { outcome: "DOUBLE_CREDITED", issues: duplicates };
-  return { outcome: "CREDITED", acceptedWork, reuse };
+
+  // The reuse half, which the first version never reached: it returned before
+  // any comparison, so a reuse of a nonexistent outcome and a reuse of ITSELF
+  // both read as sound.
+  const misbound: ValidationIssue[] = [];
+  const reuse: string[] = [];
+  const unresolvedReuse: string[] = [];
+  parsed.forEach((record, i) => {
+    if (record.creditKind !== "REUSE") return;
+    const originalId = record.duplicateOfOutcomeRef;
+    // Null is already refused by the validator (`reuse_without_original`) and a
+    // self-reference by `self_referential_reuse`, so neither reaches here.
+    if (originalId === null) return;
+    const original = byId.get(originalId);
+    if (original === undefined) {
+      // Reported, not refused: the original may legitimately live in a part of
+      // the ledger this caller did not pass. Silently counting it as sound is
+      // what the first version did.
+      unresolvedReuse.push(record.outcomeId);
+      reuse.push(record.outcomeId);
+      return;
+    }
+    if (original.creditKind !== "ACCEPTED_WORK") {
+      misbound.push(
+        issue(
+          `/outcomes/${i}/duplicateOfOutcomeRef`,
+          "reuse_of_uncredited_outcome",
+          `OUT-04: ${originalId} holds no accepted-work credit to reuse. A chain of reuses ending at `
+            + "nothing credits an underlying outcome nobody ever credited",
+        ),
+      );
+      return;
+    }
+    reuse.push(record.outcomeId);
+  });
+  if (misbound.length > 0) return { outcome: "MISBOUND_REUSE", issues: misbound };
+  return { outcome: "CREDITED", acceptedWork, reuse, unresolvedReuse };
 }
 
 export const OUTCOME_RECORD_SCHEMA_META: SchemaMeta = {
