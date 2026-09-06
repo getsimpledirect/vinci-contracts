@@ -444,6 +444,121 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
 };
 
 /**
+ * Telus AI PaaS lane — Qwen/Qwen3.8-27B, OpenAI-compatible chat-completions API.
+ * Inference runs through external infrastructure (Telus's PaaS).
+ * Open-weight model served via third-party API.
+ *
+ * PROVENANCE OF EVERY CAPABILITY FACT BELOW: reported to this lane by peer
+ * sessions projects-e4 and projects-2a on 2026-09-06. NOT verified by this
+ * lane -- neither this lane nor the author of this file has called this
+ * endpoint. The credential lives at ~/.vinci-gpu/keys/telus-qwen.env, held by
+ * a different lane, and was deliberately not opened to write this entry.
+ * Nothing here should be read as first-hand observation, and no id here
+ * (endpointId, credentialId) is a secret or a path to one.
+ *
+ * No MODEL_CLASS_IDS entry fits this endpoint: mezzo/forte/fortissimo/vision
+ * are Vinci's own capability tiers, defined by what vinci-chat's router
+ * offers, not by what any given third-party lane can serve. Inventing a class
+ * membership for a single unqualified endpoint would assert a slot in that
+ * ladder nobody has evaluated it for, so endpointId instead names the
+ * provider and the served model directly, matching no existing class.
+ *
+ * NOT bound to any role (see role-registry.ts): the Oracle roles this
+ * endpoint was reported for do not exist yet, and binding it to an existing
+ * role would require a qualification measurement nobody has run.
+ */
+const telusQwenEndpoint: OpenWeightEndpoint = {
+  schemaVersion: 1,
+  endpointId: "telus-paas-qwen3-8-27b",
+  sourceClass: "open_weight",
+  serving: {
+    kind: "third_party_api",
+    provider: "telus",
+    model: "Qwen/Qwen3.8-27B",
+    modelRevision: { kind: "unknown" },
+    jurisdiction: { kind: "unknown" },
+  },
+  weightsDigest: { kind: "unknown" },
+  tokenizerDigest: { kind: "unknown" },
+  architectureDigest: { kind: "unknown" },
+  servingImageDigest: { kind: "unknown" },
+  quantizationDigest: { kind: "unknown" },
+  capabilityProfile: {
+    // PEER-REPORTED, NOT verified by this lane (projects-e4 / projects-2a,
+    // 2026-09-06): tool-calling and streaming were reported working against
+    // the live endpoint over its OpenAI-compatible chat-completions API.
+    // "text" is the one entry that needs no citation: every LLM supports it.
+    capabilities: ["text", "tool_use"],
+    // PEER-REPORTED, NOT verified by this lane (projects-e4 / projects-2a,
+    // 2026-09-06): max_model_len 32768. Nobody on this lane called the
+    // endpoint's /v1/models listing or ran a request against it to confirm
+    // this number independently.
+    //
+    // Worth flagging for whoever binds this endpoint to a role later: 32768
+    // is a real, modest ceiling -- ample for bounded extraction or
+    // summarization, but the kind of limit that would bind before decision
+    // quality does on a task synthesizing many retrieved documents at once.
+    contextLimit: 32768,
+    // PEER-REPORTED, NOT verified by this lane. The schema requires a
+    // boolean here and has no "reported but unmeasured" grade the way the
+    // ExplicitValue-typed rights fields below do, so this records the peers'
+    // report as the field's value; the caveat lives in this comment and in
+    // declaredCapabilities' comment, not in a fabricated third schema state.
+    toolSupport: true,
+  },
+  // structured_tool_use: peer-reported (see capabilityProfile comment above),
+  // not this lane's own observation. Kept as a declared capability, the same
+  // treatment the DeepInfra/Fireworks lanes give tool forwarding above.
+  //
+  // Known quirks reported alongside the above, not represented by any field
+  // in this schema (there is nowhere to put them): `reasoning_effort` is
+  // reported to accept only low|medium|xhigh -- passing `high` reportedly
+  // returns HTTP 400 -- and a `developer`-role message is reportedly
+  // rejected. Recorded here so a future caller does not have to rediscover
+  // them by getting a live 400.
+  declaredCapabilities: ["structured_tool_use"],
+  credentials: {
+    source: {
+      kind: "managed-credential",
+      credentialId: "telus-qwen-api-key",
+    },
+  },
+  // KNOWN BY CONSTRUCTION, not by observation: Telus AI PaaS is third-party
+  // infrastructure, so inference does not run on Vinci-controlled hardware
+  // regardless of what remains unverified about the endpoint's behavior.
+  inferenceIsExternal: { kind: "known", value: true },
+  approvedForProtectedData: { kind: "unknown" },
+  rights: {
+    // UNKNOWN. George's DECLARED BY GEORGE, 2026-08-31 note above (the
+    // forte/vision/mezzo lanes) names DeepInfra, Fireworks and OpenRouter
+    // ONLY. Extending that declaration to a provider he did not check would
+    // be exactly the fabrication this registry exists to prevent, so both
+    // rights stay unknown until someone actually reads Telus's terms.
+    trainingAllowed: { kind: "unknown" },
+    evaluationAllowed: { kind: "unknown" },
+    redistributionAllowed: { kind: "unknown" },
+    // UNKNOWN -- and deliberately NOT copied from the DeepInfra/Fireworks/
+    // OpenRouter lanes' `known(false)` above. That value is evidence-backed
+    // by a specific enforced mechanism: vinci-chat/lib/llm/proxy.ts:336
+    // (verified at vinci-chat origin/main 75e6f19) throws NoZdrProviderError
+    // for any provider not in APPROVED_ZDR. Telus has no adapter in
+    // vinci-chat at all -- it is not merely absent from the allowlist, it is
+    // absent from the CloudProvider type that allowlist is built from -- so
+    // that enforcement says nothing about Telus one way or the other. Nobody
+    // has read Telus's retention terms. This stays unknown.
+    outputRetainedByProvider: { kind: "unknown" },
+    // No document snapshot was taken for Telus. Writing a digest here would
+    // fabricate an audit trail for a reading nobody can re-check.
+    policySnapshotDigest: { kind: "unknown" },
+  },
+  // Matches the registry's existing validFrom convention for every other
+  // lane above rather than asserting a specific date Telus's own contract
+  // began, which this lane does not know either.
+  validFrom: "2026-01-01T00:00:00.000Z",
+  expiresAt: null,
+};
+
+/**
  * Registry of Vinci's real inference endpoints.
  * Each endpoint declares the facts we know with certainty; `unknown` marks
  * what we have not yet verified.
@@ -455,6 +570,7 @@ export const VINCI_ENDPOINTS = deepFreeze([
   visionOpenrouterEndpoint,
   mezzoDeepinfraEndpoint,
   fortissimoFireworksEndpoint,
+  telusQwenEndpoint,
 ] as const satisfies readonly ModelEndpointSpec[]);
 
 /**

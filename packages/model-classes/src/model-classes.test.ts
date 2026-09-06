@@ -1177,14 +1177,35 @@ describe("vinci endpoint registry", () => {
     const stdout = output.replace(/\n__EXIT_CODE__=\d+\n$/, "");
 
     expect(match?.[1]).toBe("0");
-    // Every registry RIGHTS field a role depends on is now declared: George checked the
-    // three providers' terms on 2026-08-31 (training and evaluation permitted), and
-    // non-retention is an enforced invariant of vinci-chat's serving path. So no
-    // provider-terms gap should appear.
-    expect(stdout).not.toContain("terms of service");
+    // Every registry RIGHTS field the three already-declared-provider endpoints depend
+    // on is still declared: George checked DeepInfra's, Fireworks' and OpenRouter's terms
+    // on 2026-08-31 (training and evaluation permitted), and non-retention is an enforced
+    // invariant of vinci-chat's serving path for those three. So no provider-terms gap
+    // should appear for THEM specifically.
+    for (const id of [
+      "forte-deepinfra",
+      "forte-fireworks",
+      "vision-deepinfra",
+      "vision-openrouter",
+      "mezzo-deepinfra",
+      "fortissimo-fireworks",
+    ]) {
+      expect(stdout).not.toContain(`${id}: outputRetainedByProvider is unknown`);
+      expect(stdout).not.toContain(`${id}: trainingAllowed is unknown`);
+      expect(stdout).not.toContain(`${id}: evaluationAllowed is unknown`);
+    }
     expect(stdout).not.toContain("protected-data approval record");
 
-    // One honest gap remains, and it is not a rights gap: three roles require harness
+    // The Telus lane is new (registry.ts's telusQwenEndpoint) and its rights are
+    // DELIBERATELY unknown: George's 2026-08-31 declaration named DeepInfra, Fireworks
+    // and OpenRouter only, and nobody has read Telus's terms. So the report now
+    // legitimately shows a provider-terms gap, and it must name Telus rather than the
+    // suite reporting a false clean bill of health.
+    expect(stdout).toContain("terms of service");
+    expect(stdout).toContain("telus-paas-qwen3-8-27b: trainingAllowed is unknown");
+    expect(stdout).toContain("telus-paas-qwen3-8-27b: evaluationAllowed is unknown");
+
+    // One honest gap remains that is not a rights gap: three roles require harness
     // capabilities that only the CALLER can attest, so the registry alone cannot make
     // them eligible. The report must name it rather than report a clean bill of health,
     // and must still exit 0, because a declared gap is a healthy state, not a failure.
@@ -1323,6 +1344,15 @@ describe("role selection", () => {
     // which are harness capabilities an inference endpoint cannot supply and
     // selectForRole does not attest. Absence of that attestation withholds
     // eligibility instead of granting it.
+    //
+    // telus-paas-qwen3-8-27b lands in ineligible here, but NOT for a harness reason
+    // and NOT for retention (its outputRetainedByProvider is unknown too, same as the
+    // other four unevaluable lanes) -- it has a real, independently declared
+    // capabilityProfile.contextLimit of 32768, below this role's minimumContextTokens
+    // of 64_000, which is a hard "no" that outranks the softer unresolved harness and
+    // retention questions. See the dedicated "Telus Qwen endpoint retention
+    // eligibility" tests below for a fixture that isolates the retention question from
+    // this unrelated, already-declared context ceiling.
     expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([]);
     expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([
       "forte-deepinfra",
@@ -1333,11 +1363,15 @@ describe("role selection", () => {
     expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
       "vision-deepinfra",
       "vision-openrouter",
+      "telus-paas-qwen3-8-27b",
     ]);
 
     // adversarial-reviewer requires evidence_citation from the HARNESS. Splitting the
     // field out of requiredCapabilities removed it from the endpoint check; it must not
     // also remove it from enforcement, so these lanes are unevaluable, not eligible.
+    //
+    // telus-paas-qwen3-8-27b again lands in ineligible for the same context-limit reason
+    // as above (this role also requires 64_000 minimumContextTokens).
     expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([]);
     expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([
       "forte-deepinfra",
@@ -1348,8 +1382,13 @@ describe("role selection", () => {
     expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([
       "vision-deepinfra",
       "vision-openrouter",
+      "telus-paas-qwen3-8-27b",
     ]);
 
+    // cloud-worker requires no endpoint capabilities, no minimum context worth naming
+    // (1 token), and imposes no retention constraint, so telus-paas-qwen3-8-27b is
+    // eligible here despite every one of its rights fields being unknown -- this is
+    // exactly the positive reachability control the retention tests below rely on.
     expect(endpointIds(selections["cloud-worker"].eligible)).toEqual([
       "forte-deepinfra",
       "forte-fireworks",
@@ -1357,6 +1396,7 @@ describe("role selection", () => {
       "vision-openrouter",
       "mezzo-deepinfra",
       "fortissimo-fireworks",
+      "telus-paas-qwen3-8-27b",
     ]);
     expect(endpointIds(selections["cloud-worker"].unevaluable)).toEqual([]);
     expect(endpointIds(selections["cloud-worker"].ineligible)).toEqual([]);
@@ -1364,7 +1404,13 @@ describe("role selection", () => {
     // teacher-trajectory-producer requires no ENDPOINT capabilities, which is exactly why
     // it is the sharpest case: with evidence_citation moved to the harness field and left
     // unenforced, every endpoint would have become eligible for a role whose one real
-    // requirement nothing checks. Unattested, all six are unevaluable.
+    // requirement nothing checks. Unattested, all six pre-existing lanes are unevaluable.
+    //
+    // telus-paas-qwen3-8-27b is unevaluable here too, for two additional undeclared
+    // facts beyond the shared harness gap: this role is riskClass "high", and its
+    // trainingAllowed/evaluationAllowed are unknown (see the "reports the registry's
+    // undeclared rights and policy facts" test above, which asserts the report names
+    // this lane specifically).
     expect(endpointIds(selections["teacher-trajectory-producer"].eligible)).toEqual([]);
     expect(endpointIds(selections["teacher-trajectory-producer"].unevaluable)).toEqual([
       "forte-deepinfra",
@@ -1373,6 +1419,7 @@ describe("role selection", () => {
       "vision-openrouter",
       "mezzo-deepinfra",
       "fortissimo-fireworks",
+      "telus-paas-qwen3-8-27b",
     ]);
     expect(endpointIds(selections["teacher-trajectory-producer"].ineligible)).toEqual([]);
   });
@@ -1871,5 +1918,153 @@ describe("the capability ABI", () => {
     const positive = matchEndpointToRole(role, endpoint, now, ["durable_events"]);
     expect(positive.verdict).toBe("eligible");
     expect(positive.reasons).toEqual([]);
+  });
+});
+
+describe("Telus Qwen endpoint retention eligibility", () => {
+  /**
+   * The whole point of registering telus-paas-qwen3-8-27b with
+   * `rights.outputRetainedByProvider: { kind: "unknown" }` is that the unknown must be
+   * LOAD-BEARING: something must actually refuse on it, or the "unknown" is decoration
+   * in a comment nobody reads. These tests prove the refusal, prove eligibility remains
+   * reachable elsewhere, and prove the refusal is specifically caused by the unknown
+   * retention field and not by something else incidental to the new entry (a missing
+   * capability, its lower context limit, an unattested harness requirement).
+   */
+  const now = "2026-08-30T12:00:00.000Z";
+  const telus = endpointById("telus-paas-qwen3-8-27b");
+
+  it("is registered with unknown retention, training and evaluation rights", () => {
+    expect(telus).toBeDefined();
+    if (!telus) return;
+    expect(telus.rights.outputRetainedByProvider).toEqual({ kind: "unknown" });
+    expect(telus.rights.trainingAllowed).toEqual({ kind: "unknown" });
+    expect(telus.rights.evaluationAllowed).toEqual({ kind: "unknown" });
+  });
+
+  it.each(["mle-implementation-worker", "adversarial-reviewer"] as const)(
+    "is NOT eligible for %s, and the refusal names retention specifically",
+    (roleId) => {
+      const role = roleById(roleId);
+      expect(role).toBeDefined();
+      expect(telus).toBeDefined();
+      if (!role || !telus) return;
+
+      const result = matchEndpointToRole(role, telus, now);
+
+      // Both of these production roles set dataPolicy.outputRetentionAllowed: false, so
+      // an endpoint with unknown retention must never read as eligible for them.
+      expect(result.verdict).not.toBe("eligible");
+      // Telus's real, independently declared 32768-token context limit is also below
+      // both roles' 64_000 minimumContextTokens, so the matcher's full reason list
+      // legitimately carries a second, unrelated hard "no" (context_too_small) here too
+      // -- that is an honest fact about this endpoint, not noise this test papers over.
+      // The assertion below is the one that matters: retention is named EXPLICITLY,
+      // by its own reason code, regardless of what else also failed.
+      expect(result.reasons).toContainEqual({
+        code: "retention_undeclared",
+        detail: "endpoint did not declare retention policy",
+      });
+    },
+  );
+
+  it("IS eligible for cloud-worker, which imposes no retention constraint (positive reachability control)", () => {
+    const role = roleById("cloud-worker");
+    expect(role).toBeDefined();
+    expect(telus).toBeDefined();
+    if (!role || !telus) return;
+
+    // cloud-worker's dataPolicy comment states the intended contract directly:
+    // "This role imposes no retention constraint, so endpoints whose retention policy
+    // is unknown remain eligible." This is the reachability control proving the two
+    // refusals above are a real, avoidable refusal and not this endpoint being
+    // universally ineligible for unrelated reasons (it has no vision/audio capability
+    // requirement to fail here, a trivial 1-token minimumContextTokens, and no harness
+    // capability requirement).
+    const result = matchEndpointToRole(role, telus, now);
+    expect(result.verdict).toBe("eligible");
+    expect(result.reasons).toEqual([]);
+  });
+
+  it("discriminates: flipping ONLY outputRetainedByProvider to known-false changes the verdict", () => {
+    expect(telus).toBeDefined();
+    if (!telus) return;
+
+    // Neither mle-implementation-worker nor adversarial-reviewer can serve as the
+    // discriminating role directly: both also require 64_000 minimumContextTokens,
+    // which Telus's real (already-declared, unrelated) 32768-token context limit fails
+    // independently of retention, and both require a harness capability this matcher
+    // can never confirm on its own. Reusing either production role here would leave a
+    // hard "no" standing even after retention is fixed, so the test could not tell
+    // "eligibility changed because retention did" from "eligibility never changes
+    // for this pair" -- exactly the vacuous-control failure mode this repository's
+    // review discipline calls out by name. So this is a minimal, purpose-built role
+    // fixture that shares the one property under test (outputRetentionAllowed: false)
+    // and is otherwise satisfied by telus as declared: no required endpoint
+    // capabilities beyond what telus declares, no required harness capabilities, and a
+    // context floor at telus's real 32768-token ceiling rather than above it.
+    const retentionOnlyProbeRole: ModelRoleSpec = {
+      schemaVersion: 1,
+      roleId: "retention-only-probe",
+      taskClass: "retention-only-probe",
+      requiredCapabilities: ["structured_tool_use"],
+      requiredHarnessCapabilities: [],
+      minimumContextTokens: 32_768,
+      riskClass: "medium",
+      dataPolicy: {
+        externalProviderAllowed: true,
+        outputRetentionAllowed: false,
+        processesProtectedData: false,
+      },
+      qualityPolicy: {
+        minimumVerifiedSuccessRate: 0.5,
+        maximumFalseClaimRate: 0.5,
+      },
+      economicPolicy: {
+        maximumCostPerVerifiedSuccessUsd: 10,
+        maximumP95WallSeconds: 600,
+      },
+      fallbackRoleIds: [],
+    };
+
+    // Control: as registered (retention unknown), this probe role refuses on
+    // retention alone -- nothing else about the pairing is broken.
+    const beforeResult = matchEndpointToRole(retentionOnlyProbeRole, telus, now);
+    expect(beforeResult.verdict).not.toBe("eligible");
+    expect(beforeResult.reasons).toEqual([
+      {
+        code: "retention_undeclared",
+        detail: "endpoint did not declare retention policy",
+      },
+    ]);
+
+    // Mutate EXACTLY ONE field of the real, registered fixture: outputRetainedByProvider,
+    // from unknown to a declared "the provider does not retain output".
+    const knownNonRetaining = {
+      ...telus,
+      endpointId: "telus-paas-qwen3-8-27b-fixture-known-non-retaining",
+      rights: { ...telus.rights, outputRetainedByProvider: { kind: "known" as const, value: false } },
+    };
+    const afterResult = matchEndpointToRole(retentionOnlyProbeRole, knownNonRetaining, now);
+    expect(afterResult.verdict).toBe("eligible");
+    expect(afterResult.reasons).toEqual([]);
+
+    // And the mirror mutation -- a declared "the provider DOES retain output" -- must
+    // stay refused, and refused for a DIFFERENT, more specific reason (retention_
+    // forbidden, a hard "no", not the softer retention_undeclared), proving the check
+    // reads the field's actual value rather than merely its presence.
+    const knownRetaining = {
+      ...telus,
+      endpointId: "telus-paas-qwen3-8-27b-fixture-known-retaining",
+      rights: { ...telus.rights, outputRetainedByProvider: { kind: "known" as const, value: true } },
+    };
+    const retainingResult = matchEndpointToRole(retentionOnlyProbeRole, knownRetaining, now);
+    expect(retainingResult.verdict).toBe("ineligible");
+    expect(retainingResult.reasons).toEqual([
+      {
+        code: "retention_forbidden",
+        detail: "endpoint retains output but role policy forbids retention",
+      },
+    ]);
   });
 });
