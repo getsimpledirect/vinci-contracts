@@ -142,6 +142,21 @@ const ORACLE_BUNDLE = {
     },
   ],
 };
+/**
+ * One BOUND claim from the fixture bundle, for the evidenceIsMissing control.
+ *
+ * Resolved lazily through the package's own resolver rather than typed here: a
+ * hand-built BoundClaim would be a second definition of the shape, and it would
+ * agree with a broken resolver.
+ */
+let ORACLE_BOUND_CLAIM = () => undefined;
+function bindOracleBoundClaim(mod) {
+  ORACLE_BOUND_CLAIM = () => {
+    const resolved = mod.resolveReportBundle(ORACLE_BUNDLE);
+    if (resolved.outcome !== "RESOLVED") return undefined;
+    return resolved.claims.find((c) => c.state === "BOUND");
+  };
+}
 const ORACLE_JOB_SHAPES = [
   { kind: ORACLE_PROPOSAL.payload.kind, jobShapeRef: ORACLE_PROPOSAL.payload.proposedJobShapeRef },
 ];
@@ -999,6 +1014,24 @@ const AUTHORITY_GUARDS = [
   },
   {
     pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing(boundClaim) === false",
+    // The permissive answer is FALSE -- "this claim rests on evidence that
+    // resolved" -- which is what puts it under "What the evidence establishes".
+    // So `false` is the yes, and no hostile shape may produce it.
+    call: (fn, hostile) => fn(hostile) === false,
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      if (bound === undefined) return false;
+      return (
+        fn(bound) === false
+        && fn({ ...bound, unresolvedSourceIds: bound.claim.sourceSpans.map((s) => s.sourceId) })
+          === true
+      );
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
     export: "resolveReportBundle",
     label: "resolveReportBundle(bundle) binds a claim",
     // "Granted a yes" for this one is not RESOLVED — a well-formed bundle whose
@@ -1063,6 +1096,7 @@ const REQUIRED_GUARDS = [
   "resolveOutcomeCredits(hostile outcomes, authorizedWork).outcome === CREDITED",
   "resolveOutcomeCredits(outcomes, hostile authorizedWork).outcome === CREDITED",
   "resolveReportBundle(bundle) binds a claim",
+  "evidenceIsMissing(boundClaim) === false",
   "isKeyUsableAt(entry with hostile status, now, role)",
   "isKeyUsableAt(entry with hostile role, now, role)",
   "isKeyUsableAt(entry, now, hostile role)",
@@ -1302,7 +1336,7 @@ const NOT_AUTHORITY_GUARDS = {
   // guard above and probed in the argument position that matters. What is left
   // here is formatting, and the two properties below are about formatting.
   "@getsimpledirect/vinci-oracle-records.renderMarkdownReport": "a formatter over records resolveReportBundle has already validated AND BOUND: it decides nothing, and it cannot print a status for an assessment the resolver did not bind, because the resolver returns one only for a BOUND claim. It cannot be probed as a guard because every answer it gives is a string; the binding decision it used to make is probed as resolveReportBundle, and its formatting properties are a compile-time chokepoint (the document is a branded Rendered[], safe() its only producer) plus a behavioural sweep over every string field in src/render-markdown.test.ts",
-  "@getsimpledirect/vinci-oracle-records.outcomeCreditAnchor": "projection over an already-validated outcome: it returns the host-authorized work ref and grants nothing. It is the ANCHOR the credit rule keys on rather than the rule itself; whether an outcome takes a credit is resolveOutcomeCredits' decision, which is probed",
+  "@getsimpledirect/vinci-oracle-records.outcomeCreditAnchor": "projection over an already-validated outcome: it returns the work ref the record CLAIMS and grants nothing. It is NOT the anchor -- the anchor is the authorizedWork argument resolveOutcomeCredits takes from host state, and this function only says which work order a record is claiming so the resolver can look it up. Whether an outcome takes a credit is resolveOutcomeCredits' decision, which is probed in both argument positions",
   "@getsimpledirect/vinci-oracle-records.runTerminalLabel": "total projection over an already-validated report's run terminal: it names the run-events vocabulary member the record carries and decides nothing",
 };
 
@@ -1446,6 +1480,7 @@ for (const guard of AUTHORITY_GUARDS) {
   const entry = join(root, "packages", dir, "dist", "index.js");
   if (!existsSync(entry)) continue;
   const mod = await import(pathToFileURL(entry).href);
+  if (guard.pkg === "@getsimpledirect/vinci-oracle-records") bindOracleBoundClaim(mod);
   const fn = mod[guard.export];
   if (typeof fn !== "function") {
     console.error(`  ${guard.pkg}.${guard.export}: not exported — the registry is stale`);

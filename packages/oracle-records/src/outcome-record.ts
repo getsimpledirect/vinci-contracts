@@ -480,6 +480,32 @@ export function validateOutcomeRecord(input: unknown): ValidationResult<OutcomeR
         ),
       );
     }
+    // The evidence-keyed half of the credit rule reads
+    // `executionEvidenceRefs.find(...)`, which is `undefined` on an empty list —
+    // a value guard that says nothing about absence. Two INCONCLUSIVE records
+    // with no evidence and two work refs therefore took two accepted-work
+    // credits, inside the guard added to close exactly that. Requiring the
+    // evidence closes it by CONSTRUCTION rather than by a second check that
+    // would have the same hole: an accepted-WORK credit names what was
+    // executed, or there is nothing for the dedup to key on and nothing for a
+    // reader to check.
+    //
+    // Deliberately not scoped to OBSERVED_CLASSES: an INCONCLUSIVE or
+    // OBSERVATION_UNAVAILABLE outcome may legitimately carry no evidence, and
+    // when it does it takes NO_CREDIT rather than accepted-work credit.
+    const credited = Array.isArray(record.executionEvidenceRefs)
+      ? record.executionEvidenceRefs
+      : [];
+    if (record.creditKind === "ACCEPTED_WORK" && credited.length === 0) {
+      issues.push(
+        issue(
+          "/executionEvidenceRefs",
+          "accepted_credit_without_execution_evidence",
+          "OUT-04: an accepted-work credit names the execution it is for. With no evidence there is "
+            + "nothing to dedup on, so two records could credit one run by naming two work orders",
+        ),
+      );
+    }
     if (record.creditKind === "ACCEPTED_WORK" && record.authorizedWorkRef === null) {
       issues.push(
         issue(
@@ -628,6 +654,19 @@ export function resolveOutcomeCredits(
         authorizedIssues.push(issue(`${at}/${field}`, "invalid_id", `${field} is a host-assigned identifier`));
       }
     }
+    if (typeof raw.workRef === "string" && authorized.has(raw.workRef)) {
+      // Last-wins was silent, and the two entries can disagree about the run
+      // that authorized the work — so which one survived decided the answer.
+      authorizedIssues.push(
+        issue(
+          `${at}/workRef`,
+          "duplicate_authorized_work",
+          "the authorized-work set names one work order twice; if the two entries disagree, which "
+            + "survives decides the result, and a set that decides by insertion order is not an anchor",
+        ),
+      );
+      return;
+    }
     if (typeof raw.workRef === "string" && typeof raw.runRef === "string"
       && typeof raw.workspaceRef === "string") {
       authorized.set(raw.workRef, {
@@ -691,6 +730,11 @@ export function resolveOutcomeCredits(
   // records naming DIFFERENT authorized work orders while citing the SAME
   // execution evidence are still one execution. Keying only on the work ref
   // would let a host that authorized two work orders credit one run twice.
+  //
+  // This dimension is only reachable because an ACCEPTED_WORK record is
+  // REQUIRED to carry evidence — `find` on an empty list returns `undefined`
+  // and the guard would pass, which is how two evidence-free records slipped
+  // through it. The requirement is the guard; this map is the comparison.
   const acceptedByEvidence = new Map<string, string>();
   const duplicates: ValidationIssue[] = [];
   const acceptedWork: string[] = [];

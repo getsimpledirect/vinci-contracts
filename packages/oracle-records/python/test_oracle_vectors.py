@@ -9,15 +9,25 @@ is exactly the failure the shared module was created to end: two encoders that
 disagree by a byte cannot verify each other's records, which is the whole point
 of having one.
 
-What this file can and cannot check is worth stating plainly. Python has no
-validator for these records, so it does not evaluate the refusals in
-refusal-cases.json — src/vectors.test.ts runs those. What Python DOES evaluate
-independently is the enum drift: it carries its own pinned copies of the closed
-vocabularies and checks, for every drift case, that the offending value is
-outside the vocabulary while the corresponding field in the valid vectors is
-inside it. That makes "enum drift fails consistently in both languages" a
-checked property rather than a claim, without pretending to run a validator
-that does not exist here.
+What this file can and cannot check is worth stating plainly, and this
+paragraph has been wrong once already. Python has no validator for these
+records, so it does not evaluate the refusals in refusal-cases.json —
+src/vectors.test.ts runs those.
+
+It used to say Python carried "its own pinned copies" of the vocabularies and
+that this made drift "a checked property rather than a claim". It was a claim:
+the copies were hand-typed and nothing compared them to anything, so dropping
+members, renaming one and fabricating one all left the suite green. The
+vocabularies are PARSED from the TypeScript now (see _VOCABULARY_SOURCES), with
+an exact member count declared per vocabulary in this file — so a member added,
+removed or renamed on either side fails here until somebody changes both,
+deliberately.
+
+What Python evaluates independently: the canonical bytes and digests of every
+committed vector, the enum drift cases against the parsed vocabularies, and the
+cross-record bindings BETWEEN vectors — a report's claim digests really are the
+digests of the committed claim records, computed here with this language's own
+canonicalizer.
 """
 import json
 import os
@@ -100,8 +110,14 @@ PINNED_DIGESTS = {
 # parse that silently returned nothing fails rather than blessing an empty sweep.
 _SRC = os.path.join(REPO, "packages", "oracle-records", "src")
 
-# name -> (file, minimum member count). The floors are the independent half:
-# they are what a broken parse or a quietly emptied vocabulary trips over.
+# name -> (file, EXACT member count).
+#
+# Exact, not a floor. A review re-ran four mutations against the floors: rename
+# FAILED, delete FAILED, empty-body FAILED — and ADDING a fabricated member was
+# still green, because a floor cannot see a vocabulary grow. Three of four
+# closed, and the comment here presented it as four. An exact count closes the
+# fourth: a member added on the TypeScript side fails until it is added here
+# too, which is the same deliberate-act discipline the vector digests use.
 _VOCABULARY_SOURCES = {
     "ATTESTED_ENVELOPE_KINDS": ("envelope.ts", 3),
     "RESEARCH_MODES": ("research-request.ts", 4),
@@ -125,7 +141,7 @@ _VOCABULARY_SOURCES = {
     "REPORT_COMPLETENESS": ("research-report.ts", 3),
     "REPORT_COST_STATES": ("research-report.ts", 4),
     "RUN_TERMINAL_KINDS": ("research-report.ts", 3),
-    "CLAIM_BINDING_STATES": ("report-binding.ts", 7),
+    "CLAIM_BINDING_STATES": ("report-binding.ts", 8),
     # run-events owns these two; the report reuses them rather than restating
     # them, so this file reads them from their OWNER.
     "RUN_OUTCOMES": (os.path.join("..", "..", "run-events", "src", "payload.ts"), 6),
@@ -515,15 +531,18 @@ class ParsedVocabularies(unittest.TestCase):
 
     A parse that returned nothing would make every membership assertion in this
     file vacuously true, which is precisely the failure the hand-typed dict had.
-    The floors are declared beside each name and are the independent half.
+    The EXACT counts declared beside each name are the independent half: they
+    catch a member added as well as one removed, which a floor cannot.
     """
 
-    def test_every_vocabulary_parsed_and_meets_its_floor(self):
+    def test_every_vocabulary_parsed_and_matches_its_exact_count(self):
         self.assertGreaterEqual(len(VOCABULARIES), 20)
-        for name, (_filename, floor) in _VOCABULARY_SOURCES.items():
+        for name, (_filename, exact) in _VOCABULARY_SOURCES.items():
             with self.subTest(vocabulary=name):
                 members = VOCABULARIES[name]
-                self.assertGreaterEqual(len(members), floor, name)
+                # EXACT. A floor cannot see a vocabulary GROW, and a fabricated
+                # member was the one mutation the floors let through.
+                self.assertEqual(len(members), exact, name)
                 self.assertEqual(len(set(members)), len(members), "%s has a repeated member" % name)
                 for member in members:
                     self.assertIsInstance(member, str)

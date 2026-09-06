@@ -390,6 +390,114 @@ describe("F1: the binding is recomputed, so a consistent lie no longer buys a st
   });
 });
 
+describe("G3: a claim with no resolvable evidence is not read as established", () => {
+  const claim = validClaimRecord();
+
+  const sectionsOf = (markdown: string) => {
+    const est = markdown.indexOf("## What the evidence establishes");
+    const unk = markdown.indexOf("## What remains unknown or contradicted");
+    const alt = markdown.indexOf("## Alternatives and smallest discriminating test");
+    return { establishes: markdown.slice(est, unk), unknown: markdown.slice(unk, alt) };
+  };
+
+  it("a SUPPORTED claim whose every cited source was undelivered moves to the gap section", () => {
+    // The judgement call. Both facts were on the page before — SUPPORTED, and
+    // NOT DELIVERED beneath it — and a skimming reader resolves that pair in
+    // the flattering direction. The status is not changed and not hidden; what
+    // changes is which section the claim is read in.
+    const citing = { ...claim, sourceSpans: [{ sourceId: "oracle-source-never-delivered", span: null }] };
+    const digest = digestOf(citing);
+    const blind = boundAssessment(
+      { ...validSupportedAssessment(), reviewedSpans: [{ sourceId: "oracle-source-never-delivered", span: null }] },
+      citing.claimId,
+      digest,
+    );
+    const markdown = renderMarkdownReport({
+      report: reportFor([{ claimRef: citing.claimId, claimDigest: digest, assessmentRef: blind.assessmentId }]),
+      claims: [citing],
+      assessments: [blind],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    const { establishes, unknown } = sectionsOf(markdown);
+    expect(establishes).not.toContain(citing.claimId);
+    expect(unknown).toContain(citing.claimId);
+    // CON-04: the status is still stated, and still SUPPORTED. Moving a claim
+    // is not transforming its status, and hiding it would be its own violation.
+    expect(unknown).toContain("SUPPORTED");
+    expect(unknown).toContain("NOT DELIVERED to this run");
+  });
+
+  it("POSITIVE CONTROL: the same claim citing a DELIVERED source still establishes", () => {
+    // Without this the rule would be satisfied by a renderer that never
+    // established anything — and the reader would lose the distinction from the
+    // other direction.
+    const supported = boundAssessment(validSupportedAssessment(), claim.claimId, digestOf(claim));
+    const markdown = renderMarkdownReport({
+      report: reportFor([
+        { claimRef: claim.claimId, claimDigest: digestOf(claim), assessmentRef: supported.assessmentId },
+      ]),
+      claims: [claim],
+      assessments: [supported],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    const { establishes } = sectionsOf(markdown);
+    expect(establishes).toContain(claim.claimId);
+    expect(establishes).toContain("SUPPORTED");
+  });
+
+  it("a SOME-resolved claim still establishes: the rule is about no evidence, not any gap", () => {
+    // The discriminating case. One cited source resolved and one did not, so
+    // something was established and the gap is named beneath it.
+    const partly = {
+      ...claim,
+      sourceSpans: [
+        { sourceId: "oracle-source-1", span: null },
+        { sourceId: "oracle-source-never-delivered", span: null },
+      ],
+    };
+    const digest = digestOf(partly);
+    const supported = boundAssessment(validSupportedAssessment(), partly.claimId, digest);
+    const markdown = renderMarkdownReport({
+      report: reportFor([{ claimRef: partly.claimId, claimDigest: digest, assessmentRef: supported.assessmentId }]),
+      claims: [partly],
+      assessments: [supported],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    const { establishes } = sectionsOf(markdown);
+    expect(establishes).toContain(partly.claimId);
+    expect(establishes).toContain("NOT DELIVERED to this run: oracle-source-never-delivered");
+  });
+
+  it("D3: an unresolved REVIEWED span is marked inline, not only in the findings list", () => {
+    // The claim's own spans were marked and the assessment's reviewed spans
+    // were not, so a renderer printed the ids an assessment says it actually
+    // read as fact — the worse half to leave unmarked.
+    const digest = digestOf(claim);
+    const reviewedElsewhere = boundAssessment(
+      {
+        ...validSupportedAssessment(),
+        reviewedSpans: [
+          { sourceId: "oracle-source-1", span: null },
+          { sourceId: "oracle-source-never-delivered", span: null },
+        ],
+      },
+      claim.claimId,
+      digest,
+    );
+    const markdown = renderMarkdownReport({
+      report: reportFor([{ claimRef: claim.claimId, claimDigest: digest, assessmentRef: reviewedElsewhere.assessmentId }]),
+      claims: [claim],
+      assessments: [reviewedElsewhere],
+      proposal: null,
+      delivered: validDeliveredSources(),
+    });
+    expect(markdown).toContain("NOT DELIVERED to this run: oracle-source-never-delivered");
+  });
+});
+
 describe("REP-02 in the rendering: completeness and coverage move independently", () => {
   const claim = validClaimRecord();
   const digest = digestOf(claim);

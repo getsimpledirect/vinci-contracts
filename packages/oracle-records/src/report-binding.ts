@@ -3,7 +3,12 @@ import { claimRecordDigest, validateClaimRecord, type ClaimRecord } from "./clai
 import { validateClaimAssessment, type ClaimAssessment } from "./claim-assessment.ts";
 import { validateDecisionProposal, type DecisionProposal } from "./decision-proposal.ts";
 import { issue } from "./lib/validate.ts";
-import { validateResearchReport, type ReportClaimEntry, type ResearchReport } from "./research-report.ts";
+import {
+  researchReportDigest,
+  validateResearchReport,
+  type ReportClaimEntry,
+  type ResearchReport,
+} from "./research-report.ts";
 import { validateDeliveredSourceHandle, type DeliveredSourceHandle } from "./source-record.ts";
 
 /**
@@ -49,6 +54,17 @@ import { validateDeliveredSourceHandle, type DeliveredSourceHandle } from "./sou
  * that the assessment's `status` was earned, because a `ClaimAssessment` is not
  * an attested envelope — see the note on the authoring path in
  * `claim-assessment.ts`.
+ *
+ * `evidenceIsMissing` exists because of a rendering question a review put
+ * directly: a BOUND, SUPPORTED claim whose every cited source was never
+ * delivered used to render under "What the evidence establishes", with the
+ * NOT DELIVERED note beneath it. Both facts were on the page and a skimming
+ * reader resolves that pair in the flattering direction — which is the reading
+ * REP-01 exists to prevent, arriving through layout rather than through a word.
+ * A claim with no resolvable evidence is not evidence, whatever its stored
+ * status says, so the renderer now leads with the gap. The STATUS is not
+ * changed and not hidden: CON-04 forbids transforming one status into another,
+ * and this transforms none — it decides which section the claim is read in.
  */
 
 /** Why a claim entry is not bound to an assessment. `BOUND` is the only arm that renders a status. */
@@ -59,6 +75,7 @@ export const CLAIM_BINDING_STATES = [
   "ASSESSMENT_NOT_SUPPLIED",
   "CLAIM_DIGEST_MISMATCH",
   "ASSESSMENT_BINDS_ANOTHER_CLAIM",
+  "ASSESSMENT_BINDS_ANOTHER_REPORT",
   "CLAIM_OUTSIDE_REPORT_SCOPE",
 ] as const;
 export type ClaimBindingState = (typeof CLAIM_BINDING_STATES)[number];
@@ -71,7 +88,16 @@ export type BoundClaim = {
   readonly state: ClaimBindingState;
   /** Human-readable reason, for a renderer to print. Empty when bound. */
   readonly detail: string;
-  /** Source ids this claim cites that were never delivered to this run (SRC-03). */
+  /**
+   * Source ids this claim's evidence cites that were never delivered to this
+   * run (SRC-03) — from the claim's own spans AND from the bound assessment's
+   * reviewed spans.
+   *
+   * The reviewed spans used to raise an issue and never reach this list, so a
+   * renderer marked an unresolved CLAIM span inline and printed an unresolved
+   * REVIEWED span as fact. The reviewed spans are the ones an assessment says
+   * it actually read, which makes them the worse half to leave unmarked.
+   */
   readonly unresolvedSourceIds: readonly string[];
 };
 
@@ -90,6 +116,38 @@ export type ReportBundleResolution =
       readonly issues: readonly ValidationIssue[];
     }
   | { readonly outcome: "REFUSED"; readonly issues: readonly ValidationIssue[] };
+
+/**
+ * Does this claim rest on evidence that resolved?
+ *
+ * True when the claim cites nothing at all, or when every id it cites was
+ * undelivered. A renderer uses it to decide where a claim is READ, never what
+ * its status SAYS.
+ */
+export function evidenceIsMissing(bound: unknown): boolean {
+  // Defensive, because this is exported and therefore probed: the permissive
+  // answer is `false` ("there is evidence"), so anything it cannot read must
+  // answer `true`. A hostile shape must never talk a claim into the section a
+  // reader takes as established.
+  // Through the SAME inert-snapshot boundary every validator uses, because a
+  // Proxy whose getter throws reaches an exported function as ordinary data and
+  // a guard must refuse rather than throw.
+  const plain = toPlainRecord(bound);
+  if (!plain.ok) return true;
+  const candidate = plain.value as unknown as Partial<BoundClaim>;
+  const claim = candidate.claim;
+  if (claim === undefined || !Array.isArray(claim.sourceSpans)) return true;
+  const cited = new Set(claim.sourceSpans.map((span) => span.sourceId));
+  const assessment = candidate.assessment;
+  if (assessment !== undefined && "reviewedSpans" in assessment) {
+    for (const span of assessment.reviewedSpans) cited.add(span.sourceId);
+  }
+  if (cited.size === 0) return true;
+  const unresolved = new Set(
+    Array.isArray(candidate.unresolvedSourceIds) ? candidate.unresolvedSourceIds : [],
+  );
+  return [...cited].every((id) => unresolved.has(id));
+}
 
 /** The keys a bundle must carry. Omission is loud: absent is not the same as empty. */
 const BUNDLE_KEYS = ["report", "claims", "assessments", "proposal", "delivered"] as const;
@@ -185,6 +243,18 @@ export function resolveReportBundle(input: unknown): ReportBundleResolution {
 
   const issues: ValidationIssue[] = [];
 
+  // (a) RECOMPUTATION, for the OTHER digest an assessment asserts.
+  //
+  // `reportDigest` shipped as shape-checked and nothing else, in a module whose
+  // whole subject is recomputing the digest beside it. A third review found it
+  // one field over from the defect the second review found, with the anchor —
+  // this report, and the exported `researchReportDigest` — already in scope. It
+  // was not a table row and it was not a declared limit, which is the part
+  // worth keeping in mind: the sweep missed a row, so the sweep's table is now
+  // checked against the fields records actually carry (see
+  // `cross-record-anchors.test.ts`).
+  const reportDigest = researchReportDigest(report);
+
   // (b) The delivered set, supplied by the caller from host state. SRC-03 held
   // on the citation envelope and on nothing the report actually prints ids
   // from, so a claim could cite a source that was never delivered and the
@@ -269,6 +339,19 @@ export function resolveReportBundle(input: unknown): ReportBundleResolution {
         `assessment ${entry.assessmentRef} was not supplied to this rendering`,
       );
     }
+    if (
+      assessment.reportDigest !== null
+      && assessment.reportDigest !== reportDigest
+    ) {
+      // Null is the honest "this assessment stands alone"; a NON-NULL value is
+      // a claim about which report it was issued against, and a claim about
+      // another record is exactly what has to be recomputed rather than read.
+      return unbound(
+        "ASSESSMENT_BINDS_ANOTHER_REPORT",
+        `assessment ${entry.assessmentRef} was issued against a different report`,
+        "assessment_binds_another_report",
+      );
+    }
     if (assessment.claimRef !== entry.claimRef || assessment.claimDigest !== computed) {
       // BOTH halves, against the RECOMPUTED digest. The old check compared the
       // assessment's assertion to the report's assertion and never asked the
@@ -280,14 +363,19 @@ export function resolveReportBundle(input: unknown): ReportBundleResolution {
         "assessment_binds_another_claim",
       );
     }
-    if (assessment.status !== "NOT_ASSESSED") {
-      const reviewed = "reviewedSpans" in assessment ? assessment.reviewedSpans : [];
-      resolveSpanIds(
-        reviewed.map((span) => span.sourceId),
-        `${at}/reviewedSpans`,
-      );
-    }
-    return { entry, claim, assessment, state: "BOUND", detail: "", unresolvedSourceIds };
+    const reviewed = "reviewedSpans" in assessment ? assessment.reviewedSpans : [];
+    const unresolvedReviewed = resolveSpanIds(
+      reviewed.map((span) => span.sourceId),
+      `${at}/reviewedSpans`,
+    );
+    return {
+      entry,
+      claim,
+      assessment,
+      state: "BOUND",
+      detail: "",
+      unresolvedSourceIds: [...new Set([...unresolvedSourceIds, ...unresolvedReviewed])],
+    };
   });
 
   // The report names a proposal; the proposal names a report. Neither is an

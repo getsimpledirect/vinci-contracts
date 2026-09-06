@@ -115,9 +115,14 @@ describe("OUT-01: not attempted is not failed, and unavailable is not zero benef
   });
 
   it("an observed class with no execution evidence is refused: an observation needs something observed", () => {
+    // ONE field changed, TWO rules reached, and both are true of the record:
+    // an observed class with nothing observed, and an accepted-work credit with
+    // no execution to key the dedup on. Asserting the full list rather than
+    // picking one keeps this a statement about what the validator says.
     const result = validateOutcomeRecord({ ...validOutcomeRecord(), executionEvidenceRefs: [] });
     expect(issuesOf(result)).toEqual([
       { path: "/executionEvidenceRefs", code: "observed_outcome_without_evidence" },
+      { path: "/executionEvidenceRefs", code: "accepted_credit_without_execution_evidence" },
     ]);
   });
 });
@@ -285,7 +290,10 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
       creditKind: "ACCEPTED_WORK",
       duplicateOfOutcomeRef: null,
     });
+    // A NOT_ATTEMPTED record has neither authorized work NOR execution
+    // evidence, so claiming an accepted-work credit is wrong twice over.
     expect(issuesOf(result)).toEqual([
+      { path: "/executionEvidenceRefs", code: "accepted_credit_without_execution_evidence" },
       { path: "/authorizedWorkRef", code: "accepted_credit_without_authorized_work" },
     ]);
   });
@@ -360,6 +368,66 @@ describe("OUT-04: reuse credit, but never a second accepted-work credit", () => 
     expect(resolveOutcomeCredits([validOutcomeRecord()], undefined).outcome).toBe("REFUSED");
     const malformed = resolveOutcomeCredits([validOutcomeRecord()], [{ workRef: "wo-x" }]);
     expect(malformed.outcome).toBe("REFUSED");
+  });
+
+  it("D1: an accepted-work credit with NO execution evidence is refused", () => {
+    // The evidence-keyed dedup reads `executionEvidenceRefs.find(...)`, which is
+    // `undefined` on an empty list — a value guard that says nothing about
+    // absence, inside the guard added to close the duplicate-credit defect. Two
+    // INCONCLUSIVE records with no evidence and two work refs took two credits.
+    // Requiring the evidence closes it by construction.
+    const base = validOutcomeRecord();
+    const result = validateOutcomeRecord({
+      ...base,
+      outcomeClass: "INCONCLUSIVE",
+      uncertaintyResolved: null,
+      justification: "The probe produced a result the rubric does not classify either way.",
+      executionEvidenceRefs: [],
+    });
+    expect(issuesOf(result)).toEqual([
+      { path: "/executionEvidenceRefs", code: "accepted_credit_without_execution_evidence" },
+    ]);
+  });
+
+  it("D1: and the two evidence-free records that used to take two credits are refused", () => {
+    const base = validOutcomeRecord();
+    const evidenceFree = (id: string, work: string): OutcomeRecord => ({
+      ...base,
+      outcomeId: id,
+      authorizedWorkRef: work,
+      outcomeClass: "INCONCLUSIVE",
+      uncertaintyResolved: null,
+      justification: "The probe produced a result the rubric does not classify either way.",
+      executionEvidenceRefs: [],
+    });
+    const result = resolveOutcomeCredits(
+      [evidenceFree("oracle-outcome-a", "wo-installed-reader-probe"),
+        evidenceFree("oracle-outcome-b", "wo-a-different-piece-of-work")],
+      AUTHORIZED,
+    );
+    expect(result.outcome).toBe("REFUSED");
+    // POSITIVE CONTROL on the same shape: with evidence, an INCONCLUSIVE
+    // outcome takes its credit normally. The rule is about the evidence, not
+    // about the class.
+    const withEvidence = resolveOutcomeCredits(
+      [{ ...evidenceFree("oracle-outcome-c", "wo-installed-reader-probe"),
+        executionEvidenceRefs: ["evidence-probe-run-77"] }],
+      AUTHORIZED,
+    );
+    expect(withEvidence.outcome).toBe("CREDITED");
+  });
+
+  it("D2: a duplicate work ref in the authorized set is a diagnostic, not last-wins", () => {
+    // Two entries for one work order can disagree about the run that authorized
+    // it, so which one survived decided the answer — silently.
+    const base = validOutcomeRecord();
+    const result = resolveOutcomeCredits([base], [
+      { workRef: "wo-installed-reader-probe", runRef: "run-oracle-1", workspaceRef: "ws-institutional-1" },
+      { workRef: "wo-installed-reader-probe", runRef: "run-somebody-else", workspaceRef: "ws-institutional-1" },
+    ]);
+    expect(result.outcome).toBe("REFUSED");
+    if (result.outcome !== "REFUSED") return;
+    expect(result.issues.map((i) => i.code)).toEqual(["duplicate_authorized_work"]);
   });
 
   it("a reuse that names no original is refused: unnamed reuse is a second credit renamed", () => {

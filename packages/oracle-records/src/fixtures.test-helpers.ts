@@ -4,7 +4,11 @@ import type { ClaimAssessment } from "./claim-assessment.ts";
 import type { DecisionProposal } from "./decision-proposal.ts";
 import type { OracleContextBinding } from "./oracle-context.ts";
 import type { OutcomeRecord } from "./outcome-record.ts";
-import type { ResearchReport } from "./research-report.ts";
+import {
+  researchReportDigest,
+  validateResearchReport,
+  type ResearchReport,
+} from "./research-report.ts";
 import type { ResearchRequest } from "./research-request.ts";
 import type { SourceCitation, SourceRecord } from "./source-record.ts";
 
@@ -651,6 +655,26 @@ export const validOutcomeRecord = (): OutcomeRecord => ({
   duplicateOfOutcomeRef: null,
   issuedAt: "2026-09-07T09:30:00.000Z",
 });
+
+/**
+ * A SUPPORTED assessment that names the report it was issued against.
+ *
+ * Every assessment fixture pinned `reportDigest: null`, so no test exercised a
+ * non-null value and the field shipped shape-checked and never recomputed —
+ * the second BLOCK's shape, one field over. Computed from the report, so the
+ * positive control binds for real.
+ */
+export const validReportBoundAssessment = (): ClaimAssessment => ({
+  ...validSupportedAssessment(),
+  reportDigest: researchReportDigest(validatedReport()),
+});
+
+/** The report fixture, validated, so its digest can be taken. */
+const validatedReport = (): ResearchReport => {
+  const parsed = validateResearchReport(validResearchReport());
+  if (!parsed.ok) throw new Error(`fixture report is invalid: ${JSON.stringify(parsed.issues)}`);
+  return parsed.value;
+};
 
 /**
  * The sources the host delivered to this run.

@@ -1,7 +1,7 @@
 import type { ClaimRecord, ClaimSourceSpan } from "./claim.ts";
 import type { ClaimAssessment } from "./claim-assessment.ts";
 import type { DecisionProposal } from "./decision-proposal.ts";
-import { resolveReportBundle, type BoundClaim } from "./report-binding.ts";
+import { evidenceIsMissing, resolveReportBundle, type BoundClaim } from "./report-binding.ts";
 import { runTerminalLabel, type ResearchReport } from "./research-report.ts";
 import type { DeliveredSourceHandle } from "./source-record.ts";
 
@@ -279,12 +279,18 @@ export function renderMarkdownReport(input: unknown): string {
   }
   const { report, proposal } = resolution;
   const resolved = resolution.claims;
-  const established = resolved.filter(
-    (item) => item.assessment !== undefined && item.assessment.status === "SUPPORTED",
-  );
-  const outstanding = resolved.filter(
-    (item) => item.assessment === undefined || item.assessment.status !== "SUPPORTED",
-  );
+  // A claim is read under "what the evidence establishes" only when there IS
+  // evidence: bound, SUPPORTED, and citing at least one source that actually
+  // resolved. A supported claim whose every cited id was never delivered used
+  // to sit in that section with a NOT DELIVERED note beneath it, and a skimming
+  // reader resolves that pair in the flattering direction. Its status is
+  // unchanged and still printed — what changes is which section it is read in.
+  const establishes = (item: BoundClaim): boolean =>
+    item.assessment !== undefined
+    && item.assessment.status === "SUPPORTED"
+    && !evidenceIsMissing(item);
+  const established = resolved.filter(establishes);
+  const outstanding = resolved.filter((item) => !establishes(item));
   const coverage = report.assessmentCoverage;
 
   const sections: Rendered[] = [];
