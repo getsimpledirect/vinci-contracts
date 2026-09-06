@@ -444,9 +444,31 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
 };
 
 /**
- * Telus AI PaaS lane — Qwen/Qwen3.8-27B, OpenAI-compatible chat-completions API.
- * Inference runs through external infrastructure (Telus's PaaS).
- * Open-weight model served via third-party API.
+ * Vinci-hosted Qwen lane — Qwen/Qwen3.8-27B served over vLLM on GPU capacity
+ * Vinci rents from Telus.
+ *
+ * TOPOLOGY, CORRECTED 2026-09-06: an earlier version of this entry modelled
+ * Telus as a third-party inference provider (serving.kind: "third_party_api",
+ * provider: "telus", plus a MODEL_PROVIDERS widening to match). That was
+ * wrong. George (the accountable human): "it's our GPU we rent it from Telus
+ * and we serve vLLM" -- Telus rents Vinci GPU capacity; Vinci runs the vLLM
+ * process on it. No third party sits in the inference path receiving prompts
+ * or completions the way an actual API provider (DeepInfra, Fireworks,
+ * OpenRouter) does. That is the same arrangement as Vinci's own rented 8xH200
+ * fleet, which this registry already treats as Vinci-hosted, not as a
+ * "fleet-vendor" third-party lane. So this is `serving.kind: "vinci_hosted"`,
+ * which -- per endpoint.ts's own doc comment on that kind -- carries no
+ * `provider` field at all. Nothing needed widening in vocabulary.ts;
+ * MODEL_PROVIDERS is the vocabulary of third-party *inference* providers, and
+ * Telus renting us hardware doesn't make it one.
+ *
+ * endpointId: renamed from the prior "telus-paas-qwen3-8-27b", which named a
+ * PaaS this has just been established not to be. Existing lanes above follow
+ * `<class>-<provider>`, but no MODEL_CLASS_IDS entry fits (see the prior
+ * comment kept in spirit below) and there is now no third-party `provider`
+ * to name either. "vinci-hosted-qwen3-8-27b" instead names who serves it
+ * (vinci_hosted, this endpoint's own `serving.kind`) and what is served,
+ * which is what is actually true about this lane.
  *
  * PROVENANCE OF EVERY CAPABILITY FACT BELOW: reported to this lane by peer
  * sessions projects-e4 and projects-2a on 2026-09-06. NOT verified by this
@@ -454,14 +476,9 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
  * endpoint. The credential lives at ~/.vinci-gpu/keys/telus-qwen.env, held by
  * a different lane, and was deliberately not opened to write this entry.
  * Nothing here should be read as first-hand observation, and no id here
- * (endpointId, credentialId) is a secret or a path to one.
- *
- * No MODEL_CLASS_IDS entry fits this endpoint: mezzo/forte/fortissimo/vision
- * are Vinci's own capability tiers, defined by what vinci-chat's router
- * offers, not by what any given third-party lane can serve. Inventing a class
- * membership for a single unqualified endpoint would assert a slot in that
- * ladder nobody has evaluated it for, so endpointId instead names the
- * provider and the served model directly, matching no existing class.
+ * (endpointId, credentialId) is a secret or a path to one. The topology
+ * correction above changes who is in the inference path; it does not touch
+ * these peer-reported capability numbers, which are unaffected either way.
  *
  * NOT bound to any role (see role-registry.ts): the Oracle roles this
  * endpoint was reported for do not exist yet, and binding it to an existing
@@ -469,15 +486,13 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
  */
 const telusQwenEndpoint: OpenWeightEndpoint = {
   schemaVersion: 1,
-  endpointId: "telus-paas-qwen3-8-27b",
+  endpointId: "vinci-hosted-qwen3-8-27b",
+  // sourceClass is about artifact provenance (what the weights are), which is
+  // independent of who serves them (see endpoint.ts's doc comment on
+  // EndpointSourceClass). Qwen3.8-27B is an open-weights release regardless
+  // of the topology correction above, so this stays unchanged.
   sourceClass: "open_weight",
-  serving: {
-    kind: "third_party_api",
-    provider: "telus",
-    model: "Qwen/Qwen3.8-27B",
-    modelRevision: { kind: "unknown" },
-    jurisdiction: { kind: "unknown" },
-  },
+  serving: { kind: "vinci_hosted" },
   weightsDigest: { kind: "unknown" },
   tokenizerDigest: { kind: "unknown" },
   architectureDigest: { kind: "unknown" },
@@ -523,37 +538,57 @@ const telusQwenEndpoint: OpenWeightEndpoint = {
       credentialId: "telus-qwen-api-key",
     },
   },
-  // KNOWN BY CONSTRUCTION, not by observation: Telus AI PaaS is third-party
-  // infrastructure, so inference does not run on Vinci-controlled hardware
-  // regardless of what remains unverified about the endpoint's behavior.
-  inferenceIsExternal: { kind: "known", value: true },
+  // KNOWN BY CONSTRUCTION, not by observation: this is Vinci's own vLLM
+  // process running on GPU capacity Vinci rents (serving.kind:
+  // "vinci_hosted"), so inference runs on Vinci-controlled infrastructure --
+  // per endpoint.ts's own doc comment on ServingDescriptor, vinci_hosted
+  // implies inferenceIsExternal is false. That is true regardless of what
+  // remains unverified about the endpoint's runtime behavior above.
+  inferenceIsExternal: { kind: "known", value: false },
+  // A separate approval nobody has given. Unaffected by the topology
+  // correction: Vinci hosting the inference does not by itself clear this
+  // endpoint for protected data.
   approvedForProtectedData: { kind: "unknown" },
   rights: {
-    // UNKNOWN. George's DECLARED BY GEORGE, 2026-08-31 note above (the
+    // UNKNOWN, and deliberately left that way rather than inferred. With no
+    // third-party inference provider in the path, there is no external
+    // rights-holder imposing training/evaluation terms on the outputs -- but
+    // that is an absence of a restriction, not by itself a declared grant of
+    // permission, and George's DECLARED BY GEORGE, 2026-08-31 note above (the
     // forte/vision/mezzo lanes) names DeepInfra, Fireworks and OpenRouter
-    // ONLY. Extending that declaration to a provider he did not check would
-    // be exactly the fabrication this registry exists to prevent, so both
-    // rights stay unknown until someone actually reads Telus's terms.
+    // only. Asserting `known(true)` here from the topology alone would be
+    // exactly the kind of confidently-asserted-but-ungranted permission this
+    // registry exists to prevent. See OPEN_QUESTIONS in this change's commit
+    // message for whether the schema should grow a way to express "no
+    // external rights-holder" cleanly; until then this stays unknown.
     trainingAllowed: { kind: "unknown" },
     evaluationAllowed: { kind: "unknown" },
+    // UNKNOWN for the same reason as trainingAllowed/evaluationAllowed above:
+    // no external rights-holder to have granted or withheld this either.
     redistributionAllowed: { kind: "unknown" },
-    // UNKNOWN -- and deliberately NOT copied from the DeepInfra/Fireworks/
-    // OpenRouter lanes' `known(false)` above. That value is evidence-backed
-    // by a specific enforced mechanism: vinci-chat/lib/llm/proxy.ts:336
-    // (verified at vinci-chat origin/main 75e6f19) throws NoZdrProviderError
-    // for any provider not in APPROVED_ZDR. Telus has no adapter in
-    // vinci-chat at all -- it is not merely absent from the allowlist, it is
-    // absent from the CloudProvider type that allowlist is built from -- so
-    // that enforcement says nothing about Telus one way or the other. Nobody
-    // has read Telus's retention terms. This stays unknown.
-    outputRetainedByProvider: { kind: "unknown" },
-    // No document snapshot was taken for Telus. Writing a digest here would
-    // fabricate an audit trail for a reading nobody can re-check.
+    // KNOWN BY CONSTRUCTION, not by observation, and this is the one rights
+    // field the topology correction actually resolves: there is no
+    // third-party inference provider anywhere in this endpoint's path, so
+    // there is no one else who could retain the output. This is a different
+    // basis than the DeepInfra/Fireworks/OpenRouter lanes' `known(false)`
+    // above, which rests on a specific enforced mechanism in a real
+    // third-party adapter (vinci-chat/lib/llm/proxy.ts's NoZdrProviderError
+    // for any provider outside APPROVED_ZDR) -- evidence about a provider
+    // that exists. Here the basis is structural: the provider that would
+    // need to be checked does not exist in the first place.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // UNKNOWN, but for a different reason than the sibling third-party
+    // lanes' unresolved-terms unknowns: there is no contract with a
+    // third-party inference provider to snapshot, because there is no
+    // third-party inference provider (George: "nothing blocks no contract
+    // etc."). This is an absent document, not an unread one -- writing a
+    // digest here would fabricate an audit trail for a reading that was
+    // never possible, not merely one nobody has done yet.
     policySnapshotDigest: { kind: "unknown" },
   },
   // Matches the registry's existing validFrom convention for every other
-  // lane above rather than asserting a specific date Telus's own contract
-  // began, which this lane does not know either.
+  // lane above rather than asserting a specific date this GPU rental began,
+  // which this lane does not know either.
   validFrom: "2026-01-01T00:00:00.000Z",
   expiresAt: null,
 };

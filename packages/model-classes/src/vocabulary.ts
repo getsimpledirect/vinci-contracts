@@ -10,12 +10,6 @@ export const MODEL_PROVIDERS = [
   "deepinfra",
   "openrouter",
   "fireworks",
-  // Added 2026-09-06 to register a Telus AI PaaS-hosted endpoint (see
-  // registry.ts's telusQwenEndpoint). Widening this vocabulary is a decision
-  // to make "telus" a representable provider value; it is not itself a claim
-  // about that endpoint's rights or retention behavior -- see the endpoint's
-  // own `rights` block for what remains unknown about it.
-  "telus",
 ] as const;
 export type ModelProvider = (typeof MODEL_PROVIDERS)[number];
 
