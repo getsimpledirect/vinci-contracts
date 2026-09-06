@@ -2219,6 +2219,1091 @@
         "path": "/payload/observedBytesDigest",
         "code": "authority_field_in_model_payload"
       }
+    },
+    {
+      "label": "an observation carrying an inference's premises",
+      "kind": "claim-record",
+      "record": {
+        "schemaVersion": 1,
+        "claimId": "oracle-claim-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "claimType": "OBSERVED",
+        "proposition": "The captured reader refuses an unsupported format rather than returning empty text.",
+        "applicability": {
+          "subject": "packages/oracle-records/src/source-record.ts",
+          "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+          "applicableFrom": null,
+          "applicableUntil": null,
+          "scope": "captured_source_revision_only; nothing here is a statement about a deployed reader"
+        },
+        "materiality": "DECISION_CHANGING",
+        "sourceSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "contradictingEvidence": [],
+        "assumptions": [
+          "The captured revision is the one that would be deployed."
+        ],
+        "derivation": {
+          "premises": [
+            "`completeness` describes the requested range, not the document.",
+            "`coversEntireDocument` is a separate field."
+          ],
+          "reasoningSummary": "Two fields carry the distinction, so a consumer reading one of them has half of it.",
+          "analysisRef": null
+        },
+        "discriminatingTest": null,
+        "author": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "invalidationConditions": [
+          "The source revision changes.",
+          "The extraction version changes."
+        ],
+        "issuedAt": "2026-09-06T12:10:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/derivation",
+        "code": "inference_labeled_as_observed"
+      }
+    },
+    {
+      "label": "a hypothesis with no discriminating test",
+      "kind": "claim-record",
+      "record": {
+        "schemaVersion": 1,
+        "claimId": "oracle-claim-2",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "claimType": "HYPOTHESIS",
+        "proposition": "The installed reader exhibits the same limitation as the captured source.",
+        "applicability": {
+          "subject": "the installed oracle-records reader",
+          "revision": null,
+          "applicableFrom": null,
+          "applicableUntil": null,
+          "scope": "installed_artifact; not observed by this run"
+        },
+        "materiality": "SUPPORTING",
+        "sourceSpans": [],
+        "contradictingEvidence": [],
+        "assumptions": [
+          "The installed artifact was built from the captured revision."
+        ],
+        "derivation": null,
+        "discriminatingTest": null,
+        "author": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt."
+        ],
+        "issuedAt": "2026-09-06T12:11:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/discriminatingTest",
+        "code": "hypothesis_without_discriminating_test"
+      }
+    },
+    {
+      "label": "unknown claim type",
+      "kind": "claim-record",
+      "record": {
+        "schemaVersion": 1,
+        "claimId": "oracle-claim-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "claimType": "PROBABLY_TRUE",
+        "proposition": "The captured reader refuses an unsupported format rather than returning empty text.",
+        "applicability": {
+          "subject": "packages/oracle-records/src/source-record.ts",
+          "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+          "applicableFrom": null,
+          "applicableUntil": null,
+          "scope": "captured_source_revision_only; nothing here is a statement about a deployed reader"
+        },
+        "materiality": "DECISION_CHANGING",
+        "sourceSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "contradictingEvidence": [],
+        "assumptions": [
+          "The captured revision is the one that would be deployed."
+        ],
+        "derivation": null,
+        "discriminatingTest": null,
+        "author": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "invalidationConditions": [
+          "The source revision changes.",
+          "The extraction version changes."
+        ],
+        "issuedAt": "2026-09-06T12:10:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/claimType",
+        "code": "unknown_claim_type"
+      },
+      "vocabulary": "CLAIM_TYPES"
+    },
+    {
+      "label": "supported assessment naming no reviewed span",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-1",
+        "claimRef": "oracle-claim-1",
+        "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "reportDigest": null,
+        "status": "SUPPORTED",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-provenance-checker",
+          "independent": true
+        },
+        "evaluatorVersion": "provenance-check/2.0.1",
+        "method": "DETERMINISTIC",
+        "independence": "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+        "limitations": [
+          "CLM-02: provenance validation is not semantic fact-checking."
+        ],
+        "reviewedSpans": [],
+        "execution": {
+          "completed": true,
+          "reviewerRunRef": "reviewer-run-41"
+        },
+        "issuedAt": "2026-09-06T12:12:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/reviewedSpans",
+        "code": "unearned_support"
+      }
+    },
+    {
+      "label": "supported assessment whose reviewer run did not complete",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-1",
+        "claimRef": "oracle-claim-1",
+        "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "reportDigest": null,
+        "status": "SUPPORTED",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-provenance-checker",
+          "independent": true
+        },
+        "evaluatorVersion": "provenance-check/2.0.1",
+        "method": "DETERMINISTIC",
+        "independence": "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+        "limitations": [
+          "CLM-02: provenance validation is not semantic fact-checking."
+        ],
+        "reviewedSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "execution": {
+          "completed": false,
+          "reviewerRunRef": "reviewer-run-41"
+        },
+        "issuedAt": "2026-09-06T12:12:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/execution/completed",
+        "code": "unearned_support"
+      }
+    },
+    {
+      "label": "unavailable check claiming it reviewed something",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-2",
+        "claimRef": "oracle-claim-2",
+        "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+        "reportDigest": null,
+        "status": "CHECK_UNAVAILABLE",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-installed-reader-probe",
+          "independent": true
+        },
+        "evaluatorVersion": "installed-probe/0.3.0",
+        "method": "EXECUTION",
+        "independence": "A probe executing the installed artifact, independent of the run that wrote the claim.",
+        "limitations": [
+          "The probe never started, so nothing about the installed reader was observed."
+        ],
+        "unavailableReason": "timed_out",
+        "detail": "The installed-reader probe exceeded its wall clock before producing a result.",
+        "issuedAt": "2026-09-06T12:13:00.000Z",
+        "reviewedSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ]
+      },
+      "expectedIssue": {
+        "path": "/reviewedSpans",
+        "code": "unavailable_check_claims_review"
+      }
+    },
+    {
+      "label": "unknown assessment status",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-1",
+        "claimRef": "oracle-claim-1",
+        "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "reportDigest": null,
+        "status": "PROBABLY_SUPPORTED",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-provenance-checker",
+          "independent": true
+        },
+        "evaluatorVersion": "provenance-check/2.0.1",
+        "method": "DETERMINISTIC",
+        "independence": "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+        "limitations": [
+          "CLM-02: provenance validation is not semantic fact-checking."
+        ],
+        "reviewedSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "execution": {
+          "completed": true,
+          "reviewerRunRef": "reviewer-run-41"
+        },
+        "issuedAt": "2026-09-06T12:12:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/status",
+        "code": "unknown_assessment_status"
+      },
+      "vocabulary": "ASSESSMENT_STATUSES"
+    },
+    {
+      "label": "report carrying an inline model-written assessment status",
+      "kind": "research-report",
+      "record": {
+        "schemaVersion": 1,
+        "reportId": "oracle-report-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "decisionQuestion": "Can the reader distinguish a complete requested section from a search snippet?",
+        "summary": "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, so the smallest next step is a bounded installed-reader test.",
+        "scope": {
+          "subject": "institutional source reading",
+          "observationWindow": {
+            "startedAt": "2026-09-06T11:40:00.000Z",
+            "endedAt": "2026-09-06T11:58:00.000Z"
+          },
+          "revisions": [
+            {
+              "repositoryId": "vinci-contracts",
+              "revision": "365fe6ce6adaed1753e322d4e75331f331930131"
+            }
+          ]
+        },
+        "reportCompleteness": "PARTIAL",
+        "assessmentCoverage": {
+          "claimsTotal": 2,
+          "claimsWithStoredAssessment": 1,
+          "claimsNotAssessed": 1
+        },
+        "runTerminalState": "PARTIALLY_COMPLETED",
+        "claims": [
+          {
+            "claimRef": "oracle-claim-1",
+            "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+            "assessmentRef": "oracle-assessment-1",
+            "assessmentStatus": "SUPPORTED"
+          },
+          {
+            "claimRef": "oracle-claim-2",
+            "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+            "assessmentRef": null
+          }
+        ],
+        "sourceManifest": [
+          {
+            "sourceId": "oracle-source-1",
+            "citationRefs": [
+              "oracle-citation-1"
+            ],
+            "completeness": "FULL_REQUESTED_RANGE",
+            "observationMode": "INDEPENDENT_RETRIEVAL",
+            "retrievedAt": "2026-09-06T11:42:00.000Z"
+          },
+          {
+            "sourceId": "oracle-source-2",
+            "citationRefs": [],
+            "completeness": "SNIPPET_ONLY",
+            "observationMode": "PROVIDER_REPORTED",
+            "retrievedAt": "2026-09-06T11:45:00.000Z"
+          }
+        ],
+        "alternatives": [
+          "Change nothing and accept that the installed behaviour is unobserved.",
+          "Run the smaller installed-reader fixture instead of the full suite."
+        ],
+        "contradictions": [],
+        "materialUnknowns": [
+          "Whether the installed artifact behaves as the captured source does."
+        ],
+        "proposalRef": "oracle-proposal-1",
+        "stopExplanation": "The installed-reader probe timed out, so the second claim was never assessed.",
+        "cost": {
+          "state": "RECONCILIATION_PENDING",
+          "amountMicrousd": null,
+          "ledgerRef": "ledger-oracle-14"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt.",
+          "The source revision changes."
+        ],
+        "issuedAt": "2026-09-06T12:15:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/claims/0/assessmentStatus",
+        "code": "inline_assessment_status"
+      }
+    },
+    {
+      "label": "assessment coverage that contradicts the claim list",
+      "kind": "research-report",
+      "record": {
+        "schemaVersion": 1,
+        "reportId": "oracle-report-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "decisionQuestion": "Can the reader distinguish a complete requested section from a search snippet?",
+        "summary": "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, so the smallest next step is a bounded installed-reader test.",
+        "scope": {
+          "subject": "institutional source reading",
+          "observationWindow": {
+            "startedAt": "2026-09-06T11:40:00.000Z",
+            "endedAt": "2026-09-06T11:58:00.000Z"
+          },
+          "revisions": [
+            {
+              "repositoryId": "vinci-contracts",
+              "revision": "365fe6ce6adaed1753e322d4e75331f331930131"
+            }
+          ]
+        },
+        "reportCompleteness": "PARTIAL",
+        "assessmentCoverage": {
+          "claimsTotal": 2,
+          "claimsWithStoredAssessment": 2,
+          "claimsNotAssessed": 1
+        },
+        "runTerminalState": "PARTIALLY_COMPLETED",
+        "claims": [
+          {
+            "claimRef": "oracle-claim-1",
+            "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+            "assessmentRef": "oracle-assessment-1"
+          },
+          {
+            "claimRef": "oracle-claim-2",
+            "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+            "assessmentRef": null
+          }
+        ],
+        "sourceManifest": [
+          {
+            "sourceId": "oracle-source-1",
+            "citationRefs": [
+              "oracle-citation-1"
+            ],
+            "completeness": "FULL_REQUESTED_RANGE",
+            "observationMode": "INDEPENDENT_RETRIEVAL",
+            "retrievedAt": "2026-09-06T11:42:00.000Z"
+          },
+          {
+            "sourceId": "oracle-source-2",
+            "citationRefs": [],
+            "completeness": "SNIPPET_ONLY",
+            "observationMode": "PROVIDER_REPORTED",
+            "retrievedAt": "2026-09-06T11:45:00.000Z"
+          }
+        ],
+        "alternatives": [
+          "Change nothing and accept that the installed behaviour is unobserved.",
+          "Run the smaller installed-reader fixture instead of the full suite."
+        ],
+        "contradictions": [],
+        "materialUnknowns": [
+          "Whether the installed artifact behaves as the captured source does."
+        ],
+        "proposalRef": "oracle-proposal-1",
+        "stopExplanation": "The installed-reader probe timed out, so the second claim was never assessed.",
+        "cost": {
+          "state": "RECONCILIATION_PENDING",
+          "amountMicrousd": null,
+          "ledgerRef": "ledger-oracle-14"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt.",
+          "The source revision changes."
+        ],
+        "issuedAt": "2026-09-06T12:15:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/assessmentCoverage/claimsWithStoredAssessment",
+        "code": "assessment_coverage_miscounted"
+      }
+    },
+    {
+      "label": "partial report that never says what stopped",
+      "kind": "research-report",
+      "record": {
+        "schemaVersion": 1,
+        "reportId": "oracle-report-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "decisionQuestion": "Can the reader distinguish a complete requested section from a search snippet?",
+        "summary": "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, so the smallest next step is a bounded installed-reader test.",
+        "scope": {
+          "subject": "institutional source reading",
+          "observationWindow": {
+            "startedAt": "2026-09-06T11:40:00.000Z",
+            "endedAt": "2026-09-06T11:58:00.000Z"
+          },
+          "revisions": [
+            {
+              "repositoryId": "vinci-contracts",
+              "revision": "365fe6ce6adaed1753e322d4e75331f331930131"
+            }
+          ]
+        },
+        "reportCompleteness": "PARTIAL",
+        "assessmentCoverage": {
+          "claimsTotal": 2,
+          "claimsWithStoredAssessment": 1,
+          "claimsNotAssessed": 1
+        },
+        "runTerminalState": "PARTIALLY_COMPLETED",
+        "claims": [
+          {
+            "claimRef": "oracle-claim-1",
+            "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+            "assessmentRef": "oracle-assessment-1"
+          },
+          {
+            "claimRef": "oracle-claim-2",
+            "claimDigest": "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f",
+            "assessmentRef": null
+          }
+        ],
+        "sourceManifest": [
+          {
+            "sourceId": "oracle-source-1",
+            "citationRefs": [
+              "oracle-citation-1"
+            ],
+            "completeness": "FULL_REQUESTED_RANGE",
+            "observationMode": "INDEPENDENT_RETRIEVAL",
+            "retrievedAt": "2026-09-06T11:42:00.000Z"
+          },
+          {
+            "sourceId": "oracle-source-2",
+            "citationRefs": [],
+            "completeness": "SNIPPET_ONLY",
+            "observationMode": "PROVIDER_REPORTED",
+            "retrievedAt": "2026-09-06T11:45:00.000Z"
+          }
+        ],
+        "alternatives": [
+          "Change nothing and accept that the installed behaviour is unobserved.",
+          "Run the smaller installed-reader fixture instead of the full suite."
+        ],
+        "contradictions": [],
+        "materialUnknowns": [
+          "Whether the installed artifact behaves as the captured source does."
+        ],
+        "proposalRef": "oracle-proposal-1",
+        "stopExplanation": null,
+        "cost": {
+          "state": "RECONCILIATION_PENDING",
+          "amountMicrousd": null,
+          "ledgerRef": "ledger-oracle-14"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt.",
+          "The source revision changes."
+        ],
+        "issuedAt": "2026-09-06T12:15:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/stopExplanation",
+        "code": "incomplete_report_without_stop_explanation"
+      }
+    },
+    {
+      "label": "proposal payload writing its own execution authority",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": false,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "REQUEST_OBSERVATION",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [
+            {
+              "summary": "Change nothing and record the installed behaviour as unobserved.",
+              "whyNotChosen": "The unknown is the one the decision turns on."
+            }
+          ],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ],
+          "authorityToExecute": true
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/authorityToExecute",
+        "code": "authority_field_in_model_payload"
+      }
+    },
+    {
+      "label": "proposal host half claiming execution authority",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": true,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "REQUEST_OBSERVATION",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [
+            {
+              "summary": "Change nothing and record the installed behaviour as unobserved.",
+              "whyNotChosen": "The unknown is the one the decision turns on."
+            }
+          ],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ]
+        }
+      },
+      "expectedIssue": {
+        "path": "/hostResolved/authorityToExecute",
+        "code": "proposal_claims_execution_authority"
+      }
+    },
+    {
+      "label": "unknown proposal kind",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": false,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "MERGE_THE_PR",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [
+            {
+              "summary": "Change nothing and record the installed behaviour as unobserved.",
+              "whyNotChosen": "The unknown is the one the decision turns on."
+            }
+          ],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ]
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/kind",
+        "code": "unknown_proposal_kind"
+      },
+      "vocabulary": "PROPOSAL_KINDS"
+    },
+    {
+      "label": "proposal compared to nothing",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": false,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "REQUEST_OBSERVATION",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ]
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/alternatives",
+        "code": "proposal_without_alternative"
+      }
+    },
+    {
+      "label": "an author certifying its own work useful",
+      "kind": "outcome-record",
+      "record": {
+        "schemaVersion": 1,
+        "outcomeId": "oracle-outcome-1",
+        "proposalRef": "oracle-proposal-1",
+        "proposalDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+        "reportRef": "oracle-report-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "authorizedWorkRef": "wo-installed-reader-probe",
+        "executionEvidenceRefs": [
+          "evidence-probe-run-77"
+        ],
+        "outcomeClass": "HELPFUL_OBSERVED",
+        "justification": "The probe ran and showed the installed reader does NOT share the limitation, which settled the question the report was written to settle.",
+        "observedWindow": {
+          "startedAt": "2026-09-07T09:00:00.000Z",
+          "endedAt": "2026-09-07T09:12:00.000Z"
+        },
+        "costMicrousd": 38000,
+        "uncertaintyResolved": true,
+        "hypothesisResult": "DISPROVED_BY_RESULT",
+        "evidence": {
+          "linkedFollowThrough": {
+            "workRef": "wo-installed-reader-probe",
+            "detail": "The proposed fixtures were the ones that ran."
+          },
+          "temporalAssociation": null,
+          "measuredCounterfactual": null
+        },
+        "causationClaimed": false,
+        "authoringIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "assessingIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "rubricRef": "rubric:oracle-usefulness-v1",
+        "creditKind": "ACCEPTED_WORK",
+        "creditKey": "installed-reader-limitation-2026-09",
+        "duplicateOfOutcomeRef": null,
+        "issuedAt": "2026-09-07T09:30:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/assessingIdentity",
+        "code": "self_certified_usefulness"
+      }
+    },
+    {
+      "label": "causation claimed without a measured comparison",
+      "kind": "outcome-record",
+      "record": {
+        "schemaVersion": 1,
+        "outcomeId": "oracle-outcome-1",
+        "proposalRef": "oracle-proposal-1",
+        "proposalDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+        "reportRef": "oracle-report-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "authorizedWorkRef": "wo-installed-reader-probe",
+        "executionEvidenceRefs": [
+          "evidence-probe-run-77"
+        ],
+        "outcomeClass": "HELPFUL_OBSERVED",
+        "justification": "The probe ran and showed the installed reader does NOT share the limitation, which settled the question the report was written to settle.",
+        "observedWindow": {
+          "startedAt": "2026-09-07T09:00:00.000Z",
+          "endedAt": "2026-09-07T09:12:00.000Z"
+        },
+        "costMicrousd": 38000,
+        "uncertaintyResolved": true,
+        "hypothesisResult": "DISPROVED_BY_RESULT",
+        "evidence": {
+          "linkedFollowThrough": {
+            "workRef": "wo-installed-reader-probe",
+            "detail": "The proposed fixtures were the ones that ran."
+          },
+          "temporalAssociation": null,
+          "measuredCounterfactual": null
+        },
+        "causationClaimed": true,
+        "authoringIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "assessingIdentity": {
+          "kind": "verifier",
+          "verifierId": "release-verifier-2",
+          "independent": true
+        },
+        "rubricRef": "rubric:oracle-usefulness-v1",
+        "creditKind": "ACCEPTED_WORK",
+        "creditKey": "installed-reader-limitation-2026-09",
+        "duplicateOfOutcomeRef": null,
+        "issuedAt": "2026-09-07T09:30:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/evidence/measuredCounterfactual",
+        "code": "causation_without_counterfactual"
+      }
+    },
+    {
+      "label": "unknown outcome class",
+      "kind": "outcome-record",
+      "record": {
+        "schemaVersion": 1,
+        "outcomeId": "oracle-outcome-1",
+        "proposalRef": "oracle-proposal-1",
+        "proposalDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+        "reportRef": "oracle-report-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "authorizedWorkRef": "wo-installed-reader-probe",
+        "executionEvidenceRefs": [
+          "evidence-probe-run-77"
+        ],
+        "outcomeClass": "VERY_HELPFUL",
+        "justification": "The probe ran and showed the installed reader does NOT share the limitation, which settled the question the report was written to settle.",
+        "observedWindow": {
+          "startedAt": "2026-09-07T09:00:00.000Z",
+          "endedAt": "2026-09-07T09:12:00.000Z"
+        },
+        "costMicrousd": 38000,
+        "uncertaintyResolved": true,
+        "hypothesisResult": "DISPROVED_BY_RESULT",
+        "evidence": {
+          "linkedFollowThrough": {
+            "workRef": "wo-installed-reader-probe",
+            "detail": "The proposed fixtures were the ones that ran."
+          },
+          "temporalAssociation": null,
+          "measuredCounterfactual": null
+        },
+        "causationClaimed": false,
+        "authoringIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "assessingIdentity": {
+          "kind": "verifier",
+          "verifierId": "release-verifier-2",
+          "independent": true
+        },
+        "rubricRef": "rubric:oracle-usefulness-v1",
+        "creditKind": "ACCEPTED_WORK",
+        "creditKey": "installed-reader-limitation-2026-09",
+        "duplicateOfOutcomeRef": null,
+        "issuedAt": "2026-09-07T09:30:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/outcomeClass",
+        "code": "unknown_outcome_class"
+      },
+      "vocabulary": "OUTCOME_CLASSES"
     }
   ]
 }

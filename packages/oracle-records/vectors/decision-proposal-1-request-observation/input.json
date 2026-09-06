@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "envelopeKind": "oracle_decision_proposal",
+  "workspaceRef": "ws-institutional-1",
+  "principal": { "kind": "worker", "workerId": "worker-oracle-1" },
+  "runRef": "run-oracle-1",
+  "workOrderRef": "wo-oracle-1",
+  "policyRef": "policy.oracle.research",
+  "policyVersion": 3,
+  "grantRefs": ["grant-propose-advisory"],
+  "budgetReservationRef": null,
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "issuedAt": "2026-09-06T12:16:00.000Z",
+  "attestedBy": { "component": "oracle-report-host", "version": "1.4.0" },
+  "hostResolved": {
+    "proposalId": "oracle-proposal-1",
+    "reportRef": "oracle-report-1",
+    "proposeScope": "advisory_with_job_shape_ref",
+    "authorityToExecute": false,
+    "admissibility": { "state": "ADMISSIBLE", "missingDecision": null }
+  },
+  "payload": {
+    "kind": "REQUEST_OBSERVATION",
+    "basis": {
+      "reportRef": "oracle-report-1",
+      "claimRefs": ["oracle-claim-1", "oracle-claim-2"],
+      "contextBindingRef": "oracle-context-binding-1",
+      "sourceIds": ["oracle-source-1"]
+    },
+    "target": {
+      "decision": "Whether the installed reader needs a change before the next release.",
+      "artifactRef": "artifact-installed-reader",
+      "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+      "workstream": null
+    },
+    "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+    "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+    "proposedJobShapeRef": "job-shape-installed-reader-probe",
+    "cost": {
+      "estimatedMicrousd": 40000,
+      "estimatedWallSeconds": 600,
+      "reversibility": "reversible",
+      "operationalRisks": ["The probe shares a runner with the release gate."],
+      "dataNeeds": ["Read access to the installed artifact."]
+    },
+    "alternatives": [
+      {
+        "summary": "Change nothing and record the installed behaviour as unobserved.",
+        "whyNotChosen": "The unknown is the one the decision turns on."
+      }
+    ],
+    "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+    "consequences": {
+      "onSuccess": "The release proceeds with the installed behaviour observed.",
+      "onFailure": "The reader is changed before the release.",
+      "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+    },
+    "invalidationConditions": ["The installed artifact is rebuilt."]
+  }
+}

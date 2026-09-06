@@ -116,6 +116,13 @@ const ORACLE_HANDLES = [
   },
 ];
 const ORACLE_BINDING = oracleVector("context-binding-1-complete");
+const ORACLE_CLAIM = oracleVector("claim-record-1-observed");
+const ORACLE_PROPOSAL = oracleVector("decision-proposal-1-request-observation");
+const ORACLE_OUTCOME = oracleVector("outcome-record-1-helpful-disproved");
+/** The S3 job-shape allowlist PROP-03 maps against. One kind, one shape. */
+const ORACLE_JOB_SHAPES = [
+  { kind: ORACLE_PROPOSAL.payload.kind, jobShapeRef: ORACLE_PROPOSAL.payload.proposedJobShapeRef },
+];
 const ORACLE_MANIFEST = JSON.parse(
   readFileSync(
     join(root, "packages", "oracle-records", "vectors", "bound-context-manifest.json"),
@@ -904,6 +911,56 @@ const AUTHORITY_GUARDS = [
     call: (fn, hostile) => fn(hostile),
     control: (fn) => fn(1) === true && fn(2) === false && fn("1") === false,
   },
+  // CLM-01's decision, and the one this package exists for. The `call` reduces
+  // the five-status answer to the ONE status that grants something, so every
+  // hostile shape must read as false. The control proves the other direction
+  // three ways: a completed run over real spans DOES earn SUPPORTED, a timeout
+  // is CHECK_UNAVAILABLE, and a completed run over empty material is
+  // INSUFFICIENT_EVIDENCE rather than either.
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "statusForReviewerOutcome",
+    label: "statusForReviewerOutcome(outcome) === SUPPORTED",
+    call: (fn, hostile) => fn(hostile) === "SUPPORTED",
+    control: (fn) =>
+      fn({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: ORACLE_CLAIM.sourceSpans })
+        === "SUPPORTED"
+      && fn({ kind: "TIMED_OUT", detail: "the reviewer exceeded its wall clock" })
+        === "CHECK_UNAVAILABLE"
+      && fn({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: [] })
+        === "INSUFFICIENT_EVIDENCE",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "mapProposalToJobShape",
+    label: "mapProposalToJobShape(hostile proposal, allowlist).outcome === MAPPED",
+    call: (fn, hostile) => fn(hostile, ORACLE_JOB_SHAPES).outcome === "MAPPED",
+    control: (fn) =>
+      fn(ORACLE_PROPOSAL, ORACLE_JOB_SHAPES).outcome === "MAPPED"
+      && fn(
+        { ...ORACLE_PROPOSAL, payload: { ...ORACLE_PROPOSAL.payload, kind: "ESCALATE" } },
+        ORACLE_JOB_SHAPES,
+      ).outcome === "UNMAPPED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "mapProposalToJobShape",
+    label: "mapProposalToJobShape(proposal, hostile allowlist).outcome === MAPPED",
+    call: (fn, hostile) => fn(ORACLE_PROPOSAL, hostile).outcome === "MAPPED",
+    control: (fn) =>
+      fn(ORACLE_PROPOSAL, ORACLE_JOB_SHAPES).outcome === "MAPPED"
+      && fn(ORACLE_PROPOSAL, []).outcome === "UNMAPPED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveOutcomeCredits",
+    label: "resolveOutcomeCredits(outcomes).outcome === CREDITED",
+    call: (fn, hostile) => fn(hostile).outcome === "CREDITED",
+    control: (fn) =>
+      fn([ORACLE_OUTCOME]).outcome === "CREDITED"
+      && fn([ORACLE_OUTCOME, { ...ORACLE_OUTCOME, outcomeId: "oracle-outcome-99" }]).outcome
+        === "DOUBLE_CREDITED",
+  },
 ];
 
 /**
@@ -937,6 +994,10 @@ const REQUIRED_GUARDS = [
   "resolveContextBinding(hostile binding, manifest).outcome === BOUND",
   "resolveContextBinding(binding, hostile manifest).outcome === BOUND",
   "isSupportedSchemaVersion(version)",
+  "statusForReviewerOutcome(outcome) === SUPPORTED",
+  "mapProposalToJobShape(hostile proposal, allowlist).outcome === MAPPED",
+  "mapProposalToJobShape(proposal, hostile allowlist).outcome === MAPPED",
+  "resolveOutcomeCredits(outcomes).outcome === CREDITED",
   "isKeyUsableAt(entry with hostile status, now, role)",
   "isKeyUsableAt(entry with hostile role, now, role)",
   "isKeyUsableAt(entry, now, hostile role)",
@@ -1152,6 +1213,12 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-oracle-records.deliveredHandle": "projection over an already-validated source record: it copies the four identity fields a citation may refer to and grants nothing. Whether a handle resolves is resolveCitations' decision",
   "@getsimpledirect/vinci-oracle-records.parseOracleRecordJson": "strict JSON ingress returning a ValidationResult; it decides only whether a document is unambiguous, and every record it produces still goes through a probed validator",
   "@getsimpledirect/vinci-oracle-records.checkSchemaVersion": "appends an issue to a caller-supplied array and returns nothing; it cannot answer yes. The question it asks is exported as isSupportedSchemaVersion, which IS probed",
+  "@getsimpledirect/vinci-oracle-records.claimRecordDigest": "identity, not authority: validates and throws rather than digesting an invalid claim",
+  "@getsimpledirect/vinci-oracle-records.claimAssessmentDigest": "identity, not authority: validates and throws rather than digesting an invalid assessment. WHICH status an assessment earns is decided by statusForReviewerOutcome, which is probed",
+  "@getsimpledirect/vinci-oracle-records.researchReportDigest": "identity, not authority: validates and throws rather than digesting an invalid report",
+  "@getsimpledirect/vinci-oracle-records.decisionProposalDigest": "identity, not authority: validates and throws rather than digesting an invalid proposal. Whether a proposal may be carried into a job shape is decided by mapProposalToJobShape, which is probed in both argument positions",
+  "@getsimpledirect/vinci-oracle-records.outcomeRecordDigest": "identity, not authority: validates and throws rather than digesting an invalid outcome. Whether an outcome takes an accepted-work credit is decided by resolveOutcomeCredits, which is probed",
+  "@getsimpledirect/vinci-oracle-records.renderMarkdownReport": "a formatter over already-validated records: it re-validates every record it is handed and THROWS rather than rendering an invalid one, so no input shape can obtain a document. It permits nothing, and REP-01's property -- that the statuses in the document are exactly the statuses in the records, in both directions -- is asserted in src/render-markdown.test.ts, where a rendered document can actually be read",
 };
 
 /**

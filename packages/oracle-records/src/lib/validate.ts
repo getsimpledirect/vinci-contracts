@@ -364,6 +364,71 @@ export function readStringList(
   return sound ? (value as readonly string[]) : undefined;
 }
 
+/**
+ * A list of pointers into delivered sources, each optionally into a span.
+ *
+ * Shared by the claim record (what the claim is offered on) and the claim
+ * assessment (what the evaluator ACTUALLY reviewed), which is the pair CLM-01
+ * turns on: those two lists are different facts, and a single validator for
+ * both is what keeps them the same SHAPE so a consumer can compare them.
+ *
+ * `sourceId` is the host-assigned id, never the presentation number — SRC-03.
+ * Whether the id was ever delivered is `resolveCitations`' question, not this
+ * one; a shape check that pretended otherwise would look like a guarantee it
+ * never made.
+ */
+export function readSourceSpans(
+  value: unknown,
+  path: string,
+  noun: string,
+  issues: ValidationIssue[],
+): void {
+  if (!Array.isArray(value)) {
+    issues.push(issue(path, "invalid_type", `${noun} is an array`));
+    return;
+  }
+  value.forEach((raw, i) => {
+    const at = `${path}/${i}`;
+    if (!isObjectRecord(raw)) {
+      issues.push(issue(at, "invalid_type", "a source span is an object"));
+      return;
+    }
+    rejectUnknownFields(raw, ["sourceId", "span"], at, "a source span", issues);
+    if (!isIdentifier(raw.sourceId)) {
+      issues.push(
+        issue(
+          `${at}/sourceId`,
+          "invalid_id",
+          "SRC-03: a span names the host-assigned source id, never the number a reader saw",
+        ),
+      );
+    }
+    const span = raw.span;
+    if (span === null) return;
+    if (!isObjectRecord(span)) {
+      issues.push(issue(`${at}/span`, "invalid_type", "span is an object or explicitly null"));
+      return;
+    }
+    rejectUnknownFields(span, ["startOffset", "endOffset"], `${at}/span`, "a span", issues);
+    for (const field of ["startOffset", "endOffset"] as const) {
+      if (!isNonNegativeInt(span[field])) {
+        issues.push(
+          issue(`${at}/span/${field}`, "invalid_type", `${field} is a non-negative integer`),
+        );
+      }
+    }
+    if (
+      isNonNegativeInt(span.startOffset)
+      && isNonNegativeInt(span.endOffset)
+      && span.endOffset < span.startOffset
+    ) {
+      issues.push(
+        issue(`${at}/span/endOffset`, "inverted_range", "a span ends no earlier than it starts"),
+      );
+    }
+  });
+}
+
 /** The schema versions this build reads. An unsupported one is refused, never downgraded. */
 export const SUPPORTED_SCHEMA_VERSIONS = [1] as const;
 

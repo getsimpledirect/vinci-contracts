@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "assessmentId": "oracle-assessment-1",
+  "claimRef": "oracle-claim-1",
+  "claimDigest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+  "reportDigest": null,
+  "status": "SUPPORTED",
+  "evaluator": { "kind": "verifier", "verifierId": "oracle-provenance-checker", "independent": true },
+  "evaluatorVersion": "provenance-check/2.0.1",
+  "method": "DETERMINISTIC",
+  "independence": "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+  "limitations": ["CLM-02: provenance validation is not semantic fact-checking."],
+  "reviewedSpans": [
+    { "sourceId": "oracle-source-1", "span": { "startOffset": 120, "endOffset": 480 } }
+  ],
+  "execution": { "completed": true, "reviewerRunRef": "reviewer-run-41" },
+  "issuedAt": "2026-09-06T12:12:00.000Z"
+}

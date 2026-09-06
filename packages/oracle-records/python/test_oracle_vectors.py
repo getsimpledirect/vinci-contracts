@@ -35,8 +35,17 @@ from vinci_canonical import canonicalize, digest  # noqa: E402
 VECTORS = os.path.join(HERE, "..", "vectors")
 
 EXPECTED_VECTORS = [
+    "claim-assessment-1-supported",
+    "claim-assessment-2-check-unavailable",
+    "claim-assessment-3-not-assessed",
+    "claim-record-1-observed",
+    "claim-record-2-hypothesis",
     "context-binding-1-complete",
     "context-binding-2-incomplete",
+    "decision-proposal-1-request-observation",
+    "decision-proposal-2-no-change",
+    "outcome-record-1-helpful-disproved",
+    "research-report-1-partial",
     "research-request-1-admitted",
     "research-request-2-unicode-numbers",
     "source-citation-1-delivered",
@@ -54,6 +63,15 @@ EXPECTED_VECTORS = [
 # src/vectors.test.ts pins the identical values from the other language: a
 # regeneration must be typed into both, which is what makes it a deliberate act.
 PINNED_DIGESTS = {
+    "claim-assessment-1-supported": "a08b1e31fffc816ce69d987e3150a6acb192b26688dc7351daa52f251da628b0",
+    "claim-assessment-2-check-unavailable": "0da93a35f4d2dba1049bba747e18162c0773cc44e8bf294169e87d24bfdd740f",
+    "claim-assessment-3-not-assessed": "56a03d670b42375b9aa4bea4dec5f9a80464ae7cf16e7071d822ea127505998f",
+    "claim-record-1-observed": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+    "claim-record-2-hypothesis": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+    "decision-proposal-1-request-observation": "2b1a89a24fd1254e4afd578271bc42dbd8f074e4a4bcadda3df9889063179cf0",
+    "decision-proposal-2-no-change": "8262f70dc99b4ccee8da357a29dec6a043145b03ff5656237ab8aebbdb3ceed6",
+    "outcome-record-1-helpful-disproved": "ba3d60a5e63aff08b67ba5bea2f589ce767b48e41719edb9965b20282144a76d",
+    "research-report-1-partial": "53daedc62d8b5919fd498d34ccd062196b2f55c38bcfbec18400fdc259e0753c",
     "context-binding-1-complete": "95c49a42f4ce350d3113ea6ba5210a6db7a8c12096c36150dcf4b293132389f7",
     "context-binding-2-incomplete": "362feb622e1e54719d884e5ddf893332a9408e3c85a8f156a2b4907015096497",
     "research-request-1-admitted": "a722101e72a63e022944a3a7fc336d86c6410efb93751a015d74f94017a34bb0",
@@ -69,7 +87,11 @@ PINNED_DIGESTS = {
 # membership checks below vacuous — a renamed member would move on both sides at
 # once and every assertion would still pass.
 VOCABULARIES = {
-    "ATTESTED_ENVELOPE_KINDS": ["oracle_research_request", "oracle_source_citation"],
+    "ATTESTED_ENVELOPE_KINDS": [
+        "oracle_research_request",
+        "oracle_source_citation",
+        "oracle_decision_proposal",
+    ],
     "RESEARCH_MODES": ["investigation", "verification", "monitoring", "exploration"],
     "SOURCE_MATCH_STATES": ["MATCHED", "NO_MATCH", "NOT_SEARCHED"],
     "SOURCE_READ_OUTCOMES": [
@@ -89,6 +111,43 @@ VOCABULARIES = {
     ],
     "CONTEXT_COMPLETENESS": ["CONTEXT_COMPLETE", "CONTEXT_INCOMPLETE"],
     "SOURCE_OBSERVATION_MODES": ["INDEPENDENT_RETRIEVAL", "PROVIDER_REPORTED"],
+    "ASSESSMENT_STATUSES": [
+        "SUPPORTED",
+        "CONTRADICTED",
+        "INSUFFICIENT_EVIDENCE",
+        "CHECK_UNAVAILABLE",
+        "NOT_ASSESSED",
+    ],
+    "ASSESSMENT_METHODS": ["DETERMINISTIC", "EXECUTION", "MODEL", "HUMAN"],
+    "CLAIM_TYPES": [
+        "OBSERVED",
+        "EXTERNALLY_REPORTED",
+        "INFERRED",
+        "HYPOTHESIS",
+        "RECOMMENDATION",
+    ],
+    "PROPOSAL_KINDS": [
+        "ANSWER_ONLY",
+        "REQUEST_OBSERVATION",
+        "EXPERIMENT_PROPOSAL",
+        "IMPLEMENTATION_PROPOSAL",
+        "NO_CHANGE",
+        "DEFER",
+        "STOP_PROPOSAL",
+        "ESCALATE",
+    ],
+    "PROPOSAL_ADMISSIBILITY": ["ADMISSIBLE", "INADMISSIBLE_RETAINED_AS_ADVISORY"],
+    "ORACLE_PROPOSE_SCOPES": ["advisory_only", "advisory_with_job_shape_ref"],
+    "OUTCOME_CLASSES": [
+        "HELPFUL_OBSERVED",
+        "NOT_HELPFUL_OBSERVED",
+        "INCONCLUSIVE",
+        "NOT_ATTEMPTED",
+        "OBSERVATION_UNAVAILABLE",
+    ],
+    "HYPOTHESIS_RESULTS": ["SUPPORTED_BY_RESULT", "DISPROVED_BY_RESULT", "NOT_APPLICABLE"],
+    "REPORT_COMPLETENESS": ["COMPLETE", "PARTIAL", "FAILED"],
+    "RUN_TERMINAL_STATES": ["SUCCEEDED", "PARTIALLY_COMPLETED", "FAILED", "ABORTED"],
 }
 
 
@@ -147,7 +206,7 @@ class GoldenVectors(unittest.TestCase):
     def _dirs(self):
         return sorted(d for d in os.listdir(VECTORS) if os.path.isdir(os.path.join(VECTORS, d)))
 
-    def test_the_committed_vectors_are_exactly_the_expected_eight(self):
+    def test_the_committed_vectors_are_exactly_the_expected_seventeen(self):
         self.assertEqual(self._dirs(), EXPECTED_VECTORS)
         # A pin map missing an entry would silently stop pinning that vector,
         # and eight distinct fixtures must have eight distinct identities.
@@ -263,6 +322,144 @@ class SharedVocabularies(unittest.TestCase):
         ]
         self.assertEqual(sorted(states), sorted(VOCABULARIES["CONTEXT_COMPLETENESS"]))
 
+    def test_assessment_vectors_carry_the_states_an_error_path_would_skip(self):
+        """CLM-01, checked from the committed bytes rather than from a validator.
+
+        The SUPPORTED vector carries the evidence that earns it — the spans the
+        evaluator actually reviewed, and a reviewer run marked completed — and
+        neither of the other two carries either field at all. That is the
+        structural rule visible in the data: a CHECK_UNAVAILABLE record has
+        nowhere to put a review it did not perform.
+        """
+        supported = _read_json("claim-assessment-1-supported", "input.json")
+        unavailable = _read_json("claim-assessment-2-check-unavailable", "input.json")
+        not_assessed = _read_json("claim-assessment-3-not-assessed", "input.json")
+        for record in [supported, unavailable, not_assessed]:
+            self.assertIn(record["status"], VOCABULARIES["ASSESSMENT_STATUSES"])
+        self.assertEqual(
+            sorted(r["status"] for r in [supported, unavailable, not_assessed]),
+            ["CHECK_UNAVAILABLE", "NOT_ASSESSED", "SUPPORTED"],
+        )
+        self.assertGreater(len(supported["reviewedSpans"]), 0)
+        self.assertIs(supported["execution"]["completed"], True)
+        self.assertIn(supported["method"], VOCABULARIES["ASSESSMENT_METHODS"])
+        for record in [unavailable, not_assessed]:
+            self.assertNotIn("reviewedSpans", record)
+            self.assertNotIn("execution", record)
+        # NOT_ASSESSED names no evaluator because none ran; CHECK_UNAVAILABLE
+        # names one because a check ran and produced nothing usable. Absence of
+        # assessment must never read as absence of problems.
+        self.assertNotIn("evaluator", not_assessed)
+        self.assertIn("evaluator", unavailable)
+        self.assertIn(unavailable["unavailableReason"], ["timed_out", "parse_error",
+                                                         "empty_material", "missing_citation",
+                                                         "incomplete_reviewer_execution",
+                                                         "evaluator_unavailable"])
+
+    def test_claim_vectors_cover_an_observation_and_an_unsourced_hypothesis(self):
+        """CLM-04: the hypothesis vector has NO source spans and is still valid.
+
+        A validator demanding source support for the future outcome of a
+        proposed experiment would have made this record unrepresentable, and
+        INV-15 says a package that refuses everything has not qualified.
+        """
+        observed = _read_json("claim-record-1-observed", "input.json")
+        hypothesis = _read_json("claim-record-2-hypothesis", "input.json")
+        for record in [observed, hypothesis]:
+            self.assertIn(record["claimType"], VOCABULARIES["CLAIM_TYPES"])
+        self.assertEqual(observed["claimType"], "OBSERVED")
+        self.assertGreater(len(observed["sourceSpans"]), 0)
+        self.assertIsNone(observed["derivation"])
+        self.assertEqual(hypothesis["claimType"], "HYPOTHESIS")
+        self.assertEqual(hypothesis["sourceSpans"], [])
+        self.assertIsNotNone(hypothesis["discriminatingTest"])
+        # Both arms of the test, because one arm is a plan to find agreement.
+        self.assertIn("wouldSupport", hypothesis["discriminatingTest"])
+        self.assertIn("wouldRefute", hypothesis["discriminatingTest"])
+
+    def test_proposal_vectors_never_carry_execution_authority(self):
+        """PROP-01/INV-01, pinned in the committed bytes.
+
+        Python has no validator for these records, so what it can check is the
+        DATA: neither proposal says true, both propose scopes are represented,
+        and no key anywhere in either model-authored payload names an authority.
+        """
+        proposals = [
+            _read_json("decision-proposal-1-request-observation", "input.json"),
+            _read_json("decision-proposal-2-no-change", "input.json"),
+        ]
+        scopes = []
+        states = []
+        for proposal in proposals:
+            host = proposal["hostResolved"]
+            self.assertIs(host["authorityToExecute"], False)
+            scopes.append(host["proposeScope"])
+            states.append(host["admissibility"]["state"])
+            self.assertIn(proposal["payload"]["kind"], VOCABULARIES["PROPOSAL_KINDS"])
+            self.assertGreater(len(proposal["payload"]["alternatives"]), 0)
+            self._assert_no_authority_key(proposal["payload"], "/payload")
+        self.assertEqual(sorted(scopes), sorted(VOCABULARIES["ORACLE_PROPOSE_SCOPES"]))
+        self.assertEqual(sorted(states), sorted(VOCABULARIES["PROPOSAL_ADMISSIBILITY"]))
+        # PROP-02: the inadmissible one is RETAINED, and names the missing decision.
+        inadmissible = proposals[1]["hostResolved"]["admissibility"]
+        self.assertEqual(inadmissible["state"], "INADMISSIBLE_RETAINED_AS_ADVISORY")
+        self.assertIsNotNone(inadmissible["missingDecision"])
+        self.assertNotEqual(inadmissible["missingDecision"]["owner"].strip(), "")
+
+    def _assert_no_authority_key(self, node, path):
+        terms = ["authority", "principal", "workspace", "grant", "budget", "digest",
+                 "policy", "credential", "token", "actor", "attest", "signature",
+                 "permission", "receipt"]
+        if isinstance(node, list):
+            for i, child in enumerate(node):
+                self._assert_no_authority_key(child, "%s/%d" % (path, i))
+            return
+        if not isinstance(node, dict):
+            return
+        for key, child in node.items():
+            folded = key.lower()
+            for term in terms:
+                self.assertNotIn(term, folded, "%s/%s" % (path, key))
+            self._assert_no_authority_key(child, "%s/%s" % (path, key))
+
+    def test_the_report_keeps_its_three_status_fields_apart(self):
+        """REP-02, as committed data: the three fields disagree on purpose."""
+        report = _read_json("research-report-1-partial", "input.json")
+        self.assertIn(report["reportCompleteness"], VOCABULARIES["REPORT_COMPLETENESS"])
+        self.assertIn(report["runTerminalState"], VOCABULARIES["RUN_TERMINAL_STATES"])
+        self.assertEqual(report["reportCompleteness"], "PARTIAL")
+        self.assertEqual(report["runTerminalState"], "PARTIALLY_COMPLETED")
+        self.assertEqual(
+            report["assessmentCoverage"],
+            {"claimsTotal": 2, "claimsWithStoredAssessment": 1, "claimsNotAssessed": 1},
+        )
+        # The counts are checkable against the claim list, which is what stops
+        # coverage from being a number a report simply asserts.
+        self.assertEqual(len(report["claims"]), report["assessmentCoverage"]["claimsTotal"])
+        stored = [c for c in report["claims"] if c["assessmentRef"] is not None]
+        self.assertEqual(len(stored), report["assessmentCoverage"]["claimsWithStoredAssessment"])
+        # §22.2: the entries REFERENCE an assessment; none carries a status.
+        for entry in report["claims"]:
+            self.assertNotIn("assessmentStatus", entry)
+            self.assertNotIn("assessment_status", entry)
+            self.assertNotIn("status", entry)
+        self.assertIsNotNone(report["stopExplanation"])
+
+    def test_an_outcome_that_disproved_its_hypothesis_is_still_helpful(self):
+        """OUT-01, and OUT-02's independence, from the data."""
+        outcome = _read_json("outcome-record-1-helpful-disproved", "input.json")
+        self.assertIn(outcome["outcomeClass"], VOCABULARIES["OUTCOME_CLASSES"])
+        self.assertIn(outcome["hypothesisResult"], VOCABULARIES["HYPOTHESIS_RESULTS"])
+        self.assertEqual(outcome["outcomeClass"], "HELPFUL_OBSERVED")
+        self.assertEqual(outcome["hypothesisResult"], "DISPROVED_BY_RESULT")
+        self.assertNotEqual(outcome["authoringIdentity"], outcome["assessingIdentity"])
+        # OUT-03: three separate evidence fields, not one ranked enum.
+        self.assertEqual(
+            sorted(outcome["evidence"]),
+            ["linkedFollowThrough", "measuredCounterfactual", "temporalAssociation"],
+        )
+        self.assertIs(outcome["causationClaimed"], False)
+
     def test_the_failed_read_carries_no_content_at_all(self):
         """SRC-04, checked from the data rather than from a validator.
 
@@ -309,13 +506,46 @@ class RefusalCases(unittest.TestCase):
                 self.assertNotEqual(case["expectedIssue"]["code"], "")
                 self.assertIn(
                     case["kind"],
-                    ["research-request", "context-binding", "source-record", "source-citation"],
+                    [
+                        "research-request",
+                        "context-binding",
+                        "source-record",
+                        "source-citation",
+                        "claim-record",
+                        "claim-assessment",
+                        "research-report",
+                        "decision-proposal",
+                        "outcome-record",
+                    ],
                 )
                 codes.add(case["expectedIssue"]["code"])
         # Twenty copies of one refusal shape would exercise one branch of one
         # allowlist and read as full coverage.
         self.assertGreaterEqual(len(codes), 15)
         self.assertEqual(len(set(c["label"] for c in cases)), len(cases))
+
+    def test_the_codes_the_oracle_exists_for_are_present(self):
+        """Named codes, so deleting the case that carries one fails here.
+
+        A count floor cannot notice which case went missing, and the cases
+        below are the ones the requirement documents name: support that was not
+        earned, a review a failed check did not perform, an inline model-written
+        status, a proposal claiming execution, and an author certifying its own
+        work useful.
+        """
+        codes = set(c["expectedIssue"]["code"] for c in self.doc["cases"])
+        for code in [
+            "unearned_support",
+            "unavailable_check_claims_review",
+            "inline_assessment_status",
+            "proposal_claims_execution_authority",
+            "authority_field_in_model_payload",
+            "self_certified_usefulness",
+            "causation_without_counterfactual",
+            "inference_labeled_as_observed",
+            "hypothesis_without_discriminating_test",
+        ]:
+            self.assertIn(code, codes)
 
     def test_enum_drift_values_are_outside_their_vocabularies(self):
         drifts = [c for c in self.doc["cases"] if "vocabulary" in c]

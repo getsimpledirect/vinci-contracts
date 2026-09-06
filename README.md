@@ -474,6 +474,84 @@ if (parsed.ok) {
 }
 ```
 
+### ClaimRecord and ClaimAssessment
+
+A claim states one proposition, scoped narrowly enough that something could check it. An assessment says what a check found — and it is the record this package exists for.
+
+`vinci-chat`'s `lib/harness/grader.ts` returns `{status:'supported'}` from a catch block, and its comment explains why: "the grader must never block an answer". That is correct for a nonblocking consumer chat checker, where a false negative costs a refused reply. It is catastrophic as an institutional assessment, where the costs invert: a check that could not run would report that the claim is supported, and every consumer downstream inherits a conclusion nothing established.
+
+So the two behaviours are separated by construction, not by a comment. `ClaimAssessment` is a union discriminated on `status`, and the `SUPPORTED` arm is the only one carrying `reviewedSpans` and `execution` — a supported assessment cannot be WRITTEN without naming the spans that were read and the reviewer run that completed. `StatusForOutcome` maps every reviewer failure to `CHECK_UNAVAILABLE` at the type level, so an error path that tries to produce `SUPPORTED` does not compile. And `statusForReviewerOutcome` is the runtime half, for the JSON that arrives with no compiler present.
+
+```typescript
+import {
+  statusForReviewerOutcome,
+  validateClaimAssessment,
+  type ClaimAssessment,
+} from "@getsimpledirect/vinci-oracle-records";
+
+// Every reviewer failure, and every input the function cannot recognise.
+statusForReviewerOutcome({ kind: "TIMED_OUT", detail: "wall clock exceeded" });
+// "CHECK_UNAVAILABLE"
+statusForReviewerOutcome({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: [] });
+// "INSUFFICIENT_EVIDENCE" — a completed run over empty material is not support
+statusForReviewerOutcome(undefined);
+// "CHECK_UNAVAILABLE" — never a throw, because the caller is an error path
+
+const supported: ClaimAssessment = {
+  schemaVersion: 1,
+  assessmentId: "oracle-assessment-1",
+  claimRef: "oracle-claim-1",
+  claimDigest: "5e".repeat(32),
+  reportDigest: null,
+  status: "SUPPORTED",
+  evaluator: { kind: "verifier", verifierId: "oracle-provenance-checker", independent: true },
+  evaluatorVersion: "provenance-check/2.0.1",
+  // CLM-02: which method produced this result, so a consumer can filter on it.
+  method: "DETERMINISTIC",
+  independence: "A host-run checker with no access to the claim's author.",
+  limitations: ["Provenance validation is not semantic fact-checking."],
+  // The evidence that earns the status. Neither field exists on any arm a
+  // failure can reach, which is what makes SUPPORTED unwritable without them.
+  reviewedSpans: [{ sourceId: "oracle-source-1", span: { startOffset: 120, endOffset: 480 } }],
+  execution: { completed: true, reviewerRunRef: "reviewer-run-41" },
+  issuedAt: "2026-09-06T12:12:00.000Z",
+};
+
+validateClaimAssessment(supported).ok;
+// true
+
+// And the stored record refuses the same thing the status function does, at the field:
+validateClaimAssessment({ ...supported, reviewedSpans: [] });
+// { ok: false, issues: [{ path: "/reviewedSpans", code: "unearned_support", ... }] }
+```
+
+`NOT_ASSESSED` is deliberately distinct from every other status, including from a check that ran and found nothing. Its arm carries no evaluator and no method at all, because none ran. Absence of assessment must never read as absence of problems.
+
+A `HYPOTHESIS` claim is valid with NO source spans: it is not required to be true before it is investigated, and a validator demanding source support for the future outcome of a proposed experiment would refuse the record the Oracle exists to produce. What it must carry is a discriminating test naming both arms — what would support it AND what would refute it, because one arm is a plan to find agreement.
+
+### ResearchReport and DecisionProposal
+
+A report's completeness, its assessment coverage and its run's terminal state are **three separate fields**, and nothing here derives one from another. A `COMPLETE` report of an `ABORTED` run with zero assessments is a valid record — the run stopped, and the report still said everything it set out to say. A schema with one `status` field forces whoever writes it to pick one, and the one they pick is the flattering one.
+
+Coverage is counts, not a label, and the counts are cross-checked against the claim list: a report cannot declare coverage its own claims contradict. Claim entries REFERENCE a stored assessment; a field named `assessmentStatus` on one is refused by that name (`inline_assessment_status`), because §22.2's warning is that a strict implementation uses the canonical independently stored assessment rather than an inline model-written status.
+
+A `DecisionProposal` is an `AttestedEnvelope`, so the model writes only `payload` — where an authority-bearing key does not compile and is refused at runtime. `authorityToExecute` lives on the host half, typed as the literal `false`: a boundary that could be written `true` is a setting, not a boundary. `mapProposalToJobShape` is the S3 contract and has three answers, not two: `REFUSED` (malformed), `UNMAPPED` (well-formed and not on the allowlist), `MAPPED`. Collapsing the first two into "false" is what "approximately matched" looks like from the inside.
+
+`NO_CHANGE`, `DEFER` and a justified `STOP_PROPOSAL` are valid, complete proposals. A package that refuses everything has not qualified.
+
+### OutcomeRecord
+
+Whether the proposal actually helped, observed rather than assumed. Four distinctions, each of which the record refuses to collapse:
+
+- **Not attempted is not failed.** `NOT_ATTEMPTED` carries no execution evidence, and nothing converts it into `NOT_HELPFUL_OBSERVED`.
+- **Unavailable is not zero benefit.** `OBSERVATION_UNAVAILABLE` leaves `uncertaintyResolved` null — unknown, not false.
+- **A disproved hypothesis can still be helpful.** `HELPFUL_OBSERVED` with `hypothesisResult: "DISPROVED_BY_RESULT"` is a valid record: it settled the question the report was written to settle.
+- **Temporal consistency is not causation.** `linkedFollowThrough`, `temporalAssociation` and `measuredCounterfactual` are three separate fields rather than one ranked enum, and a record claiming causation without a measured comparison is refused.
+
+The report's author cannot self-certify accepted usefulness: a `HELPFUL_OBSERVED` record whose assessing identity equals its authoring identity is refused. That rule is scoped to the class that claims usefulness — the same pair of identities is accepted on `NOT_HELPFUL_OBSERVED`, because a team reporting that its own work did not help is not the failure OUT-02 exists for.
+
+`resolveOutcomeCredits` answers the cross-record half: a duplicate recommendation may take reuse credit, but two accepted-work credits for one `creditKey` is `DOUBLE_CREDITED`, naming which record already holds it.
+
 ## Handling Validation Failures
 
 Every validator returns a `ValidationResult<T>`, which is either `{ ok: true, value: T }` or `{ ok: false, issues: ValidationIssue[] }`. Never check the result after using it—always check first.

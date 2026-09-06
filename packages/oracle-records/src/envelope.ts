@@ -105,6 +105,14 @@ const _ordinaryKeySurvives: [_OrdinaryKeyMapped] extends [never] ? false : true 
 export const ATTESTED_ENVELOPE_KINDS = [
   "oracle_research_request",
   "oracle_source_citation",
+  // A proposal is model-authored and therefore lives in the same envelope as
+  // the other two, rather than in a mechanism of its own. PROP-01 says a
+  // STOP_PROPOSAL does not terminate a job and an IMPLEMENTATION_PROPOSAL does
+  // not open a PR; the reason it CANNOT is that the half a model writes is the
+  // payload, and the payload is where an authority-bearing key does not
+  // compile and is refused at runtime. A second mechanism would be a second
+  // thing to keep correct.
+  "oracle_decision_proposal",
 ] as const;
 export type AttestedEnvelopeKind = (typeof ATTESTED_ENVELOPE_KINDS)[number];
 

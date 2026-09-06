@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "assessmentId": "oracle-assessment-3",
+  "claimRef": "oracle-claim-3",
+  "claimDigest": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+  "reportDigest": null,
+  "status": "NOT_ASSESSED",
+  "limitations": [],
+  "notAssessedReason": "No evaluator was scheduled for this claim before the run's budget was reached.",
+  "issuedAt": "2026-09-06T12:14:00.000Z"
+}

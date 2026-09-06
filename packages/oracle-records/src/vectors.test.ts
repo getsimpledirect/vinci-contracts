@@ -5,12 +5,18 @@ import { describe, expect, it } from "vitest";
 import { canonicalize, type ValidationResult } from "@getsimpledirect/vinci-contracts";
 import { contextManifestDigest, validateContextManifest } from "@getsimpledirect/vinci-run";
 import {
+  ASSESSMENT_STATUSES,
   ATTESTED_ENVELOPE_KINDS,
+  CLAIM_TYPES,
   CONTEXT_COMPLETENESS,
   CONTEXT_REVISION_KINDS,
   CONTEXT_SELECTION_DECISIONS,
   CONTEXT_UNAVAILABLE_REASONS,
   ORACLE_DATA_CLASSIFICATIONS,
+  ORACLE_PROPOSE_SCOPES,
+  OUTCOME_CLASSES,
+  PROPOSAL_ADMISSIBILITY,
+  PROPOSAL_KINDS,
   REQUIRED_OUTPUTS,
   RESEARCH_MODES,
   SOURCE_COMPLETENESS,
@@ -18,12 +24,22 @@ import {
   SOURCE_OBSERVATION_MODES,
   SOURCE_READ_OUTCOMES,
   STOP_CONDITIONS,
+  claimAssessmentDigest,
+  claimRecordDigest,
+  decisionProposalDigest,
   oracleContextBindingDigest,
+  outcomeRecordDigest,
+  researchReportDigest,
   researchRequestDigest,
   resolveContextBinding,
   sourceCitationDigest,
   sourceRecordDigest,
+  validateClaimAssessment,
+  validateClaimRecord,
+  validateDecisionProposal,
   validateOracleContextBinding,
+  validateOutcomeRecord,
+  validateResearchReport,
   validateResearchRequest,
   validateSourceCitation,
   validateSourceRecord,
@@ -48,8 +64,17 @@ import {
 const VECTORS = join(dirname(fileURLToPath(import.meta.url)), "..", "vectors");
 
 const EXPECTED_VECTORS = [
+  "claim-assessment-1-supported",
+  "claim-assessment-2-check-unavailable",
+  "claim-assessment-3-not-assessed",
+  "claim-record-1-observed",
+  "claim-record-2-hypothesis",
   "context-binding-1-complete",
   "context-binding-2-incomplete",
+  "decision-proposal-1-request-observation",
+  "decision-proposal-2-no-change",
+  "outcome-record-1-helpful-disproved",
+  "research-report-1-partial",
   "research-request-1-admitted",
   "research-request-2-unicode-numbers",
   "source-citation-1-delivered",
@@ -69,6 +94,17 @@ const EXPECTED_VECTORS = [
  * so the two languages cannot drift apart quietly either.
  */
 const PINNED_DIGESTS: Readonly<Record<(typeof EXPECTED_VECTORS)[number], string>> = {
+  "claim-assessment-1-supported": "a08b1e31fffc816ce69d987e3150a6acb192b26688dc7351daa52f251da628b0",
+  "claim-assessment-2-check-unavailable": "0da93a35f4d2dba1049bba747e18162c0773cc44e8bf294169e87d24bfdd740f",
+  "claim-assessment-3-not-assessed": "56a03d670b42375b9aa4bea4dec5f9a80464ae7cf16e7071d822ea127505998f",
+  "claim-record-1-observed": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+  "claim-record-2-hypothesis": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+  "decision-proposal-1-request-observation":
+    "2b1a89a24fd1254e4afd578271bc42dbd8f074e4a4bcadda3df9889063179cf0",
+  "decision-proposal-2-no-change": "8262f70dc99b4ccee8da357a29dec6a043145b03ff5656237ab8aebbdb3ceed6",
+  "outcome-record-1-helpful-disproved":
+    "ba3d60a5e63aff08b67ba5bea2f589ce767b48e41719edb9965b20282144a76d",
+  "research-report-1-partial": "53daedc62d8b5919fd498d34ccd062196b2f55c38bcfbec18400fdc259e0753c",
   "context-binding-1-complete": "95c49a42f4ce350d3113ea6ba5210a6db7a8c12096c36150dcf4b293132389f7",
   "context-binding-2-incomplete": "362feb622e1e54719d884e5ddf893332a9408e3c85a8f156a2b4907015096497",
   "research-request-1-admitted": "a722101e72a63e022944a3a7fc336d86c6410efb93751a015d74f94017a34bb0",
@@ -97,6 +133,21 @@ function digested<T>(result: ValidationResult<T>, digest: (value: T) => string):
  * being covered without anyone seeing it happen.
  */
 function digestForVector(dir: string, input: unknown): string {
+  if (dir.startsWith("claim-assessment-")) {
+    return digested(validateClaimAssessment(input), claimAssessmentDigest);
+  }
+  if (dir.startsWith("claim-record-")) {
+    return digested(validateClaimRecord(input), claimRecordDigest);
+  }
+  if (dir.startsWith("decision-proposal-")) {
+    return digested(validateDecisionProposal(input), decisionProposalDigest);
+  }
+  if (dir.startsWith("outcome-record-")) {
+    return digested(validateOutcomeRecord(input), outcomeRecordDigest);
+  }
+  if (dir.startsWith("research-report-")) {
+    return digested(validateResearchReport(input), researchReportDigest);
+  }
   if (dir.startsWith("context-binding-")) {
     return digested(validateOracleContextBinding(input), oracleContextBindingDigest);
   }
@@ -113,6 +164,11 @@ function digestForVector(dir: string, input: unknown): string {
 }
 
 function validates(dir: string, input: unknown): boolean {
+  if (dir.startsWith("claim-assessment-")) return validateClaimAssessment(input).ok;
+  if (dir.startsWith("claim-record-")) return validateClaimRecord(input).ok;
+  if (dir.startsWith("decision-proposal-")) return validateDecisionProposal(input).ok;
+  if (dir.startsWith("outcome-record-")) return validateOutcomeRecord(input).ok;
+  if (dir.startsWith("research-report-")) return validateResearchReport(input).ok;
   if (dir.startsWith("context-binding-")) return validateOracleContextBinding(input).ok;
   if (dir.startsWith("research-request-")) return validateResearchRequest(input).ok;
   if (dir.startsWith("source-citation-")) return validateSourceCitation(input).ok;
@@ -164,12 +220,12 @@ const readFile = (name: string): unknown =>
   JSON.parse(readFileSync(join(VECTORS, name), "utf8")) as unknown;
 
 describe("golden vectors pin the canonical bytes and digests", () => {
-  it("holds exactly the eight committed vectors, and every one of them is pinned in source", () => {
+  it("holds exactly the seventeen committed vectors, and every one of them is pinned in source", () => {
     expect(dirs).toEqual([...EXPECTED_VECTORS]);
     // A pin map missing an entry would silently stop pinning that vector.
     expect(Object.keys(PINNED_DIGESTS).sort()).toEqual([...EXPECTED_VECTORS].sort());
-    // Eight distinct fixtures must have eight distinct identities: a copy-paste
-    // slip in the literals above would otherwise read as a passing pin.
+    // Seventeen distinct fixtures must have seventeen distinct identities: a
+    // copy-paste slip in the literals above would otherwise read as a passing pin.
     expect(new Set(Object.values(PINNED_DIGESTS)).size).toBe(EXPECTED_VECTORS.length);
   });
 
@@ -291,6 +347,91 @@ describe("the vectors exercise the closed vocabularies, not a corner of each", (
     ]);
   });
 
+  it("the assessment vectors carry the two states an error path could be tempted to skip", () => {
+    // CLM-01, as committed data rather than as a rule in a file: an assessment
+    // that could not run, and one nobody ran. Both must survive canonicalization
+    // with their own identity, or a consumer reading the vectors cannot tell
+    // them apart from support.
+    const assessments = [
+      "claim-assessment-1-supported",
+      "claim-assessment-2-check-unavailable",
+      "claim-assessment-3-not-assessed",
+    ].map(readVector);
+    expect(sorted(assessments.map((a) => a.status as string))).toEqual([
+      "CHECK_UNAVAILABLE",
+      "NOT_ASSESSED",
+      "SUPPORTED",
+    ]);
+    for (const assessment of assessments) {
+      expect(ASSESSMENT_STATUSES as readonly string[]).toContain(assessment.status as string);
+    }
+    // The SUPPORTED vector carries the evidence that earns it, and neither of
+    // the other two carries any: the structural rule, visible in the bytes.
+    const [supported, unavailable, notAssessed] = assessments;
+    expect((supported?.reviewedSpans as unknown[]).length).toBeGreaterThan(0);
+    expect(supported?.execution).toEqual({ completed: true, reviewerRunRef: "reviewer-run-41" });
+    for (const record of [unavailable, notAssessed]) {
+      expect(record === undefined ? true : "reviewedSpans" in record).toBe(false);
+      expect(record === undefined ? true : "execution" in record).toBe(false);
+    }
+    // NOT_ASSESSED names no evaluator, because none ran; CHECK_UNAVAILABLE does,
+    // because one did and produced nothing usable.
+    expect("evaluator" in (notAssessed ?? {})).toBe(false);
+    expect("evaluator" in (unavailable ?? {})).toBe(true);
+  });
+
+  it("the claim vectors cover an observation and a hypothesis with no source at all", () => {
+    const claims = ["claim-record-1-observed", "claim-record-2-hypothesis"].map(readVector);
+    expect(sorted(claims.map((c) => c.claimType as string))).toEqual(["HYPOTHESIS", "OBSERVED"]);
+    for (const claim of claims) {
+      expect(CLAIM_TYPES as readonly string[]).toContain(claim.claimType as string);
+    }
+    // CLM-04 in the data: the hypothesis has NO source spans and IS a committed
+    // valid vector, which is the shape a validator demanding source support for
+    // a proposed experiment would have made unrepresentable.
+    const hypothesis = claims[1];
+    expect(hypothesis?.sourceSpans).toEqual([]);
+    expect(hypothesis?.discriminatingTest).not.toBeNull();
+    expect((claims[0]?.sourceSpans as unknown[]).length).toBeGreaterThan(0);
+  });
+
+  it("the proposal vectors cover both propose scopes and both admissibility states", () => {
+    const proposals = [
+      "decision-proposal-1-request-observation",
+      "decision-proposal-2-no-change",
+    ].map(readVector);
+    const hosts = proposals.map((p) => p.hostResolved as Record<string, unknown>);
+    expect(sorted(hosts.map((h) => h.proposeScope as string))).toEqual(sorted(ORACLE_PROPOSE_SCOPES));
+    expect(
+      sorted(hosts.map((h) => (h.admissibility as Record<string, string>).state)),
+    ).toEqual(sorted(PROPOSAL_ADMISSIBILITY));
+    for (const host of hosts) {
+      // PROP-01, pinned in the committed bytes: neither vector carries a true.
+      expect(host.authorityToExecute).toBe(false);
+    }
+    for (const proposal of proposals) {
+      const payload = proposal.payload as Record<string, unknown>;
+      expect(PROPOSAL_KINDS as readonly string[]).toContain(payload.kind as string);
+      expect((payload.alternatives as unknown[]).length).toBeGreaterThan(0);
+    }
+    // The report vector says PARTIAL while its run says PARTIALLY_COMPLETED and
+    // its coverage says one of two: REP-02's three fields, disagreeing on
+    // purpose, in committed data.
+    const report = readVector("research-report-1-partial");
+    expect(report.reportCompleteness).toBe("PARTIAL");
+    expect(report.runTerminalState).toBe("PARTIALLY_COMPLETED");
+    expect(report.assessmentCoverage).toEqual({
+      claimsTotal: 2,
+      claimsWithStoredAssessment: 1,
+      claimsNotAssessed: 1,
+    });
+    // OUT-01's combination, in committed data: disproved and helpful.
+    const outcome = readVector("outcome-record-1-helpful-disproved");
+    expect(OUTCOME_CLASSES as readonly string[]).toContain(outcome.outcomeClass as string);
+    expect(outcome.outcomeClass).toBe("HELPFUL_OBSERVED");
+    expect(outcome.hypothesisResult).toBe("DISPROVED_BY_RESULT");
+  });
+
   it("the unicode vector carries characters and numbers a naive encoder gets wrong", () => {
     const payload = readVector("research-request-2-unicode-numbers").payload as Record<string, string>;
     const text = `${payload.decisionToInform}${payload.question}`;
@@ -329,7 +470,11 @@ const refusals = readFile("refusal-cases.json") as {
 };
 
 const VOCABULARIES: Readonly<Record<string, readonly string[]>> = {
+  ASSESSMENT_STATUSES,
   ATTESTED_ENVELOPE_KINDS,
+  CLAIM_TYPES,
+  OUTCOME_CLASSES,
+  PROPOSAL_KINDS,
   RESEARCH_MODES,
   SOURCE_MATCH_STATES,
   SOURCE_READ_OUTCOMES,
@@ -340,6 +485,11 @@ function validateByKind(kind: string, record: unknown): ValidationResult<unknown
   if (kind === "context-binding") return validateOracleContextBinding(record);
   if (kind === "source-record") return validateSourceRecord(record);
   if (kind === "source-citation") return validateSourceCitation(record);
+  if (kind === "claim-record") return validateClaimRecord(record);
+  if (kind === "claim-assessment") return validateClaimAssessment(record);
+  if (kind === "research-report") return validateResearchReport(record);
+  if (kind === "decision-proposal") return validateDecisionProposal(record);
+  if (kind === "outcome-record") return validateOutcomeRecord(record);
   throw new Error(`${kind}: no validator owns this refusal case`);
 }
 
@@ -369,9 +519,21 @@ describe("the shared refusal vectors reach the mechanism each one names", () => 
     expect(codes).toContain("credential_field_in_context");
     expect(codes).toContain("unsupported_schema_version");
     expect(codes).toContain("negative_cost");
+    // CLM-01 and REP-01's codes, named here so deleting the case that carries
+    // one is a failure rather than a quieter file.
+    expect(codes).toContain("unearned_support");
+    expect(codes).toContain("unavailable_check_claims_review");
+    expect(codes).toContain("inline_assessment_status");
+    expect(codes).toContain("proposal_claims_execution_authority");
+    expect(codes).toContain("self_certified_usefulness");
     // Every kind is exercised, so a validator cannot quietly stop being covered.
     expect(sorted([...new Set(refusals.cases.map((c) => c.kind))])).toEqual([
+      "claim-assessment",
+      "claim-record",
       "context-binding",
+      "decision-proposal",
+      "outcome-record",
+      "research-report",
       "research-request",
       "source-citation",
       "source-record",

@@ -1,5 +1,10 @@
 import { REQUIRED_OUTPUTS } from "./research-request.ts";
+import type { ClaimRecord } from "./claim.ts";
+import type { ClaimAssessment } from "./claim-assessment.ts";
+import type { DecisionProposal } from "./decision-proposal.ts";
 import type { OracleContextBinding } from "./oracle-context.ts";
+import type { OutcomeRecord } from "./outcome-record.ts";
+import type { ResearchReport } from "./research-report.ts";
 import type { ResearchRequest } from "./research-request.ts";
 import type { SourceCitation, SourceRecord } from "./source-record.ts";
 
@@ -321,6 +326,319 @@ export const validSourceCitation = (): SourceCitation => ({
     quotedSpan: { startOffset: 120, endOffset: 480 },
     offeredFor: "The manifest requires a trust label on every entry.",
   },
+});
+
+/**
+ * The digests the report's claim entries bind to.
+ *
+ * Fixed literals rather than `claimRecordDigest(validClaimRecord())`, and
+ * deliberately: a report whose binding is computed from the claim it is being
+ * checked against agrees with itself however wrong both are, and the binding
+ * check in `renderMarkdownReport` would then be testing nothing. The tests that
+ * need a REAL digest compute it and say so.
+ */
+const CLAIM_ONE_DIGEST = "5e".repeat(32);
+const CLAIM_TWO_DIGEST = "6f".repeat(32);
+
+/** §5.5's OBSERVED arm: something was read, and the record says where. */
+export const validClaimRecord = (): ClaimRecord => ({
+  schemaVersion: 1,
+  claimId: "oracle-claim-1",
+  requestRef: "oracle-request-1",
+  runRef: "run-oracle-1",
+  workspaceRef: "ws-institutional-1",
+  contextManifestDigest: BOUND_MANIFEST_DIGEST,
+  claimType: "OBSERVED",
+  proposition: "The captured reader refuses an unsupported format rather than returning empty text.",
+  applicability: {
+    subject: "packages/oracle-records/src/source-record.ts",
+    revision: "365fe6ce6adaed1753e322d4e75331f331930131",
+    applicableFrom: null,
+    applicableUntil: null,
+    scope: "captured_source_revision_only; nothing here is a statement about a deployed reader",
+  },
+  materiality: "DECISION_CHANGING",
+  sourceSpans: [{ sourceId: "oracle-source-1", span: { startOffset: 120, endOffset: 480 } }],
+  contradictingEvidence: [],
+  assumptions: ["The captured revision is the one that would be deployed."],
+  derivation: null,
+  discriminatingTest: null,
+  author: { kind: "worker", workerId: "worker-oracle-1" },
+  invalidationConditions: ["The source revision changes.", "The extraction version changes."],
+  issuedAt: "2026-09-06T12:10:00.000Z",
+});
+
+/**
+ * CLM-04's arm, and the one INV-15 exists for: a hypothesis with NO source
+ * spans, which is valid because nothing has observed the future outcome of a
+ * proposed experiment yet.
+ */
+export const validHypothesisClaim = (): ClaimRecord => ({
+  ...validClaimRecord(),
+  claimId: "oracle-claim-2",
+  claimType: "HYPOTHESIS",
+  proposition: "The installed reader exhibits the same limitation as the captured source.",
+  materiality: "SUPPORTING",
+  sourceSpans: [],
+  applicability: {
+    subject: "the installed oracle-records reader",
+    revision: null,
+    applicableFrom: null,
+    applicableUntil: null,
+    scope: "installed_artifact; not observed by this run",
+  },
+  discriminatingTest: {
+    test: "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+    wouldSupport: "The installed reader returns a typed unavailable result for the unsupported format.",
+    wouldRefute: "The installed reader returns an empty success record.",
+  },
+});
+
+/** CLM-03's arm: an inference that says what it rests on. */
+export const validInferredClaim = (): ClaimRecord => ({
+  ...validClaimRecord(),
+  claimId: "oracle-claim-3",
+  claimType: "INFERRED",
+  proposition: "A consumer reading only `completeness` cannot tell a snippet from a full document.",
+  sourceSpans: [{ sourceId: "oracle-source-1", span: null }],
+  derivation: {
+    premises: [
+      "`completeness` describes the requested range, not the document.",
+      "`coversEntireDocument` is a separate field.",
+    ],
+    reasoningSummary:
+      "Two fields carry the distinction, so a consumer reading one of them has half of it.",
+    analysisRef: null,
+  },
+});
+
+/** The SUPPORTED arm, which cannot be written without the evidence that earns it. */
+export const validSupportedAssessment = (): ClaimAssessment => ({
+  schemaVersion: 1,
+  assessmentId: "oracle-assessment-1",
+  claimRef: "oracle-claim-1",
+  claimDigest: CLAIM_ONE_DIGEST,
+  reportDigest: null,
+  status: "SUPPORTED",
+  evaluator: { kind: "verifier", verifierId: "oracle-provenance-checker", independent: true },
+  evaluatorVersion: "provenance-check/2.0.1",
+  method: "DETERMINISTIC",
+  independence:
+    "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+  limitations: ["CLM-02: provenance validation is not semantic fact-checking."],
+  reviewedSpans: [{ sourceId: "oracle-source-1", span: { startOffset: 120, endOffset: 480 } }],
+  execution: { completed: true, reviewerRunRef: "reviewer-run-41" },
+  issuedAt: "2026-09-06T12:12:00.000Z",
+});
+
+/** CLM-01's arm: the intended check produced nothing usable, and says which way. */
+export const validCheckUnavailableAssessment = (): ClaimAssessment => ({
+  schemaVersion: 1,
+  assessmentId: "oracle-assessment-2",
+  claimRef: "oracle-claim-2",
+  claimDigest: CLAIM_TWO_DIGEST,
+  reportDigest: null,
+  status: "CHECK_UNAVAILABLE",
+  evaluator: { kind: "verifier", verifierId: "oracle-installed-reader-probe", independent: true },
+  evaluatorVersion: "installed-probe/0.3.0",
+  method: "EXECUTION",
+  independence: "A probe executing the installed artifact, independent of the run that wrote the claim.",
+  limitations: ["The probe never started, so nothing about the installed reader was observed."],
+  unavailableReason: "timed_out",
+  detail: "The installed-reader probe exceeded its wall clock before producing a result.",
+  issuedAt: "2026-09-06T12:13:00.000Z",
+});
+
+/** The state that means nobody looked. It carries no evaluator, because there was none. */
+export const validNotAssessedAssessment = (): ClaimAssessment => ({
+  schemaVersion: 1,
+  assessmentId: "oracle-assessment-3",
+  claimRef: "oracle-claim-3",
+  claimDigest: CLAIM_ONE_DIGEST,
+  reportDigest: null,
+  status: "NOT_ASSESSED",
+  limitations: [],
+  notAssessedReason: "No evaluator was scheduled for this claim before the run's budget was reached.",
+  issuedAt: "2026-09-06T12:14:00.000Z",
+});
+
+/** §22.2's shape: a partial report carrying an unassessed claim, said out loud. */
+export const validResearchReport = (): ResearchReport => ({
+  schemaVersion: 1,
+  reportId: "oracle-report-1",
+  requestRef: "oracle-request-1",
+  runRef: "run-oracle-1",
+  workspaceRef: "ws-institutional-1",
+  contextManifestDigest: BOUND_MANIFEST_DIGEST,
+  decisionQuestion: "Can the reader distinguish a complete requested section from a search snippet?",
+  summary:
+    "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, "
+    + "so the smallest next step is a bounded installed-reader test.",
+  scope: {
+    subject: "institutional source reading",
+    observationWindow: {
+      startedAt: "2026-09-06T11:40:00.000Z",
+      endedAt: "2026-09-06T11:58:00.000Z",
+    },
+    revisions: [
+      { repositoryId: "vinci-contracts", revision: "365fe6ce6adaed1753e322d4e75331f331930131" },
+    ],
+  },
+  reportCompleteness: "PARTIAL",
+  assessmentCoverage: { claimsTotal: 2, claimsWithStoredAssessment: 1, claimsNotAssessed: 1 },
+  runTerminalState: "PARTIALLY_COMPLETED",
+  claims: [
+    { claimRef: "oracle-claim-1", claimDigest: CLAIM_ONE_DIGEST, assessmentRef: "oracle-assessment-1" },
+    { claimRef: "oracle-claim-2", claimDigest: CLAIM_TWO_DIGEST, assessmentRef: null },
+  ],
+  sourceManifest: [
+    {
+      sourceId: "oracle-source-1",
+      citationRefs: ["oracle-citation-1"],
+      completeness: "FULL_REQUESTED_RANGE",
+      observationMode: "INDEPENDENT_RETRIEVAL",
+      retrievedAt: "2026-09-06T11:42:00.000Z",
+    },
+  ],
+  alternatives: [
+    "Change nothing and accept that the installed behaviour is unobserved.",
+    "Run the smaller installed-reader fixture instead of the full suite.",
+  ],
+  contradictions: [],
+  materialUnknowns: ["Whether the installed artifact behaves as the captured source does."],
+  proposalRef: "oracle-proposal-1",
+  stopExplanation: "The installed-reader probe timed out, so the second claim was never assessed.",
+  cost: { state: "RECONCILIATION_PENDING", amountMicrousd: null, ledgerRef: "ledger-oracle-14" },
+  invalidationConditions: ["The installed artifact is rebuilt.", "The source revision changes."],
+  issuedAt: "2026-09-06T12:15:00.000Z",
+});
+
+/** §22.2's proposal: a bounded observation request that authorizes nothing. */
+export const validDecisionProposal = (): DecisionProposal => ({
+  schemaVersion: 1,
+  envelopeKind: "oracle_decision_proposal",
+  workspaceRef: "ws-institutional-1",
+  principal: { kind: "worker", workerId: "worker-oracle-1" },
+  runRef: "run-oracle-1",
+  workOrderRef: "wo-oracle-1",
+  policyRef: "policy.oracle.research",
+  policyVersion: 3,
+  grantRefs: ["grant-propose-advisory"],
+  budgetReservationRef: null,
+  contextManifestDigest: BOUND_MANIFEST_DIGEST,
+  issuedAt: "2026-09-06T12:16:00.000Z",
+  attestedBy: { component: "oracle-report-host", version: "1.4.0" },
+  hostResolved: {
+    proposalId: "oracle-proposal-1",
+    reportRef: "oracle-report-1",
+    proposeScope: "advisory_with_job_shape_ref",
+    authorityToExecute: false,
+    admissibility: { state: "ADMISSIBLE", missingDecision: null },
+  },
+  payload: {
+    kind: "REQUEST_OBSERVATION",
+    basis: {
+      reportRef: "oracle-report-1",
+      claimRefs: ["oracle-claim-1", "oracle-claim-2"],
+      contextBindingRef: "oracle-context-binding-1",
+      sourceIds: ["oracle-source-1"],
+    },
+    target: {
+      decision: "Whether the installed reader needs a change before the next release.",
+      artifactRef: "artifact-installed-reader",
+      repositoryRevision: "365fe6ce6adaed1753e322d4e75331f331930131",
+      workstream: null,
+    },
+    action: "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+    acceptance: "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+    proposedJobShapeRef: "job-shape-installed-reader-probe",
+    cost: {
+      estimatedMicrousd: 40_000,
+      estimatedWallSeconds: 600,
+      reversibility: "reversible",
+      operationalRisks: ["The probe shares a runner with the release gate."],
+      dataNeeds: ["Read access to the installed artifact."],
+    },
+    alternatives: [
+      {
+        summary: "Change nothing and record the installed behaviour as unobserved.",
+        whyNotChosen: "The unknown is the one the decision turns on.",
+      },
+    ],
+    falsifier: "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+    consequences: {
+      onSuccess: "The release proceeds with the installed behaviour observed.",
+      onFailure: "The reader is changed before the release.",
+      onInconclusive: "The probe is rerun with a longer wall clock, or the claim stays unassessed.",
+    },
+    invalidationConditions: ["The installed artifact is rebuilt."],
+  },
+});
+
+/** INV-15's arm: no change is a valid, complete answer, and it still owes an alternative. */
+export const validNoChangeProposal = (): DecisionProposal => ({
+  ...validDecisionProposal(),
+  hostResolved: {
+    proposalId: "oracle-proposal-2",
+    reportRef: "oracle-report-1",
+    proposeScope: "advisory_only",
+    authorityToExecute: false,
+    admissibility: { state: "ADMISSIBLE", missingDecision: null },
+  },
+  payload: {
+    ...validDecisionProposal().payload,
+    kind: "NO_CHANGE",
+    action: "Keep the current reader and record the installed behaviour as unobserved.",
+    acceptance: null,
+    proposedJobShapeRef: null,
+    alternatives: [
+      {
+        summary: "Run the installed-reader probe now.",
+        whyNotChosen: "The decision it informs is not due until the next release.",
+      },
+    ],
+  },
+});
+
+/**
+ * OUT-01's combination that a careless schema cannot express: an experiment
+ * that DISPROVED its hypothesis and was helpful anyway, because it settled the
+ * question the report was written to settle.
+ */
+export const validOutcomeRecord = (): OutcomeRecord => ({
+  schemaVersion: 1,
+  outcomeId: "oracle-outcome-1",
+  proposalRef: "oracle-proposal-1",
+  proposalDigest: DIGEST_B,
+  reportRef: "oracle-report-1",
+  runRef: "run-oracle-1",
+  workspaceRef: "ws-institutional-1",
+  authorizedWorkRef: "wo-installed-reader-probe",
+  executionEvidenceRefs: ["evidence-probe-run-77"],
+  outcomeClass: "HELPFUL_OBSERVED",
+  justification:
+    "The probe ran and showed the installed reader does NOT share the limitation, which settled the "
+    + "question the report was written to settle.",
+  observedWindow: { startedAt: "2026-09-07T09:00:00.000Z", endedAt: "2026-09-07T09:12:00.000Z" },
+  costMicrousd: 38_000,
+  uncertaintyResolved: true,
+  hypothesisResult: "DISPROVED_BY_RESULT",
+  evidence: {
+    linkedFollowThrough: {
+      workRef: "wo-installed-reader-probe",
+      detail: "The proposed fixtures were the ones that ran.",
+    },
+    temporalAssociation: null,
+    measuredCounterfactual: null,
+  },
+  causationClaimed: false,
+  authoringIdentity: { kind: "worker", workerId: "worker-oracle-1" },
+  assessingIdentity: { kind: "verifier", verifierId: "release-verifier-2", independent: true },
+  rubricRef: "rubric:oracle-usefulness-v1",
+  creditKind: "ACCEPTED_WORK",
+  creditKey: "installed-reader-limitation-2026-09",
+  duplicateOfOutcomeRef: null,
+  issuedAt: "2026-09-07T09:30:00.000Z",
 });
 
 /** Reverse every object's key order, recursively. Same content, different insertion order. */

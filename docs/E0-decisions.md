@@ -143,7 +143,9 @@ authority vocabulary into the controls an adapter can actually enforce. It is
 beside, and does not depend on, `session-stream`.
 
 `oracle-records` (the Oracle research contract: request, context binding, source
-record and citation) sits at layer 4 because it depends on `run`. That
+record and citation, claim and claim assessment, research report, decision
+proposal and outcome record, plus the Markdown renderer they are all read
+through) sits at layer 4 because it depends on `run`. That
 dependency is not incidental and is the reason the package is not lower: an
 Oracle context binding REFERENCES an existing `ContextManifest` by digest rather
 than restating it, and `resolveContextBinding` recomputes that digest from the

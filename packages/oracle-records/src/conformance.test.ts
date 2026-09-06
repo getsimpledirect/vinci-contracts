@@ -4,18 +4,29 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { AUTHORITY_TERMS, forbiddenTermIn } from "./lib/validate.ts";
 import {
+  DECISION_PROPOSAL_PAYLOAD_FIELDS,
   RESEARCH_REQUEST_PAYLOAD_FIELDS,
   validateAttestedEnvelope,
+  validateClaimAssessment,
+  validateClaimRecord,
+  validateDecisionProposal,
   validateOracleContextBinding,
+  validateOutcomeRecord,
+  validateResearchReport,
   validateResearchRequest,
   validateSourceCitation,
   validateSourceRecord,
 } from "./index.ts";
 import {
+  validClaimRecord,
   validContextBinding,
+  validDecisionProposal,
+  validOutcomeRecord,
+  validResearchReport,
   validResearchRequest,
   validSourceCitation,
   validSourceRecord,
+  validSupportedAssessment,
 } from "./fixtures.test-helpers.ts";
 
 /**
@@ -34,6 +45,11 @@ const VALIDATORS = [
   ["context binding", validateOracleContextBinding],
   ["source record", validateSourceRecord],
   ["source citation", validateSourceCitation],
+  ["claim record", validateClaimRecord],
+  ["claim assessment", validateClaimAssessment],
+  ["research report", validateResearchReport],
+  ["decision proposal", validateDecisionProposal],
+  ["outcome record", validateOutcomeRecord],
 ] as const;
 
 describe("the substring authority rule is affordable for the fields this package declares", () => {
@@ -46,6 +62,9 @@ describe("the substring authority rule is affordable for the fields this package
       expect(forbiddenTermIn(field, AUTHORITY_TERMS), field).toBeNull();
     }
     for (const field of ["sourceId", "quotedSpan", "offeredFor"]) {
+      expect(forbiddenTermIn(field, AUTHORITY_TERMS), field).toBeNull();
+    }
+    for (const field of DECISION_PROPOSAL_PAYLOAD_FIELDS) {
       expect(forbiddenTermIn(field, AUTHORITY_TERMS), field).toBeNull();
     }
     // And every nested payload key in the valid fixtures, not only the top
@@ -63,6 +82,7 @@ describe("the substring authority rule is affordable for the fields this package
     };
     walk(validResearchRequest().payload, "/payload");
     walk(validSourceCitation().payload, "/payload");
+    walk(validDecisionProposal().payload, "/payload");
   });
 
   it("does trip on the names it exists for", () => {
@@ -116,6 +136,11 @@ describe("every validator in this package fails closed on the same hostile shape
     expect(validateOracleContextBinding(validContextBinding()).ok).toBe(true);
     expect(validateSourceRecord(validSourceRecord()).ok).toBe(true);
     expect(validateSourceCitation(validSourceCitation()).ok).toBe(true);
+    expect(validateClaimRecord(validClaimRecord()).ok).toBe(true);
+    expect(validateClaimAssessment(validSupportedAssessment()).ok).toBe(true);
+    expect(validateResearchReport(validResearchReport()).ok).toBe(true);
+    expect(validateDecisionProposal(validDecisionProposal()).ok).toBe(true);
+    expect(validateOutcomeRecord(validOutcomeRecord()).ok).toBe(true);
   });
 });
 

@@ -20,7 +20,12 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { canonicalize } from "@getsimpledirect/vinci-contracts";
 import {
+  claimAssessmentDigest,
+  claimRecordDigest,
+  decisionProposalDigest,
   oracleContextBindingDigest,
+  outcomeRecordDigest,
+  researchReportDigest,
   researchRequestDigest,
   sourceCitationDigest,
   sourceRecordDigest,
@@ -34,7 +39,12 @@ import {
  * than a silent skip: a vector nobody digests is a vector nobody checks.
  */
 const KINDS = [
+  ["claim-assessment-", claimAssessmentDigest],
+  ["claim-record-", claimRecordDigest],
   ["context-binding-", oracleContextBindingDigest],
+  ["decision-proposal-", decisionProposalDigest],
+  ["outcome-record-", outcomeRecordDigest],
+  ["research-report-", researchReportDigest],
   ["research-request-", researchRequestDigest],
   ["source-citation-", sourceCitationDigest],
   ["source-record-", sourceRecordDigest],
