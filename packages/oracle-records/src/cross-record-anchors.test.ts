@@ -70,7 +70,13 @@ const sourceFiles = (): string[] =>
 
 /** The enumeration. Every row is exercised below; the table is what makes it a sweep. */
 const CROSS_RECORD_RULES = [
-  { rule: "resolveContextBinding: binding -> manifest", anchor: "(a) recomputation" },
+  { rule: "resolveContextBinding: binding -> manifest digest", anchor: "(a) recomputation" },
+  // Split from the row above, which claimed recomputation for BOTH halves. The
+  // digest half recomputes; the run half compared two untrusted inputs to each
+  // other and is now anchored on the caller's own run identity. A row asserting
+  // an anchor the code does not have is the failure the table exists to
+  // prevent, and this was its third instance.
+  { rule: "resolveContextBinding: binding + manifest -> caller run", anchor: "(b) second argument" },
   { rule: "resolveIdempotency: prior identity -> request", anchor: "(a) recomputation" },
   { rule: "resolveReportBundle: report entry -> claim", anchor: "(a) recomputation" },
   { rule: "resolveReportBundle: assessment -> claim", anchor: "(a) recomputation" },
@@ -451,7 +457,7 @@ describe("(a) RECOMPUTATION: the anchor is the referenced record's own bytes", (
     // way to catch it is to compute the manifest's digest, which is what this
     // function does.
     const lying = { ...validContextBinding(), contextManifestDigest: "0".repeat(64) };
-    const result = resolveContextBinding(lying, manifest);
+    const result = resolveContextBinding(lying, manifest, "run-oracle-1");
     expect(result.outcome).toBe("MANIFEST_MISMATCH");
     // POSITIVE CONTROL on the same manifest.
     const parsed = validateContextManifest(manifest);
@@ -460,8 +466,38 @@ describe("(a) RECOMPUTATION: the anchor is the referenced record's own bytes", (
       resolveContextBinding(
         { ...validContextBinding(), contextManifestDigest: contextManifestDigest(parsed.value) },
         manifest,
+        "run-oracle-1",
       ).outcome,
     ).toBe("BOUND");
+  });
+
+  it("W1: a binding and a manifest agreeing on a FALSE run do not bind", () => {
+    // THE CONSISTENT LIE on the rule this table lists first. The digest half is
+    // satisfied honestly — the digest is recomputed from the forged manifest's
+    // own bytes — and both records name the same wrong run. Comparing them to
+    // each other established only that they agreed.
+    const manifest = JSON.parse(
+      readFileSync(join(SRC, "..", "vectors", "bound-context-manifest.json"), "utf8"),
+    ) as Record<string, unknown>;
+    const forgedManifest = { ...manifest, runId: "run-somebody-else" };
+    const parsed = validateContextManifest(forgedManifest);
+    if (!parsed.ok) throw new Error("the forged manifest must itself be valid");
+    const forgedBinding = {
+      ...validContextBinding(),
+      runRef: "run-somebody-else",
+      contextManifestDigest: contextManifestDigest(parsed.value),
+    };
+    const result = resolveContextBinding(forgedBinding, forgedManifest, "run-oracle-1");
+    expect(result.outcome).toBe("MANIFEST_MISMATCH");
+    if (result.outcome !== "MANIFEST_MISMATCH") return;
+    expect(result.issues.map((i) => i.code)).toEqual(["context_manifest_run_mismatch"]);
+  });
+
+  it("and an absent caller run identity is REFUSED, not read as 'skip the check'", () => {
+    const manifest = JSON.parse(
+      readFileSync(join(SRC, "..", "vectors", "bound-context-manifest.json"), "utf8"),
+    ) as Record<string, unknown>;
+    expect(resolveContextBinding(validContextBinding(), manifest, undefined).outcome).toBe("REFUSED");
   });
 
   it("resolveIdempotency refuses a stored identity whose digest is not the request's", () => {

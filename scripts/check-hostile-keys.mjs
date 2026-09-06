@@ -934,23 +934,36 @@ const AUTHORITY_GUARDS = [
   {
     pkg: "@getsimpledirect/vinci-oracle-records",
     export: "resolveContextBinding",
-    label: "resolveContextBinding(hostile binding, manifest).outcome === BOUND",
-    call: (fn, hostile) => fn(hostile, ORACLE_MANIFEST).outcome === "BOUND",
+    label: "resolveContextBinding(hostile binding, manifest, runRef).outcome === BOUND",
+    call: (fn, hostile) => fn(hostile, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND",
     control: (fn) =>
-      fn(ORACLE_BINDING, ORACLE_MANIFEST).outcome === "BOUND"
-      && fn({ ...ORACLE_BINDING, contextManifestDigest: "0".repeat(64) }, ORACLE_MANIFEST).outcome
-        === "MANIFEST_MISMATCH",
+      fn(ORACLE_BINDING, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND"
+      && fn({ ...ORACLE_BINDING, contextManifestDigest: "0".repeat(64) }, ORACLE_MANIFEST,
+        ORACLE_BINDING.runRef).outcome === "MANIFEST_MISMATCH",
   },
   {
     pkg: "@getsimpledirect/vinci-oracle-records",
     export: "resolveContextBinding",
-    label: "resolveContextBinding(binding, hostile manifest).outcome === BOUND",
-    call: (fn, hostile) => fn(ORACLE_BINDING, hostile).outcome === "BOUND",
+    label: "resolveContextBinding(binding, hostile manifest, runRef).outcome === BOUND",
+    call: (fn, hostile) => fn(ORACLE_BINDING, hostile, ORACLE_BINDING.runRef).outcome === "BOUND",
     control: (fn) =>
-      fn(ORACLE_BINDING, ORACLE_MANIFEST).outcome === "BOUND"
-      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: 7 }).outcome === "REFUSED"
-      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: "run-somebody-else" }).outcome
-        === "MANIFEST_MISMATCH",
+      fn(ORACLE_BINDING, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND"
+      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: 7 }, ORACLE_BINDING.runRef).outcome
+        === "REFUSED"
+      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: "run-somebody-else" },
+        ORACLE_BINDING.runRef).outcome === "MANIFEST_MISMATCH",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveContextBinding",
+    label: "resolveContextBinding(binding, manifest, hostile runRef).outcome === BOUND",
+    // THE ANCHOR ARGUMENT, probed in its own right. The run check used to
+    // compare the binding to the manifest -- two untrusted inputs -- so a
+    // forger writing the same wrong run into both passed.
+    call: (fn, hostile) => fn(ORACLE_BINDING, ORACLE_MANIFEST, hostile).outcome === "BOUND",
+    control: (fn) =>
+      fn(ORACLE_BINDING, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND"
+      && fn(ORACLE_BINDING, ORACLE_MANIFEST, "run-somebody-else").outcome === "MANIFEST_MISMATCH",
   },
   {
     pkg: "@getsimpledirect/vinci-oracle-records",
@@ -1178,8 +1191,9 @@ const REQUIRED_GUARDS = [
   "resolveIdempotency(prior, hostile request).outcome === SAME_REQUEST",
   "resolveCitations(hostile citations, delivered).outcome === RESOLVED",
   "resolveCitations(citations, hostile delivered).outcome === RESOLVED",
-  "resolveContextBinding(hostile binding, manifest).outcome === BOUND",
-  "resolveContextBinding(binding, hostile manifest).outcome === BOUND",
+  "resolveContextBinding(hostile binding, manifest, runRef).outcome === BOUND",
+  "resolveContextBinding(binding, hostile manifest, runRef).outcome === BOUND",
+  "resolveContextBinding(binding, manifest, hostile runRef).outcome === BOUND",
   "isSupportedSchemaVersion(version)",
   "statusForReviewerOutcome(outcome) === SUPPORTED",
   "mapProposalToJobShape(hostile proposal, allowlist).outcome === MAPPED",

@@ -382,6 +382,58 @@ describe("REQ-02: an empty object is 'not stated', which is the headline case", 
     }
   });
 
+  it("W2: a PARTIALLY populated authority is INCOMPLETE, naming the missing half", () => {
+    // The sweep treated any non-empty object as stated, so `readScope` present
+    // and `proposeScope` missing came back REFUSED from full validation instead
+    // of naming the thing that cannot be guessed. The empty-object case was
+    // covered and the partial one was not — absence has more than one shape,
+    // which is the lesson the empty ARRAY case already taught here.
+    const base = validResearchRequest();
+    const admission = admitResearchRequest({
+      ...base,
+      hostResolved: {
+        ...base.hostResolved,
+        authority: { readScope: base.hostResolved.authority.readScope },
+      },
+    });
+    expect(admission.outcome).toBe("INCOMPLETE");
+    if (admission.outcome !== "INCOMPLETE") return;
+    // The SUBFIELD is named, not the parent: "authority is incomplete" is one
+    // question short of "which half of it".
+    expect(admission.missing.map((m) => ({ element: m.element, path: m.path }))).toEqual([
+      { element: "authority", path: "/hostResolved/authority/proposeScope" },
+    ]);
+  });
+
+  it("and the same holds for every object-valued critical element", () => {
+    const base = validResearchRequest();
+    const cases: [string, unknown][] = [
+      ["/hostResolved/scope/taskClass", {
+        ...base.hostResolved,
+        scope: { ...base.hostResolved.scope, taskClass: null },
+      }],
+      ["/hostResolved/missionOwner/kind", {
+        ...base.hostResolved,
+        missionOwner: { userId: "owner-1" },
+      }],
+      ["/hostResolved/intendedRecipient/kind", {
+        ...base.hostResolved,
+        intendedRecipient: { workerId: "worker-oracle-1" },
+      }],
+    ];
+    for (const [path, hostResolved] of cases) {
+      const admission = admitResearchRequest({ ...base, hostResolved });
+      expect(admission.outcome, path).toBe("INCOMPLETE");
+      if (admission.outcome !== "INCOMPLETE") continue;
+      expect(admission.missing.map((m) => m.path), path).toEqual([path]);
+    }
+    // And the principal, which is an element of the envelope rather than the host half.
+    const principal = admitResearchRequest({ ...base, principal: { workerId: "worker-oracle-1" } });
+    expect(principal.outcome).toBe("INCOMPLETE");
+    if (principal.outcome !== "INCOMPLETE") return;
+    expect(principal.missing.map((m) => m.path)).toEqual(["/principal/kind"]);
+  });
+
   it("POSITIVE CONTROL: a populated authority is ADMITTED", () => {
     // Without this, an `admitResearchRequest` that called everything
     // incomplete would satisfy every assertion above.

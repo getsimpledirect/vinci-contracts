@@ -605,7 +605,7 @@ describe("a context binding is bound to the manifest it names", () => {
     if (!parsed.ok) throw new Error(JSON.stringify(parsed.issues));
     const binding = readVector("context-binding-1-complete");
     expect(binding.contextManifestDigest).toBe(contextManifestDigest(parsed.value));
-    expect(resolveContextBinding(binding, manifest)).toEqual({
+    expect(resolveContextBinding(binding, manifest, "run-oracle-1")).toEqual({
       outcome: "BOUND",
       contextManifestDigest: binding.contextManifestDigest,
       completeness: "CONTEXT_COMPLETE",
@@ -617,7 +617,7 @@ describe("a context binding is bound to the manifest it names", () => {
       ...readVector("context-binding-1-complete"),
       contextManifestDigest: "0".repeat(64),
     };
-    const result = resolveContextBinding(binding, manifest);
+    const result = resolveContextBinding(binding, manifest, "run-oracle-1");
     expect(result.outcome).toBe("MANIFEST_MISMATCH");
     if (result.outcome !== "MANIFEST_MISMATCH") return;
     expect(result.issues.map((i) => i.code)).toEqual(["context_manifest_digest_mismatch"]);
@@ -637,14 +637,14 @@ describe("a context binding is bound to the manifest it names", () => {
         })(),
       ),
     };
-    const result = resolveContextBinding(binding, foreign);
+    const result = resolveContextBinding(binding, foreign, "run-oracle-1");
     expect(result.outcome).toBe("MANIFEST_MISMATCH");
     if (result.outcome !== "MANIFEST_MISMATCH") return;
     expect(result.issues.map((i) => i.code)).toEqual(["context_manifest_run_mismatch"]);
   });
 
   it("a malformed manifest is REFUSED rather than reported as a mismatch", () => {
-    const result = resolveContextBinding(readVector("context-binding-1-complete"), { runId: 7 });
+    const result = resolveContextBinding(readVector("context-binding-1-complete"), { runId: 7 }, "run-oracle-1");
     expect(result.outcome).toBe("REFUSED");
   });
 });

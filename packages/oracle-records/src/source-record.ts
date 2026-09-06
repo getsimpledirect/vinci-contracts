@@ -1095,6 +1095,7 @@ export function resolveCitations(citations: unknown, delivered: unknown): Citati
 
   const handles: DeliveredSourceHandle[] = [];
   const refusals: ValidationIssue[] = [];
+  const deliveredIds = new Set<string>();
   deliveredList.forEach((raw, i) => {
     const parsed = validateDeliveredSourceHandle(raw);
     if (!parsed.ok) {
@@ -1103,6 +1104,23 @@ export function resolveCitations(citations: unknown, delivered: unknown): Citati
       }
       return;
     }
+    // A duplicate id last-won silently, and the two entries can disagree about
+    // the run or workspace that delivered the source — so which one survived
+    // decided whether a citation resolved. The authorized-work set got this
+    // treatment a round earlier; the delivered set is the same shape and the
+    // same anchor, and an anchor that decides by insertion order is not one.
+    if (deliveredIds.has(parsed.value.sourceId)) {
+      refusals.push(
+        issue(
+          `/delivered/${i}/sourceId`,
+          "duplicate_delivered_source",
+          "the delivered set names one source twice; if the two entries disagree, which survives "
+            + "decides whether a citation resolves",
+        ),
+      );
+      return;
+    }
+    deliveredIds.add(parsed.value.sourceId);
     handles.push(parsed.value);
   });
 

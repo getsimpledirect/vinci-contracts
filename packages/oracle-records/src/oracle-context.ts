@@ -538,14 +538,49 @@ export type ContextBindingResolution =
   | { readonly outcome: "MANIFEST_MISMATCH"; readonly issues: readonly ValidationIssue[] }
   | { readonly outcome: "REFUSED"; readonly issues: readonly ValidationIssue[] };
 
+/**
+ * @param runRef The run the CALLER is resolving this binding for.
+ *
+ * A third argument, and required, because the rule underneath it is a
+ * cross-record rule and it had no anchor. The digest check below IS a
+ * recomputation anchor — the manifest's own bytes decide it. The run check was
+ * `binding.runRef !== manifest.runId`, two fields of two untrusted inputs, so a
+ * forger who wrote the same wrong run into both passed: the consistent lie, on
+ * the rule this package's own sweep lists first.
+ *
+ * Anchoring it on the caller's run identity is the pattern `resolveCitations`
+ * and `resolveOutcomeCredits` already use — a set or an identity the host
+ * supplies, which neither record can write. It is a fix rather than a declared
+ * limit because the anchor EXISTS in reach here: a host resolving a context
+ * binding knows which run it is operating for. (Contrast OUT-04's remaining
+ * limit, where the missing anchor is a host-attested execution identity that no
+ * component in reach can supply.)
+ *
+ * Required rather than optional, because an omitted anchor that silently means
+ * "skip the check" is the fail-open shape this package keeps finding.
+ */
 export function resolveContextBinding(
   binding: unknown,
   manifest: unknown,
+  runRef: unknown,
 ): ContextBindingResolution {
   const bound = validateOracleContextBinding(binding);
   if (!bound.ok) return { outcome: "REFUSED", issues: bound.issues };
   const parsedManifest = validateContextManifest(manifest);
   if (!parsedManifest.ok) return { outcome: "REFUSED", issues: parsedManifest.issues };
+  if (!isIdentifier(runRef)) {
+    return {
+      outcome: "REFUSED",
+      issues: [
+        issue(
+          "/runRef",
+          "invalid_id",
+          "the caller's own run identity is required; it is the anchor the run check rests on, and "
+            + "an absent one is not a reason to skip the check",
+        ),
+      ],
+    };
+  }
 
   const actual = contextManifestDigest(parsedManifest.value);
   if (actual !== bound.value.contextManifestDigest) {
@@ -560,17 +595,21 @@ export function resolveContextBinding(
       ],
     };
   }
-  // The run reference must agree too. A binding bound to the right manifest but
-  // to someone else's run resolves a real digest onto the wrong investigation,
-  // which is the shape T05 refuses one record over.
-  if (bound.value.runRef !== parsedManifest.value.runId) {
+  // The run reference must agree with the CALLER'S, not merely with itself. A
+  // binding bound to the right manifest but to someone else's run resolves a
+  // real digest onto the wrong investigation, which is the shape T05 refuses
+  // one record over — and comparing the two records to each other established
+  // only that they agreed, which two forged records do by construction.
+  if (bound.value.runRef !== runRef || parsedManifest.value.runId !== runRef) {
     return {
       outcome: "MANIFEST_MISMATCH",
       issues: [
         issue(
           "/runRef",
           "context_manifest_run_mismatch",
-          "the manifest belongs to a different run; a matching digest does not make it this run's context",
+          "this binding and manifest do not belong to the run being resolved; a matching digest does "
+            + "not make them this run's context, and two records agreeing with each other is not "
+            + "evidence that either belongs here",
         ),
       ],
     };

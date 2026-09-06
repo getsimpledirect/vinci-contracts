@@ -149,15 +149,37 @@ export const CRITICAL_ELEMENTS: readonly {
   readonly element: MissingElementClass;
   readonly path: string;
   readonly reason: string;
+  /**
+   * For an OBJECT-valued element, the subfields that must be stated for the
+   * element itself to count as stated.
+   *
+   * Without these the sweep treated any non-empty object as stated, so a
+   * `hostResolved/authority` carrying `readScope` and no `proposeScope` came
+   * back REFUSED from full validation rather than INCOMPLETE naming the thing
+   * that cannot be guessed — which is the whole of REQ-02. The empty-object
+   * case was covered and the partial one was not, which is the same
+   * "absence has more than one shape" lesson the empty ARRAY case taught.
+   */
+  readonly requiredFields?: readonly string[];
 }[] = [
   { element: "authority", path: "/policyRef", reason: "the applicable ratified policy is resolved by the authority path, never inferred" },
   { element: "authority", path: "/grantRefs", reason: "existing grants are resolved by the authority path, never inferred" },
-  { element: "authority", path: "/hostResolved/authority", reason: "the read and propose scopes are a policy intersection" },
+  {
+    element: "authority",
+    path: "/hostResolved/authority",
+    reason: "the read and propose scopes are a policy intersection",
+    requiredFields: ["readScope", "proposeScope"],
+  },
   { element: "identity", path: "/workspaceRef", reason: "a missing workspace cannot resolve to a personal or another organization's workspace" },
-  { element: "identity", path: "/principal", reason: "the requesting principal is authenticated, never asserted" },
-  { element: "identity", path: "/hostResolved/missionOwner", reason: "the accountable mission owner is an identity, not a preference" },
-  { element: "identity", path: "/hostResolved/intendedRecipient", reason: "delivering to a guessed recipient is a disclosure" },
-  { element: "protected_data_scope", path: "/hostResolved/scope", reason: "permitted repositories, evidence and exclusions are a policy intersection" },
+  { element: "identity", path: "/principal", reason: "the requesting principal is authenticated, never asserted", requiredFields: ["kind"] },
+  { element: "identity", path: "/hostResolved/missionOwner", reason: "the accountable mission owner is an identity, not a preference", requiredFields: ["kind"] },
+  { element: "identity", path: "/hostResolved/intendedRecipient", reason: "delivering to a guessed recipient is a disclosure", requiredFields: ["kind"] },
+  {
+    element: "protected_data_scope",
+    path: "/hostResolved/scope",
+    reason: "permitted repositories, evidence and exclusions are a policy intersection",
+    requiredFields: ["repositoryRefs", "evidenceRefs", "exclusions", "taskClass"],
+  },
   { element: "decision_parameter", path: "/payload/decisionToInform", reason: "REQ-01: a request must name the decision or uncertainty it informs" },
   { element: "decision_parameter", path: "/payload/question", reason: "REQ-01: a request must state the question" },
   { element: "decision_parameter", path: "/payload/requiredOutput", reason: "what the answer must contain is fixed before execution" },
@@ -846,7 +868,35 @@ export function admitResearchRequest(input: unknown): RequestAdmission {
         && !Array.isArray(value)
         && Object.keys(value as Record<string, unknown>).length === 0
       );
-    if (!stated) missing.push({ element: element.element, path: element.path, reason: element.reason });
+    if (!stated) {
+      missing.push({ element: element.element, path: element.path, reason: element.reason });
+      continue;
+    }
+    // A PARTIALLY populated object is not a stated element. The subfield is
+    // named rather than the parent, because REQ-02 asks for the thing that
+    // cannot be guessed and "authority is incomplete" is one question short of
+    // "which half of it".
+    if (element.requiredFields === undefined || !isObjectRecord(value)) continue;
+    for (const field of element.requiredFields) {
+      const sub = value[field];
+      const subStated =
+        sub !== undefined
+        && sub !== null
+        && !(typeof sub === "string" && sub.trim() === "")
+        && !(Array.isArray(sub) && sub.length === 0)
+        && !(
+          typeof sub === "object"
+          && !Array.isArray(sub)
+          && Object.keys(sub as Record<string, unknown>).length === 0
+        );
+      if (!subStated) {
+        missing.push({
+          element: element.element,
+          path: `${element.path}/${field}`,
+          reason: element.reason,
+        });
+      }
+    }
   }
   if (missing.length > 0) return { outcome: "INCOMPLETE", missing };
 

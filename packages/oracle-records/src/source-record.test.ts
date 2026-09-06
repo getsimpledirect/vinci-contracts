@@ -385,3 +385,39 @@ describe("a repository source names the revision it was read at", () => {
     ).toEqual([{ path: "/origin/repositoryRevision", code: "invalid_git_object_id" }]);
   });
 });
+
+describe("N1: the delivered set is an anchor, so it may not decide by insertion order", () => {
+  const handleFor = () => {
+    const parsed = validateSourceRecord(validSourceRecord());
+    if (!parsed.ok) throw new Error("fixture must validate");
+    return deliveredHandle(parsed.value);
+  };
+
+  it("a duplicate delivered source id is REFUSED rather than last-wins", () => {
+    // The same shape as the authorized-work set a round earlier: two entries
+    // for one id can disagree about the run that delivered it, so which
+    // survived decided whether a citation resolved — silently.
+    const handle = handleFor();
+    const result = resolveCitations(
+      [validSourceCitation()],
+      [handle, { ...handle, runRef: "run-somebody-else" }],
+    );
+    expect(result.outcome).toBe("REFUSED");
+    if (result.outcome !== "REFUSED") return;
+    expect(result.issues.map((i) => ({ path: i.path, code: i.code }))).toEqual([
+      { path: "/delivered/1/sourceId", code: "duplicate_delivered_source" },
+    ]);
+  });
+
+  it("POSITIVE CONTROL: the same citation against a set with no duplicate resolves", () => {
+    expect(resolveCitations([validSourceCitation()], [handleFor()]).outcome).toBe("RESOLVED");
+  });
+
+  it("and two DIFFERENT delivered sources are both kept", () => {
+    // The discriminating control: the rule is about a repeated id, not about a
+    // set with more than one entry.
+    const handle = handleFor();
+    const other = { ...handle, sourceId: "oracle-source-2", presentationIndex: 2 };
+    expect(resolveCitations([validSourceCitation()], [handle, other]).outcome).toBe("RESOLVED");
+  });
+});
