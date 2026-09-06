@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "envelopeKind": "oracle_research_request",
+  "workspaceRef": "ws-institutional-1",
+  "principal": {
+    "kind": "worker",
+    "workerId": "worker-oracle-1"
+  },
+  "runRef": "run-oracle-1",
+  "workOrderRef": "wo-oracle-1",
+  "policyRef": "policy.oracle.research",
+  "policyVersion": 3,
+  "grantRefs": [
+    "grant-read-institutional",
+    "grant-propose-advisory"
+  ],
+  "budgetReservationRef": "budget-reservation-7",
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "issuedAt": "2026-09-06T12:00:00.000Z",
+  "attestedBy": {
+    "component": "oracle-admission-host",
+    "version": "1.4.0"
+  },
+  "hostResolved": {
+    "requestId": "oracle-request-1",
+    "originatingEventRef": "run-event-114",
+    "missionOwner": {
+      "kind": "user",
+      "userId": "owner-1"
+    },
+    "intendedRecipient": {
+      "kind": "worker",
+      "workerId": "worker-oracle-1"
+    },
+    "scope": {
+      "repositoryRefs": [
+        "repo:vinci-contracts@365fe6ce"
+      ],
+      "evidenceRefs": [
+        "evidence-dev-441"
+      ],
+      "exclusions": [
+        "personal_data",
+        "sealed_evaluation",
+        "credentials"
+      ],
+      "taskClass": "source_verification"
+    },
+    "authority": {
+      "readScope": "request_scope_only",
+      "proposeScope": "advisory_only"
+    },
+    "contextSnapshotRefs": [
+      "snapshot-context-1"
+    ],
+    "effort": {
+      "mode": "investigation",
+      "maxWallSeconds": 900,
+      "maxToolCalls": 40,
+      "maxBytes": 4000000,
+      "maxTokens": 200000,
+      "budgetMicrousd": 2500000,
+      "attentionBudget": {
+        "interruptions": 1,
+        "decisions": 0
+      },
+      "explorationPortfolioRef": null
+    },
+    "lineage": {
+      "parentInvestigationRef": null,
+      "childRelationship": "none",
+      "idempotencyKey": "idem-oracle-1",
+      "version": 1
+    },
+    "admissionAssumptions": [
+      {
+        "about": "/payload/freshness/asOfCutoff",
+        "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+        "basis": "ratified_default"
+      }
+    ]
+  },
+  "payload": {
+    "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+    "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+    "requiredOutput": [
+      "claim_level_evidence",
+      "material_unknowns",
+      "alternatives_including_no_change",
+      "bounded_proposal",
+      "falsification_test"
+    ],
+    "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+    "freshness": {
+      "horizon": "current",
+      "asOfCutoff": null,
+      "mandatoryRechecks": [
+        "repo:vinci-contracts@365fe6ce"
+      ]
+    },
+    "completion": {
+      "acceptanceCriteria": [
+        "Each of the four read outcomes is distinguishable from the delivered record alone."
+      ],
+      "stopConditions": [
+        "decision_has_sufficient_evidence",
+        "approved_budget_or_deadline_reached"
+      ],
+      "deliveryDestination": "run-oracle-1/report"
+    }
+  }
+}

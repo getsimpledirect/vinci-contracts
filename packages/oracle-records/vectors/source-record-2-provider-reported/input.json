@@ -1,0 +1,68 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "oracle-source-2",
+  "requestRef": "oracle-request-1",
+  "runRef": "run-oracle-1",
+  "workspaceRef": "ws-institutional-1",
+  "sourceKind": "provider_research_response",
+  "presentationIndex": 2,
+  "origin": {
+    "locator": "https://example.invalid/whitepaper",
+    "repositoryId": null,
+    "repositoryPath": null,
+    "repositoryRevision": null,
+    "publisher": "Example Standards Body"
+  },
+  "time": {
+    "retrievedAt": "2026-09-06T11:45:00.000Z",
+    "publishedAt": "2019-03-01T00:00:00.000Z",
+    "updatedAt": "2021-07-14T00:00:00.000Z",
+    "eventAt": "2014-11-02T00:00:00.000Z"
+  },
+  "observation": {
+    "mode": "PROVIDER_REPORTED",
+    "providerId": "provider-research-1",
+    "providerReceiptRef": "provider-receipt-88",
+    "retrievedRange": null,
+    "retrievalCostMicrousd": 1500
+  },
+  "requestedRange": {
+    "kind": "search_query",
+    "query": "requested range versus full document"
+  },
+  "completeness": "SNIPPET_ONLY",
+  "coversEntireDocument": false,
+  "readOutcome": "READ_PARTIAL",
+  "matchState": "MATCHED",
+  "content": {
+    "rawArtifactRef": "artifact-raw-2",
+    "rawDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+    "extractedArtifactRef": null,
+    "extractedDigest": null,
+    "extractionVersion": "provider-passthrough/1.0.0",
+    "textOffsets": null,
+    "pageLocations": [
+      2,
+      3
+    ]
+  },
+  "limitations": [
+    "provider_only_attribution",
+    "truncated"
+  ],
+  "policy": {
+    "classification": "internal",
+    "permittedAudiences": [
+      "institutional_workspace"
+    ],
+    "retentionRule": "retention:days_90",
+    "researchUse": "permitted",
+    "trainingUse": "unknown"
+  },
+  "relationships": [
+    {
+      "kind": "same_origin",
+      "sourceId": "oracle-source-1"
+    }
+  ]
+}

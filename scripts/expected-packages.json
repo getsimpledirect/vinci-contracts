@@ -6,13 +6,14 @@
     "device-auth",
     "evidence",
     "model-classes",
+    "oracle-records",
     "policy",
     "receipts",
     "remote-protocol",
     "run",
     "run-events",
     "session-stream",
-    "worker-capabilities",
-    "work-orders"
+    "work-orders",
+    "worker-capabilities"
   ]
 }

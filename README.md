@@ -14,13 +14,15 @@ This repository enforces a strict downward dependency rule: a package may depend
 | **1** | `policy`, `model-classes`, `evidence`, `approvals`, `device-auth` |
 | **2** | `receipts`, `run-events`, `work-orders` |
 | **3** | `remote-protocol` (session identity, roles, the authority channel) |
-| **4** | `session-stream` (the ephemeral human-facing channel of a remote session), `worker-capabilities` (what an adapter can enforce, and the trust level derived from it) |
+| **4** | `session-stream` (the ephemeral human-facing channel of a remote session), `worker-capabilities` (what an adapter can enforce, and the trust level derived from it), `oracle-records` (the Oracle research contract, bound to an existing `ContextManifest`) |
 
 Each layer knows everything below it; nothing above. Packages export only the types and validators they define—never re-export upward.
 
 Three channels, three packages, deliberately not one: `run-events` (layer 2) is the durable, content-minimal record — its payload values are ids, enums, counts, digests, timestamps and flags, never free text; `remote-protocol` (layer 3) carries signed authority commands; `session-stream` (layer 4) carries what a supervising human sees while a worker runs — current action, a bounded diff, a question, a warning — with `retention: "ephemeral"` so it is never mistaken for the record.
 
 `remote-protocol` also defines the signed [`GitHubActionAttribution` v1](docs/github-action-attribution-v1.md) envelope. It binds the central `Actor` and `SessionBindingRef` to an exact pull-request object while recording a shared GitHub login as explicitly non-authoritative transport metadata.
+
+`oracle-records` (layer 4) carries the Oracle research contract: a `ResearchRequest`, an `OracleContextBinding`, a `SourceRecord` and a `SourceCitation`. It sits above `run` because a context binding REFERENCES an existing `ContextManifest` by digest instead of restating it, and `resolveContextBinding` recomputes that digest from the manifest's own bytes — a digest nothing recomputes is a field, not an identity. Its central idea is the envelope/payload split described under `ResearchRequest` below.
 
 `worker-capabilities` (layer 4) answers a different question: what can THIS worker's adapter actually honour? A `WorkerDeclaration` carries a closed `CapabilityMatrix`; the trust level (`inventoried → observed → supervised → governed → assured`) is derived from the matrix, never trusted from the declaration, and a declaration that claims more than it demonstrates is rejected. A UI renders `renderableRemoteCommands(matrix, role)` — the adapter axis intersected with what remote-protocol lets the role issue — and nothing else, so a control is never shown that the system cannot enforce.
 
@@ -286,6 +288,190 @@ const binding: SessionBinding = {
 
 const result = validateSessionBinding(binding);
 // Valid: true
+```
+
+### ResearchRequest
+
+An admitted Oracle research request. Its one structural idea is worth more than its field list: the record is TWO disjoint subtrees. `hostResolved`, and every field of the envelope itself, is written by the attesting component; `payload` is everything a model or a requester wrote. There is no third place.
+
+That split is enforced three ways, and each fails independently. `ModelAuthored<T>` maps any authority-bearing key name in a payload type to `never`, so a payload declaring one does not compile. `validateAttestedEnvelope` walks the whole payload subtree at runtime and refuses an authority-bearing key **by name**, at any depth, with its own `authority_field_in_model_payload` code — because the compiler is not present when JSON arrives from a model. And the same field name is ACCEPTED on the envelope, which is what makes this a rule about who resolved the value rather than a rule about spelling.
+
+```typescript
+import { toUserId, toWorkerId } from "@getsimpledirect/vinci-contracts";
+import {
+  admitResearchRequest,
+  researchRequestDigest,
+  validateResearchRequest,
+  type ResearchRequest,
+} from "@getsimpledirect/vinci-oracle-records";
+
+const request: ResearchRequest = {
+  schemaVersion: 1,
+  envelopeKind: "oracle_research_request",
+  // Everything from here to `attestedBy` is host-resolved. A model proposes
+  // none of it, and cannot: see the payload below.
+  workspaceRef: "ws-institutional-1",
+  principal: { kind: "worker", workerId: toWorkerId("worker-oracle-1")! },
+  runRef: "run-oracle-1",
+  workOrderRef: "wo-oracle-1",
+  policyRef: "policy.oracle.research",
+  policyVersion: 3,
+  grantRefs: ["grant-read-institutional"],
+  // Required KEY, nullable VALUE: absent means the budget was never
+  // considered, null means it was considered and there is none.
+  budgetReservationRef: "budget-reservation-7",
+  contextManifestDigest: "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  issuedAt: "2026-09-06T12:00:00.000Z",
+  attestedBy: { component: "oracle-admission-host", version: "1.4.0" },
+  hostResolved: {
+    requestId: "oracle-request-1",
+    originatingEventRef: null,
+    missionOwner: { kind: "user", userId: toUserId("owner-1")! },
+    intendedRecipient: { kind: "worker", workerId: toWorkerId("worker-oracle-1")! },
+    // Scope is a POLICY INTERSECTION, not a model choice, which is why it
+    // lives here and why a payload cannot express it at all.
+    scope: {
+      repositoryRefs: ["repo:vinci-contracts@365fe6ce"],
+      evidenceRefs: [],
+      exclusions: ["personal_data", "credentials"],
+      taskClass: "source_verification",
+    },
+    // Every member of ORACLE_PROPOSE_SCOPES is advisory. INV-01 is the
+    // vocabulary, not a comment.
+    authority: { readScope: "request_scope_only", proposeScope: "advisory_only" },
+    contextSnapshotRefs: [],
+    effort: {
+      mode: "investigation",
+      maxWallSeconds: 900,
+      maxToolCalls: 40,
+      maxBytes: 4_000_000,
+      maxTokens: 200_000,
+      budgetMicrousd: 0, // zero is a value: this request may spend nothing
+      attentionBudget: { interruptions: 1, decisions: 0 },
+      explorationPortfolioRef: null,
+    },
+    lineage: {
+      parentInvestigationRef: null,
+      childRelationship: "none",
+      idempotencyKey: "idem-oracle-1",
+      version: 1,
+    },
+    // REQ-02: a NONCRITICAL detail the requester omitted is carried as a
+    // labeled assumption. Authority, identity, protected-data scope and the
+    // essential decision parameters cannot be assumed even here.
+    admissionAssumptions: [
+      {
+        about: "/payload/freshness/asOfCutoff",
+        assumed: "No cutoff was stated, so the question is read as current.",
+        basis: "ratified_default",
+      },
+    ],
+  },
+  payload: {
+    decisionToInform: "Choose the smallest change needed for truthful source reading.",
+    question: "Can the reader distinguish a complete section from a search snippet?",
+    requiredOutput: ["claim_level_evidence", "material_unknowns"],
+    consequenceOfNoAnswer: "Four read outcomes ship collapsed into one.",
+    freshness: { horizon: "current", asOfCutoff: null, mandatoryRechecks: [] },
+    completion: {
+      acceptanceCriteria: ["Each read outcome is distinguishable from the record alone."],
+      stopConditions: ["decision_has_sufficient_evidence"],
+      deliveryDestination: "run-oracle-1/report",
+    },
+    // Adding `policyRef` here would not compile: ModelAuthored maps it to
+    // `never`. Arriving over the wire, it is refused as
+    // authority_field_in_model_payload rather than as an unknown field.
+  },
+};
+
+const result = validateResearchRequest(request);
+// Valid: true
+
+// ADMITTED means admitted to RESEARCH. It is not approval to execute whatever
+// the research eventually recommends.
+const admission = admitResearchRequest(request);
+// admission.outcome === "ADMITTED"
+
+// REQ-03: the digest covers the WHOLE record, so reusing an idempotency key
+// after the scope was widened is a named conflict, not the same request.
+const digest = researchRequestDigest(request);
+```
+
+### SourceRecord
+
+What was actually observed, and how far that observation reaches. A failed read is a typed result rather than a success record with empty text, and `FULL_REQUESTED_RANGE` never means "the whole document" unless the request was for the whole document.
+
+```typescript
+import {
+  deliveredHandle,
+  resolveCitations,
+  validateSourceRecord,
+  type SourceRecord,
+} from "@getsimpledirect/vinci-oracle-records";
+
+const unreadable: SourceRecord = {
+  schemaVersion: 1,
+  sourceId: "oracle-source-3",
+  requestRef: "oracle-request-1",
+  runRef: "run-oracle-1",
+  workspaceRef: "ws-institutional-1",
+  sourceKind: "web_document",
+  // Presentation numbering is a rendering artefact and is not a reference.
+  presentationIndex: null,
+  origin: {
+    locator: "https://example.invalid/sealed.pdf",
+    repositoryId: null,
+    repositoryPath: null,
+    repositoryRevision: null,
+    publisher: null,
+  },
+  // Four times, four different facts. Each is set only when actually known.
+  time: {
+    retrievedAt: "2026-09-06T11:47:00.000Z",
+    publishedAt: null,
+    updatedAt: null,
+    eventAt: null,
+  },
+  observation: {
+    mode: "INDEPENDENT_RETRIEVAL",
+    adapterVersion: "http-read/3.0.0",
+    contentType: "application/pdf",
+    encoding: "binary",
+    observedBytesDigest: "3d".repeat(32),
+    retrievedRange: null,
+    retrievalCostMicrousd: null,
+  },
+  requestedRange: { kind: "entire_document" },
+  completeness: "NOT_OBTAINED",
+  // null, not false: nothing was obtained, so the question has no answer.
+  coversEntireDocument: null,
+  readOutcome: "UNSUPPORTED_FORMAT",
+  matchState: "NOT_SEARCHED",
+  // Null exactly when the read obtained nothing. An empty text here is the
+  // shape SRC-04 exists to refuse.
+  content: null,
+  limitations: ["unsupported_format"],
+  policy: {
+    classification: "public",
+    permittedAudiences: ["institutional_workspace"],
+    retentionRule: "retention:days_90",
+    researchUse: "permitted",
+    // A third state, distinct from permitted and prohibited: nobody looked.
+    trainingUse: "unknown",
+  },
+  relationships: [],
+};
+
+const parsed = validateSourceRecord(unreadable);
+// Valid: true — a failed read is a record, not an error
+
+// A model may cite only a source it was actually handed. An invented id, an
+// id from another run or workspace, and the presentation NUMBER each get
+// their own refusal code.
+if (parsed.ok) {
+  const resolution = resolveCitations([], [deliveredHandle(parsed.value)]);
+  // resolution.outcome === "RESOLVED"
+}
 ```
 
 ## Handling Validation Failures

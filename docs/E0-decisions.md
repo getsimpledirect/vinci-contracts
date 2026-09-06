@@ -89,8 +89,8 @@ the local state authoritative.
 
 ## D2 — Package graph is acyclic, with one base
 
-§16 names nine packages. Their dependency direction is fixed here so that no
-consumer can create a cycle:
+§16 names nine packages, and the tree has since grown past them. Their
+dependency direction is fixed here so that no consumer can create a cycle:
 
 ```text
                          @getsimpledirect/vinci-contracts          (no dependencies)
@@ -109,7 +109,7 @@ consumer can create a cycle:
 
                     remote-protocol
                            |       |
-                    session-stream worker-capabilities
+                    session-stream worker-capabilities   oracle-records
 ```
 
 `@getsimpledirect/vinci-contracts` holds only what every other package needs: identifier types,
@@ -141,6 +141,18 @@ upward dependency of the durable run-event package.
 `worker-capabilities` also sits above `remote-protocol`: it projects the
 authority vocabulary into the controls an adapter can actually enforce. It is
 beside, and does not depend on, `session-stream`.
+
+`oracle-records` (the Oracle research contract: request, context binding, source
+record and citation) sits at layer 4 because it depends on `run`. That
+dependency is not incidental and is the reason the package is not lower: an
+Oracle context binding REFERENCES an existing `ContextManifest` by digest rather
+than restating it, and `resolveContextBinding` recomputes that digest from the
+manifest's own bytes. A digest is a claim about identity, and a claim nothing
+recomputes is a field. CON-01 in the Oracle requirements says new records extend
+the system rather than duplicating it; the `ContextManifest` this package binds
+to is `frozen`, so binding to it was the only option that did not fork the
+record. It is beside, and does not depend on, `session-stream` or
+`worker-capabilities`.
 
 ## D3 — Every schema carries its own compatibility contract
 

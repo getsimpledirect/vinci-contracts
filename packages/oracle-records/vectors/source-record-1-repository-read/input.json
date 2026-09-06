@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "oracle-source-1",
+  "requestRef": "oracle-request-1",
+  "runRef": "run-oracle-1",
+  "workspaceRef": "ws-institutional-1",
+  "sourceKind": "repository_file",
+  "presentationIndex": 1,
+  "origin": {
+    "locator": "repo:vinci-contracts/packages/run/src/context-manifest.ts",
+    "repositoryId": "vinci-contracts",
+    "repositoryPath": "packages/run/src/context-manifest.ts",
+    "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+    "publisher": null
+  },
+  "time": {
+    "retrievedAt": "2026-09-06T11:42:00.000Z",
+    "publishedAt": null,
+    "updatedAt": null,
+    "eventAt": null
+  },
+  "observation": {
+    "mode": "INDEPENDENT_RETRIEVAL",
+    "adapterVersion": "git-read/1.2.0",
+    "contentType": "text/x-typescript",
+    "encoding": "utf-8",
+    "observedBytesDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+    "retrievedRange": "lines 1-172",
+    "retrievalCostMicrousd": 0
+  },
+  "requestedRange": {
+    "kind": "line_range",
+    "startLine": 1,
+    "endLine": 172
+  },
+  "completeness": "FULL_REQUESTED_RANGE",
+  "coversEntireDocument": false,
+  "readOutcome": "READ_COMPLETE",
+  "matchState": "MATCHED",
+  "content": {
+    "rawArtifactRef": "artifact-raw-1",
+    "rawDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+    "extractedArtifactRef": "artifact-extracted-1",
+    "extractedDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+    "extractionVersion": "text-extract/0.9.1",
+    "textOffsets": {
+      "startOffset": 0,
+      "endOffset": 6144
+    },
+    "pageLocations": []
+  },
+  "limitations": [],
+  "policy": {
+    "classification": "internal",
+    "permittedAudiences": [
+      "institutional_workspace"
+    ],
+    "retentionRule": "retention:days_90",
+    "researchUse": "permitted",
+    "trainingUse": "unknown"
+  },
+  "relationships": []
+}

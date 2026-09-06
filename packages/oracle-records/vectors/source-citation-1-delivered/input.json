@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "envelopeKind": "oracle_source_citation",
+  "workspaceRef": "ws-institutional-1",
+  "principal": {
+    "kind": "worker",
+    "workerId": "worker-oracle-1"
+  },
+  "runRef": "run-oracle-1",
+  "workOrderRef": "wo-oracle-1",
+  "policyRef": "policy.oracle.research",
+  "policyVersion": 3,
+  "grantRefs": [
+    "grant-read-institutional"
+  ],
+  "budgetReservationRef": null,
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "issuedAt": "2026-09-06T12:05:00.000Z",
+  "attestedBy": {
+    "component": "oracle-report-host",
+    "version": "1.4.0"
+  },
+  "hostResolved": {
+    "citationId": "oracle-citation-1",
+    "appearsInRef": "oracle-report-1#findings/0"
+  },
+  "payload": {
+    "sourceId": "oracle-source-1",
+    "quotedSpan": {
+      "startOffset": 120,
+      "endOffset": 480
+    },
+    "offeredFor": "The manifest requires a trust label on every entry."
+  }
+}

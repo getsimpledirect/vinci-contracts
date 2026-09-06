@@ -77,6 +77,68 @@ function hostileInputs() {
  *
  * Add a guard here when you export one. The registry is the contract.
  */
+/**
+ * One committed Oracle vector, by directory name.
+ *
+ * The oracle-records guards below need a WHOLE valid research request, and a
+ * copy of one typed into this file would be a second definition of the contract
+ * that drifts the moment the schema moves. Reading the committed vector means
+ * the positive control below runs against the same bytes the cross-language
+ * suite pins, so a schema change breaks this check loudly instead of leaving it
+ * asserting something about a record shape that no longer exists.
+ */
+function oracleVector(name) {
+  return JSON.parse(
+    readFileSync(join(root, "packages", "oracle-records", "vectors", name, "input.json"), "utf8"),
+  );
+}
+
+/** Deep clone with ONE field replaced at a JSON pointer. */
+function oracleWithout(value, pointer) {
+  const copy = JSON.parse(JSON.stringify(value));
+  const segments = pointer.split("/").slice(1);
+  const last = segments.pop();
+  let node = copy;
+  for (const segment of segments) node = node[segment];
+  delete node[last];
+  return copy;
+}
+
+const ORACLE_REQUEST = oracleVector("research-request-1-admitted");
+const ORACLE_CITATION = oracleVector("source-citation-1-delivered");
+const ORACLE_SOURCE = oracleVector("source-record-1-repository-read");
+const ORACLE_HANDLES = [
+  {
+    sourceId: ORACLE_SOURCE.sourceId,
+    runRef: ORACLE_SOURCE.runRef,
+    workspaceRef: ORACLE_SOURCE.workspaceRef,
+    presentationIndex: ORACLE_SOURCE.presentationIndex,
+  },
+];
+const ORACLE_BINDING = oracleVector("context-binding-1-complete");
+const ORACLE_MANIFEST = JSON.parse(
+  readFileSync(
+    join(root, "packages", "oracle-records", "vectors", "bound-context-manifest.json"),
+    "utf8",
+  ),
+);
+/**
+ * The identity an admission host would have stored for ORACLE_REQUEST.
+ *
+ * `requestDigest` is deliberately NOT computed here: a control that derives the
+ * expected digest from the function under test would agree with it however
+ * wrong both were. It is the pinned digest from the committed vector.
+ */
+const ORACLE_PRIOR_IDENTITY = {
+  schemaVersion: 1,
+  idempotencyKey: ORACLE_REQUEST.hostResolved.lineage.idempotencyKey,
+  requestId: ORACLE_REQUEST.hostResolved.requestId,
+  requestDigest: readFileSync(
+    join(root, "packages", "oracle-records", "vectors", "research-request-1-admitted", "digest.txt"),
+    "utf8",
+  ).trim(),
+};
+
 const AUTHORITY_GUARDS = [
   {
     pkg: "@getsimpledirect/vinci-device-auth",
@@ -754,6 +816,94 @@ const AUTHORITY_GUARDS = [
         && fn(attestation, "2026-08-24T00:00:00.000Z").length === 0;
     },
   },
+  // --- oracle-records ------------------------------------------------------
+  //
+  // Four decisions this package makes that a hostile input must never be able
+  // to win. Each `call` reduces the outcome union to the ONE arm that grants
+  // something, so a refusal reads as `false` to the probe above; each `control`
+  // proves both that the legitimate operation still works and that the guard
+  // says no to a specific, legitimate-looking wrong answer. A guard that
+  // refused everything would satisfy the hostile probes and fail its control.
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "admitResearchRequest",
+    label: "admitResearchRequest(draft).outcome === ADMITTED",
+    call: (fn, hostile) => fn(hostile).outcome === "ADMITTED",
+    control: (fn) =>
+      fn(ORACLE_REQUEST).outcome === "ADMITTED"
+      && fn(oracleWithout(ORACLE_REQUEST, "/policyRef")).outcome === "INCOMPLETE"
+      && fn(oracleWithout(ORACLE_REQUEST, "/hostResolved/missionOwner")).outcome === "INCOMPLETE",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveIdempotency",
+    label: "resolveIdempotency(hostile prior, request).outcome === SAME_REQUEST",
+    call: (fn, hostile) => fn(hostile, ORACLE_REQUEST).outcome === "SAME_REQUEST",
+    control: (fn) =>
+      fn(ORACLE_PRIOR_IDENTITY, ORACLE_REQUEST).outcome === "SAME_REQUEST"
+      && fn({ ...ORACLE_PRIOR_IDENTITY, requestDigest: "0".repeat(64) }, ORACLE_REQUEST).outcome
+        === "KEY_CONFLICT",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveIdempotency",
+    label: "resolveIdempotency(prior, hostile request).outcome === SAME_REQUEST",
+    call: (fn, hostile) => fn(ORACLE_PRIOR_IDENTITY, hostile).outcome === "SAME_REQUEST",
+    control: (fn) =>
+      fn(ORACLE_PRIOR_IDENTITY, ORACLE_REQUEST).outcome === "SAME_REQUEST"
+      && fn(ORACLE_PRIOR_IDENTITY, { ...ORACLE_REQUEST, workspaceRef: "ws-somebody-else" }).outcome
+        === "KEY_CONFLICT",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveCitations",
+    label: "resolveCitations(hostile citations, delivered).outcome === RESOLVED",
+    call: (fn, hostile) => fn(hostile, ORACLE_HANDLES).outcome === "RESOLVED",
+    control: (fn) =>
+      fn([ORACLE_CITATION], ORACLE_HANDLES).outcome === "RESOLVED"
+      && fn(
+        [{ ...ORACLE_CITATION, payload: { ...ORACLE_CITATION.payload, sourceId: "oracle-source-99" } }],
+        ORACLE_HANDLES,
+      ).outcome === "UNRESOLVED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveCitations",
+    label: "resolveCitations(citations, hostile delivered).outcome === RESOLVED",
+    call: (fn, hostile) => fn([ORACLE_CITATION], hostile).outcome === "RESOLVED",
+    control: (fn) =>
+      fn([ORACLE_CITATION], ORACLE_HANDLES).outcome === "RESOLVED"
+      && fn([ORACLE_CITATION], [{ ...ORACLE_HANDLES[0], runRef: "run-somebody-else" }]).outcome
+        === "UNRESOLVED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveContextBinding",
+    label: "resolveContextBinding(hostile binding, manifest).outcome === BOUND",
+    call: (fn, hostile) => fn(hostile, ORACLE_MANIFEST).outcome === "BOUND",
+    control: (fn) =>
+      fn(ORACLE_BINDING, ORACLE_MANIFEST).outcome === "BOUND"
+      && fn({ ...ORACLE_BINDING, contextManifestDigest: "0".repeat(64) }, ORACLE_MANIFEST).outcome
+        === "MANIFEST_MISMATCH",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveContextBinding",
+    label: "resolveContextBinding(binding, hostile manifest).outcome === BOUND",
+    call: (fn, hostile) => fn(ORACLE_BINDING, hostile).outcome === "BOUND",
+    control: (fn) =>
+      fn(ORACLE_BINDING, ORACLE_MANIFEST).outcome === "BOUND"
+      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: 7 }).outcome === "REFUSED"
+      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: "run-somebody-else" }).outcome
+        === "MANIFEST_MISMATCH",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "isSupportedSchemaVersion",
+    label: "isSupportedSchemaVersion(version)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) => fn(1) === true && fn(2) === false && fn("1") === false,
+  },
 ];
 
 /**
@@ -779,6 +929,14 @@ const AUTHORITY_GUARDS = [
  */
 const REQUIRED_GUARDS = [
   "isCredentialActiveAt(credential, at)",
+  "admitResearchRequest(draft).outcome === ADMITTED",
+  "resolveIdempotency(hostile prior, request).outcome === SAME_REQUEST",
+  "resolveIdempotency(prior, hostile request).outcome === SAME_REQUEST",
+  "resolveCitations(hostile citations, delivered).outcome === RESOLVED",
+  "resolveCitations(citations, hostile delivered).outcome === RESOLVED",
+  "resolveContextBinding(hostile binding, manifest).outcome === BOUND",
+  "resolveContextBinding(binding, hostile manifest).outcome === BOUND",
+  "isSupportedSchemaVersion(version)",
   "isKeyUsableAt(entry with hostile status, now, role)",
   "isKeyUsableAt(entry with hostile role, now, role)",
   "isKeyUsableAt(entry, now, hostile role)",
@@ -978,6 +1136,22 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-run.sha256Hex": "pure hash of a string; no input shape can make it answer a question",
   "@getsimpledirect/vinci-run.projectRunState": "projection over an already-validated event log: it reports a state and any anomalies, and grants nothing. Its refusal behaviour (TERMINAL is absorbing; a later event is reported, not folded away) is covered by src/run.test.ts",
   "@getsimpledirect/vinci-run.terminalEvidenceMissing": "projection over an already-validated event log: it reports which announced artifacts were never persisted. It withholds nothing and permits nothing",
+  // vinci-oracle-records. The four digest functions and their two helpers are
+  // IDENTITY, not authority, on the same terms as vinci-run's: each validates
+  // first and THROWS rather than digesting an invalid record. The four
+  // DECISIONS this package makes -- admission, idempotency, citation
+  // resolution and manifest binding -- are probed in AUTHORITY_GUARDS above,
+  // in every argument position, each with a positive control.
+  "@getsimpledirect/vinci-oracle-records.attestedEnvelopeDigest": "identity, not authority: validates and throws rather than digesting an invalid envelope",
+  "@getsimpledirect/vinci-oracle-records.researchRequestDigest": "identity, not authority: validates and throws rather than digesting an invalid request. What an admitted request MEANS is decided by admitResearchRequest, which is probed",
+  "@getsimpledirect/vinci-oracle-records.oracleContextBindingDigest": "identity, not authority: validates and throws rather than digesting an invalid context binding",
+  "@getsimpledirect/vinci-oracle-records.sourceRecordDigest": "identity, not authority: validates and throws rather than digesting an invalid source record",
+  "@getsimpledirect/vinci-oracle-records.sourceCitationDigest": "identity, not authority: validates and throws rather than digesting an invalid citation. Whether that citation RESOLVES is decided by resolveCitations, which is probed",
+  "@getsimpledirect/vinci-oracle-records.digestValidated": "takes an already-computed ValidationResult and throws unless it is ok; the shared body of the digest functions above, not a decision of its own",
+  "@getsimpledirect/vinci-oracle-records.sha256Hex": "pure hash of a string; no input shape can make it answer a question",
+  "@getsimpledirect/vinci-oracle-records.deliveredHandle": "projection over an already-validated source record: it copies the four identity fields a citation may refer to and grants nothing. Whether a handle resolves is resolveCitations' decision",
+  "@getsimpledirect/vinci-oracle-records.parseOracleRecordJson": "strict JSON ingress returning a ValidationResult; it decides only whether a document is unambiguous, and every record it produces still goes through a probed validator",
+  "@getsimpledirect/vinci-oracle-records.checkSchemaVersion": "appends an issue to a caller-supplied array and returns nothing; it cannot answer yes. The question it asks is exported as isSupportedSchemaVersion, which IS probed",
 };
 
 /**

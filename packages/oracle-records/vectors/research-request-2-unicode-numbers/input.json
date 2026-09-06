@@ -1,0 +1,112 @@
+{
+  "schemaVersion": 1,
+  "envelopeKind": "oracle_research_request",
+  "workspaceRef": "ws-institutional-1",
+  "principal": {
+    "kind": "worker",
+    "workerId": "worker-oracle-1"
+  },
+  "runRef": "run-oracle-1",
+  "workOrderRef": "wo-oracle-1",
+  "policyRef": "policy.oracle.research",
+  "policyVersion": 1,
+  "grantRefs": [
+    "grant-read-institutional",
+    "grant-propose-advisory"
+  ],
+  "budgetReservationRef": "budget-reservation-7",
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "issuedAt": "2026-09-06T12:00:00.000Z",
+  "attestedBy": {
+    "component": "oracle-admission-host",
+    "version": "1.4.0"
+  },
+  "hostResolved": {
+    "requestId": "oracle-request-2",
+    "originatingEventRef": "run-event-114",
+    "missionOwner": {
+      "kind": "user",
+      "userId": "owner-1"
+    },
+    "intendedRecipient": {
+      "kind": "worker",
+      "workerId": "worker-oracle-1"
+    },
+    "scope": {
+      "repositoryRefs": [
+        "repo:vinci-contracts@365fe6ce"
+      ],
+      "evidenceRefs": [
+        "evidence-dev-441"
+      ],
+      "exclusions": [
+        "personal_data",
+        "sealed_evaluation",
+        "credentials"
+      ],
+      "taskClass": "source_verification"
+    },
+    "authority": {
+      "readScope": "request_scope_only",
+      "proposeScope": "advisory_only"
+    },
+    "contextSnapshotRefs": [
+      "snapshot-context-1"
+    ],
+    "effort": {
+      "mode": "investigation",
+      "maxWallSeconds": 1,
+      "maxToolCalls": 1,
+      "maxBytes": 9007199254740991,
+      "maxTokens": 1,
+      "budgetMicrousd": 0,
+      "attentionBudget": {
+        "interruptions": 0,
+        "decisions": 0
+      },
+      "explorationPortfolioRef": null
+    },
+    "lineage": {
+      "parentInvestigationRef": null,
+      "childRelationship": "none",
+      "idempotencyKey": "idem-oracle-2",
+      "version": 1
+    },
+    "admissionAssumptions": [
+      {
+        "about": "/payload/freshness/asOfCutoff",
+        "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+        "basis": "ratified_default"
+      }
+    ]
+  },
+  "payload": {
+    "decisionToInform": "Decide whether the canonicalizer agrees across languages on \u0001 control characters, a backslash \\, a quote \", and a tab\there.",
+    "question": "Do 𝄞 (astral plane), é (combining acute), é (precomposed), עברית (right-to-left), 👩‍🔬 (a ZWJ sequence) and ﻿ (a byte-order mark) survive both encoders?",
+    "requiredOutput": [
+      "claim_level_evidence",
+      "material_unknowns",
+      "alternatives_including_no_change",
+      "bounded_proposal",
+      "falsification_test"
+    ],
+    "consequenceOfNoAnswer": "Two implementations disagree by a byte and neither can verify the other's records.",
+    "freshness": {
+      "horizon": "current",
+      "asOfCutoff": null,
+      "mandatoryRechecks": [
+        "repo:vinci-contracts@365fe6ce"
+      ]
+    },
+    "completion": {
+      "acceptanceCriteria": [
+        "The Python and TypeScript encoders produce identical bytes for every string above."
+      ],
+      "stopConditions": [
+        "decision_has_sufficient_evidence",
+        "approved_budget_or_deadline_reached"
+      ],
+      "deliveryDestination": "run-oracle-1/report—unicode"
+    }
+  }
+}

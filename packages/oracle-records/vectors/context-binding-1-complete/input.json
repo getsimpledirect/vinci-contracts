@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "bindingId": "oracle-context-binding-1",
+  "runRef": "run-oracle-1",
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "compiledAt": "2026-09-06T11:59:00.000Z",
+  "compilerVersion": "oracle-context-compiler/2.1.0",
+  "completeness": "CONTEXT_COMPLETE",
+  "missionRefs": [
+    "mission-truthful-source-reading"
+  ],
+  "ratifiedPolicyRefs": [
+    "policy.oracle.research@3"
+  ],
+  "observationWindow": {
+    "startedAt": "2026-09-06T11:40:00.000Z",
+    "endedAt": "2026-09-06T11:58:00.000Z"
+  },
+  "revisionVector": [
+    {
+      "repositoryId": "vinci-contracts",
+      "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+      "revisionKind": "git_object_id",
+      "observedAt": "2026-09-06T11:41:00.000Z"
+    },
+    {
+      "repositoryId": "vinci-gpu-control",
+      "revision": "snapshot-2026-09-06T11:57Z",
+      "revisionKind": "api_snapshot_id",
+      "observedAt": "2026-09-06T11:57:00.000Z"
+    }
+  ],
+  "unavailableSections": [
+    {
+      "section": "institutional_state/ledger",
+      "reason": "access_denied",
+      "detail": "The ledger service refused the read; the binding records the gap rather than an empty section."
+    }
+  ],
+  "dataClassifications": [
+    {
+      "ref": "repo:vinci-contracts@365fe6ce",
+      "classification": "internal"
+    },
+    {
+      "ref": "evidence-dev-441",
+      "classification": "confidential"
+    }
+  ],
+  "publicBriefRef": "public-brief-source-reading",
+  "selectionDecisions": [
+    {
+      "ref": "repo:vinci-contracts@365fe6ce/README.md",
+      "decision": "included_truncated",
+      "reason": "Only the layering section bears on the question; the remainder was dropped to fit."
+    }
+  ],
+  "droppedMandatoryConstraints": [],
+  "omittedCriticalContradictions": []
+}
