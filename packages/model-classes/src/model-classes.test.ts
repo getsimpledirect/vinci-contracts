@@ -1360,46 +1360,56 @@ describe("role selection", () => {
     // selectForRole does not attest. Absence of that attestation withholds
     // eligibility instead of granting it.
     //
-    // vinci-hosted-qwen3-8-27b lands in ineligible here, but NOT for a harness reason
-    // and NOT for retention. Its outputRetainedByProvider is known(false) -- there is no
-    // third-party inference provider in its path to retain anything -- so it actually
-    // SATISFIES this role's outputRetentionAllowed: false, unlike the other unevaluable
-    // lanes above whose retention is genuinely unresolved. It still lands in ineligible
-    // because it has a real, independently declared capabilityProfile.contextLimit of
-    // 32768, below this role's minimumContextTokens of 64_000, which is a hard "no" on
-    // its own, unrelated to retention. See the dedicated "Vinci-hosted Qwen endpoint
-    // retention eligibility" tests below for a fixture that isolates the retention
-    // question from this unrelated, already-declared context ceiling.
+    // vinci-hosted-qwen3-8-27b USED TO land in ineligible here (context limit 32768
+    // below this role's 64_000 minimumContextTokens, a hard "no" unrelated to
+    // retention). As of 2026-09-07 this lane independently measured the endpoint's
+    // real context ceiling at 262144 (registry.ts's contextLimit comment) -- Ayush
+    // upgraded it, 8x -- so that hard "no" is gone: 262144 >= 64_000.
+    //
+    // It moves to unevaluable, not eligible, joining the other four lanes here for
+    // the SAME reason they are here: this role also requires repository_editing and
+    // long_horizon_recovery from the HARNESS (see the comment at the top of this
+    // block), which selectForRole never attests, and that gap alone -- with no other
+    // classified reason left standing -- resolves to unevaluable rather than
+    // eligible or ineligible. Its outputRetainedByProvider is known(false) -- there
+    // is no third-party inference provider in its path to retain anything -- so it
+    // actually SATISFIES this role's outputRetentionAllowed: false and contributes no
+    // reason of its own. Context has ceased to be the limiting factor for this
+    // endpoint on this role; the harness-attestation gap is what is left. See the
+    // dedicated "Vinci-hosted Qwen endpoint retention eligibility" tests below for a
+    // fixture that isolates the retention question from both confounds.
     expect(endpointIds(selections["mle-implementation-worker"].eligible)).toEqual([]);
     expect(endpointIds(selections["mle-implementation-worker"].unevaluable)).toEqual([
       "forte-deepinfra",
       "forte-fireworks",
       "mezzo-deepinfra",
       "fortissimo-fireworks",
+      "vinci-hosted-qwen3-8-27b",
     ]);
     expect(endpointIds(selections["mle-implementation-worker"].ineligible)).toEqual([
       "vision-deepinfra",
       "vision-openrouter",
-      "vinci-hosted-qwen3-8-27b",
     ]);
 
     // adversarial-reviewer requires evidence_citation from the HARNESS. Splitting the
     // field out of requiredCapabilities removed it from the endpoint check; it must not
     // also remove it from enforcement, so these lanes are unevaluable, not eligible.
     //
-    // vinci-hosted-qwen3-8-27b again lands in ineligible for the same context-limit reason
-    // as above (this role also requires 64_000 minimumContextTokens).
+    // vinci-hosted-qwen3-8-27b moves here too, for the same reason as above: its real
+    // context ceiling is now 262144 (measured 2026-09-07), above this role's 64_000
+    // minimumContextTokens, so the only classified reason left is the unattested
+    // evidence_citation harness capability -- unevaluable, not ineligible.
     expect(endpointIds(selections["adversarial-reviewer"].eligible)).toEqual([]);
     expect(endpointIds(selections["adversarial-reviewer"].unevaluable)).toEqual([
       "forte-deepinfra",
       "forte-fireworks",
       "mezzo-deepinfra",
       "fortissimo-fireworks",
+      "vinci-hosted-qwen3-8-27b",
     ]);
     expect(endpointIds(selections["adversarial-reviewer"].ineligible)).toEqual([
       "vision-deepinfra",
       "vision-openrouter",
-      "vinci-hosted-qwen3-8-27b",
     ]);
 
     // cloud-worker requires no endpoint capabilities, no minimum context worth naming
@@ -1971,7 +1981,7 @@ describe("Vinci-hosted Qwen endpoint retention eligibility", () => {
   });
 
   it.each(["mle-implementation-worker", "adversarial-reviewer"] as const)(
-    "is NOT eligible for %s, for context reasons only -- retention is resolved and no longer blocks",
+    "is NOT eligible for %s -- context is no longer the reason, an unattested harness gap is",
     (roleId) => {
       const role = roleById(roleId);
       expect(role).toBeDefined();
@@ -1985,15 +1995,29 @@ describe("Vinci-hosted Qwen endpoint retention eligibility", () => {
       // read as eligible for them; now that outputRetainedByProvider is known(false),
       // retention is satisfied and must NOT appear anywhere in the reason list.
       expect(result.reasons.some((r) => r.code.startsWith("retention"))).toBe(false);
-      // It still lands ineligible, but purely on this endpoint's real, independently
-      // declared 32768-token context limit, below both roles' 64_000
-      // minimumContextTokens -- an honest, unrelated hard "no", not one this test
-      // papers over.
-      expect(result.verdict).toBe("ineligible");
-      expect(result.reasons).toContainEqual({
-        code: "context_too_small",
-        detail: `endpoint context limit 32768 is below required 64000`,
-      });
+      // Before 2026-09-07 this endpoint's declared context limit was 32768, below both
+      // roles' 64_000 minimumContextTokens -- a hard "no" that landed the verdict
+      // `ineligible` regardless of retention. This lane independently measured the
+      // endpoint's real context ceiling that day at 262144 (8x the old number, an
+      // upgrade, not a correction of a wrong reading -- see registry.ts's contextLimit
+      // comment), which clears both roles' floor. context_too_small must NOT appear
+      // anywhere in the reason list any more, and the verdict is no longer `ineligible`
+      // on that ground.
+      expect(result.reasons.some((r) => r.code === "context_too_small")).toBe(false);
+      // What is left: both roles also require harness capabilities
+      // (requiredHarnessCapabilities) that an inference endpoint cannot itself supply
+      // and that matchEndpointToRole was called here with no attestation for, so the
+      // honest verdict is `unevaluable` (a withheld eligibility), not `eligible` and not
+      // `ineligible`. This is the SAME reason forte-deepinfra and its siblings land in
+      // "unevaluable" for these two roles in the partition test above -- this endpoint
+      // now joins them for an unrelated-to-retention, unrelated-to-context reason.
+      expect(result.verdict).toBe("unevaluable");
+      expect(result.reasons).toEqual([
+        {
+          code: "harness_capabilities_unverified",
+          detail: `no readable harness attestation supplied for: ${role.requiredHarnessCapabilities.join(", ")}`,
+        },
+      ]);
     },
   );
 
@@ -2019,25 +2043,34 @@ describe("Vinci-hosted Qwen endpoint retention eligibility", () => {
     if (!telus) return;
 
     // Neither mle-implementation-worker nor adversarial-reviewer can serve as the
-    // discriminating role directly: both also require 64_000 minimumContextTokens,
-    // which this endpoint's real (already-declared, unrelated) 32768-token context
-    // limit fails independently of retention, and both require a harness capability
-    // this matcher can never confirm on its own. Reusing either production role here
-    // would leave a hard "no" standing regardless of retention, so the test could not
+    // discriminating role directly. Before 2026-09-07 BOTH also confounded on
+    // minimumContextTokens: 64_000, which this endpoint's then-declared 32768-token
+    // context limit failed independently of retention. This lane's 2026-09-07
+    // measurement (contextLimit now 262144, see registry.ts) retired that confound --
+    // it no longer explains why either production role stays non-eligible (see the
+    // it.each test above). But a SECOND, still-live confound remains: both roles also
+    // require a harness capability (repository_editing/long_horizon_recovery, or
+    // evidence_citation) that matchEndpointToRole can never confirm on its own, and
+    // that unattested gap alone forces `unevaluable` on every real endpoint in this
+    // registry for these two roles, regardless of what retention says. Reusing either
+    // production role here would still leave that gap standing, so the test could not
     // tell "eligibility changed because retention did" from "eligibility never changes
     // for this pair" -- exactly the vacuous-control failure mode this repository's
-    // review discipline calls out by name. So this is a minimal, purpose-built role
-    // fixture that shares the one property under test (outputRetentionAllowed: false)
-    // and is otherwise satisfied by telus as declared: no required endpoint
-    // capabilities beyond what telus declares, no required harness capabilities, and a
-    // context floor at telus's real 32768-token ceiling rather than above it.
+    // review discipline calls out by name. So the probe remains necessary: a minimal,
+    // purpose-built role fixture that shares the one property under test
+    // (outputRetentionAllowed: false) and is otherwise satisfied by telus as declared:
+    // no required endpoint capabilities beyond what telus declares, no required
+    // harness capabilities (closing the confound that still stands for the production
+    // roles), and a context floor pinned to telus's real, current context ceiling
+    // (262144, not merely "above" some smaller number) so a future regression in
+    // either field would surface here too, not just in the partition test.
     const retentionOnlyProbeRole: ModelRoleSpec = {
       schemaVersion: 1,
       roleId: "retention-only-probe",
       taskClass: "retention-only-probe",
       requiredCapabilities: ["structured_tool_use"],
       requiredHarnessCapabilities: [],
-      minimumContextTokens: 32_768,
+      minimumContextTokens: telus.capabilityProfile.contextLimit,
       riskClass: "medium",
       dataPolicy: {
         externalProviderAllowed: true,

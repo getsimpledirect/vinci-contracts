@@ -470,15 +470,23 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
  * (vinci_hosted, this endpoint's own `serving.kind`) and what is served,
  * which is what is actually true about this lane.
  *
- * PROVENANCE OF EVERY CAPABILITY FACT BELOW: reported to this lane by peer
- * sessions projects-e4 and projects-2a on 2026-09-06. NOT verified by this
- * lane -- neither this lane nor the author of this file has called this
- * endpoint. The credential lives at ~/.vinci-gpu/keys/telus-qwen.env, held by
- * a different lane, and was deliberately not opened to write this entry.
- * Nothing here should be read as first-hand observation, and no id here
- * (endpointId, credentialId) is a secret or a path to one. The topology
+ * PROVENANCE OF EVERY CAPABILITY FACT BELOW, WITH ONE EXCEPTION: reported to
+ * this lane by peer sessions projects-e4 and projects-2a on 2026-09-06. NOT
+ * verified by this lane -- neither this lane nor the author of this file has
+ * called this endpoint for capabilities, tool support, or the other declared
+ * capabilities below. The credential lives at ~/.vinci-gpu/keys/telus-qwen.env,
+ * held by a different lane, and was deliberately not opened to write this
+ * entry. Nothing here should be read as first-hand observation, and no id
+ * here (endpointId, credentialId) is a secret or a path to one. The topology
  * correction above changes who is in the inference path; it does not touch
- * these peer-reported capability numbers, which are unaffected either way.
+ * these peer-reported capability facts, which are unaffected either way.
+ *
+ * THE EXCEPTION: capabilityProfile.contextLimit. This lane independently
+ * called the endpoint's /v1/models listing on 2026-09-07 and measured
+ * max_model_len: 262144 directly (see that field's own comment for the
+ * detail and the operational facts that came with it). That number is
+ * first-hand for this lane; everything else in this entry remains
+ * peer-reported and unverified by it.
  *
  * NOT bound to any role (see role-registry.ts): the Oracle roles this
  * endpoint was reported for do not exist yet, and binding it to an existing
@@ -503,17 +511,41 @@ const telusQwenEndpoint: OpenWeightEndpoint = {
     // 2026-09-06): tool-calling and streaming were reported working against
     // the live endpoint over its OpenAI-compatible chat-completions API.
     // "text" is the one entry that needs no citation: every LLM supports it.
+    // Unlike contextLimit below, this lane's 2026-09-07 call only hit
+    // /v1/models to read the context ceiling -- it did not exercise
+    // tool-calling, structured output, or continuation, so those stay on
+    // peer attribution.
     capabilities: ["text", "tool_use"],
-    // PEER-REPORTED, NOT verified by this lane (projects-e4 / projects-2a,
-    // 2026-09-06): max_model_len 32768. Nobody on this lane called the
-    // endpoint's /v1/models listing or ran a request against it to confirm
-    // this number independently.
+    // FIRST-HAND, verified by THIS lane on 2026-09-07 against the live
+    // endpoint's own /v1/models listing (https://qwen3-8-27b-1fdds.paas.ai
+    // .telus.com/v1/models), which returned HTTP 200 with
+    // `id: Qwen/Qwen3.8-27B | max_model_len: 262144 | owned_by: vllm`. This
+    // supersedes the peer-reported 32768 recorded 2026-09-06 (projects-e4 /
+    // projects-2a) -- Ayush upgraded the endpoint, an 8x increase, not a
+    // correction of the earlier number. Unlike the capabilities and
+    // toolSupport fields below, this one qualifier is retired: it was
+    // re-run by this lane, not merely relayed.
     //
-    // Worth flagging for whoever binds this endpoint to a role later: 32768
-    // is a real, modest ceiling -- ample for bounded extraction or
-    // summarization, but the kind of limit that would bind before decision
-    // quality does on a task synthesizing many retrieved documents at once.
-    contextLimit: 32768,
+    // Same call surfaced two more operational facts, recorded here because
+    // there is nowhere else in this schema for them:
+    // (1) the stored credential returned HTTP 401 until it was rotated
+    //     today -- the upgrade came with a key rotation, not just a config
+    //     change;
+    // (2) the endpoint sits behind a Cloudflare WAF that returns HTTP 403
+    //     on some ordinary source content well within any size limit --
+    //     demonstrated with a single comment line containing
+    //     `` `cwd = job.get("cwd") or os.path.expanduser("~")`. `python -m ` ``
+    //     (blocked), while each token in it individually passes, and 100 KB
+    //     of filler passes fine. This is a WAF content trigger, not a model
+    //     or size limit, and it is a real constraint on what can be sent to
+    //     this endpoint for analysis.
+    //
+    // The ceiling this unblocks is a role-eligibility fact, not merely a
+    // number: see the "Vinci-hosted Qwen endpoint retention eligibility"
+    // describe block in model-classes.test.ts for what actually changed
+    // once 32768 stopped being the limiting factor for the 64k-minimum
+    // production roles.
+    contextLimit: 262144,
     // PEER-REPORTED, NOT verified by this lane. The schema requires a
     // boolean here and has no "reported but unmeasured" grade the way the
     // ExplicitValue-typed rights fields below do, so this records the peers'
