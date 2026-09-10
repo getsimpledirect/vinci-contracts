@@ -67,7 +67,9 @@ const result = validateEvidenceRecord(evidence);
 
 ### VerdictRecord
 
-An independent assessment of whether completed work satisfied its request. Binds the conclusion to the exact artifact evaluated via `snapshotDigest`, states what it covered via `scope`, and lists what was not tested. A verdict with an unscoped or floating assessment cannot be checked later, and cannot be distinguished from a stale one.
+An independent assessment of whether completed work satisfied its request. Names who concluded it via `issuedBy`, binds the conclusion to the exact artifact evaluated via `snapshotDigest`, states what it covered via `scope`, and lists what was not tested. A verdict with an unscoped or floating assessment cannot be checked later, and cannot be distinguished from a stale one; an unattributed one cannot be audited or disputed at all.
+
+`issuedBy` is an `Actor`, so a verifier that is not independent of the worker discloses that (FR-7.3) instead of being indistinguishable from one that is. It records the SHAPE of attribution and not proof of it: the actor is unsigned and self-declared, and binding an issuer to a key belongs to `device-auth` and `remote-protocol`.
 
 ```typescript
 import { toEvidenceId } from "@getsimpledirect/vinci-contracts";
@@ -77,8 +79,9 @@ import {
 } from "@getsimpledirect/vinci-evidence";
 
 const verdict: VerdictRecord = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   status: "VERIFIED_PASS",
+  issuedBy: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
   snapshotDigest: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
   summary: "All acceptance criteria supported by decisive evidence",
   scope: "Login endpoint with OAuth2 flow",

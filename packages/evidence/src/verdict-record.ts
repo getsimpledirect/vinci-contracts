@@ -8,8 +8,10 @@ import {
   isIdentifier,
   isNonBlankText,
   isStrictlyAfter,
+  plainActor,
   RISK_LEVELS,
   toPlainRecord,
+  type Actor,
   type EvidenceId,
   type RiskLevel,
   type SchemaMeta,
@@ -81,10 +83,45 @@ export type StalenessCondition = {
  * `snapshotDigest` binds the conclusion to the exact artifact evaluated. A
  * verdict that floats free of what it examined cannot be checked later, and
  * cannot be told apart from a stale one.
+ *
+ * `issuedBy` names WHO concluded it. Until version 2 this record had a scope, a
+ * disposition and a subject digest but no issuer: attribution existed one level
+ * down, on each `EvidenceRecord.attestation`, and on the harness
+ * (`HarnessAttestation.issuedBy`), and was DROPPED at exactly the point the
+ * items rolled up into the aggregate that states the conclusion. So the record
+ * a consumer actually relies on said what was checked and how it came out
+ * without saying whose word it was — and an unattributed verdict cannot be
+ * audited, disputed, or weighed by the one distinction §8.1 turns on, which is
+ * whether the issuer was the worker or someone independent of it.
+ *
+ * It is an `Actor` and not a `verifierId` string for the same reason
+ * `EvidenceRecord` uses one: the `verifier` arm carries `independent`, so a
+ * verifier that is NOT independent must disclose that (FR-7.3) rather than be
+ * indistinguishable from one that is. Reusing the union also means a worker
+ * issuing its own verdict is visible as `kind: "worker"` instead of hiding
+ * behind a free-text id that could say anything.
+ *
+ * This is the SHAPE of attribution, not proof of it. An `Actor` here is
+ * unsigned and self-declared; nothing in this record establishes that the named
+ * issuer is the one who actually ran the evaluation. Binding an issuer to a key
+ * is a separate concern that lives in `device-auth` and `remote-protocol`.
  */
 export type VerdictRecord = {
-  readonly schemaVersion: 1;
+  /**
+   * BUMPED to 2, because this schema's compatibility policy is `frozen` and a
+   * new field is a change. Frozen does not mean the shape may never change; it
+   * means it may not change WITHIN a major version. `HARNESS_ATTESTATION_SCHEMA_META`
+   * and `RUN_EVENT_SCHEMA_META` both set this precedent — bump and state the
+   * migration, rather than edit a frozen shape in place and leave every record
+   * already written claiming a `schemaVersion: 1` contract it does not satisfy.
+   */
+  readonly schemaVersion: 2;
   readonly status: VerdictStatus;
+  /**
+   * Who issued this verdict. Snapshotted through `plainActor`, so a proxy
+   * cannot answer one thing to the validator and another to the consumer.
+   */
+  readonly issuedBy: Actor;
   /** Exactly what was evaluated. */
   readonly snapshotDigest: string;
   readonly summary: string;
@@ -295,7 +332,7 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
   const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
 
   const known = new Set([
-    "schemaVersion", "status", "snapshotDigest", "summary", "scope", "criterionResults",
+    "schemaVersion", "status", "issuedBy", "snapshotDigest", "summary", "scope", "criterionResults",
     "decisiveEvidenceIds", "unresolvedConditions", "residualRisks", "notTested",
     "policyVersion", "evaluatorVersion", "issuedAt", "expiresAt", "staleWhen",
   ]);
@@ -303,7 +340,36 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
     if (!known.has(key)) add(`/${key}`, "unknown_field", "a verdict carries only its declared fields");
   }
 
-  if (record.schemaVersion !== 1) add("/schemaVersion", "invalid_schema_version", "this schema is version 1");
+  if (record.schemaVersion !== 2) add("/schemaVersion", "invalid_schema_version", "this schema is version 2");
+
+  // The issuer, through plainActor rather than a local shape check.
+  //
+  // plainActor is the single boundary this repository uses to decide "what is
+  // this actor", and going through it is what keeps the answer the validator
+  // reaches identical to the one a consumer reaches. A hand-rolled check here
+  // would be a SECOND view of the same value, which is the exact defect
+  // actor.ts documents at length: a proxy answered "worker" to reflection and
+  // "independent verifier" to serialization, and a worker was authorized to
+  // vouch for its own output.
+  //
+  // It also gets the per-arm rules for free — a verifier missing `independent`,
+  // an actor of an unknown kind, a worker carrying `independent: true`, and a
+  // blank identifier are all refused here without this file restating any of
+  // them and drifting from the definition.
+  const issuedBy: unknown = record.issuedBy;
+  if (typeof issuedBy !== "object" || issuedBy === null || Array.isArray(issuedBy)) {
+    // Separated from the plainActor call below so that a missing or non-object
+    // issuer reports "there is no issuer" rather than the more specific
+    // "this issuer is inconsistent", which would be a claim about a value that
+    // is not an actor at all.
+    add(
+      "/issuedBy",
+      "required_field",
+      "a verdict must name who issued it; an unattributed conclusion cannot be audited or disputed",
+    );
+  } else if (plainActor(issuedBy as Readonly<Record<string, unknown>>) === null) {
+    add("/issuedBy", "invalid_actor", "issuedBy must be a consistent actor");
+  }
   if (!isVerdictStatus(record.status)) {
     add("/status", "invalid_enum", "a verdict status is VERIFIED_PASS, CONDITIONAL or BLOCKED");
   }
@@ -502,9 +568,34 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
 
 export const VERDICT_RECORD_SCHEMA_META: SchemaMeta = {
   id: "vinci.verdict-record",
-  version: 1,
+  /**
+   * BUMPED to 2 by the addition of `issuedBy`.
+   *
+   * Under a `frozen` policy a new field is not an additive change that a
+   * version may absorb — frozen means no change within a major version. The
+   * alternative was to relax this record to `additive-only` so the field became
+   * legal, and that would be editing the rule to fit the change: the policy is
+   * `frozen` because a verdict is the artifact the commercial claim rests on,
+   * and a consumer must be able to know from `schemaVersion` alone exactly
+   * which fields a record was required to carry.
+   */
+  version: 2,
   compatibility: "frozen",
   unknownFields: "reject",
   malformedData: "fail-closed",
-  migration: "none",
+  /**
+   * REFUSED, not up-converted, and the missing fact is the whole reason.
+   *
+   * A v1 verdict does not record who issued it. There is no field to read it
+   * from and no safe default: `system` would attribute a human sign-off to a
+   * machine, and a `verifier` with `independent: true` would manufacture the
+   * exact disclosure FR-7.3 exists to force. Inventing an issuer for a record
+   * that never named one is worse than refusing it, because the invented issuer
+   * is indistinguishable from an observed one once written.
+   */
+  migration:
+    "v1 records remain readable by a v1 validator only; v2 adds a required issuedBy (Actor) naming who concluded "
+    + "the verdict, which v1 never recorded at the aggregate level; a v2 consumer refuses a v1 record on "
+    + "schemaVersion rather than up-converting it, because there is no field an issuer could be derived from and "
+    + "any default would fabricate an attribution — the issuer must be re-stated by whoever re-issues the verdict",
 };
