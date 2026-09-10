@@ -26,7 +26,7 @@ v2 replaces the delivery axis with an identity one: `installed_package | pinned_
 | `VerdictRecordV2` / `validateVerdictRecordV2` | version 2, with the required `issuer` |
 | `VerdictRecordAny` / `validateVerdictRecordAny` | either version, dispatched on the record's own `schemaVersion` |
 | `VERDICT_RECORD_V1_SCHEMA_META` / `VERDICT_RECORD_V2_SCHEMA_META` | one schema meta per live version |
-| `VerdictRecord` / `validateVerdictRecord` / `VERDICT_RECORD_SCHEMA_META` | **deprecated aliases, bound to version 1** |
+| `VerdictRecord` / `validateVerdictRecord` / `VERDICT_RECORD_SCHEMA_META` | **stable v1 compatibility exports; intentionally remain bound to v1** |
 
 The unversioned names stay on version 1 rather than following the newest version. Re-pointing them at v2 would have changed what existing code accepts without that code being touched — every stored v1 record silently rejected at runtime by an importer that never opted in. An unversioned name cannot track the newest version without doing that, so it does not try.
 

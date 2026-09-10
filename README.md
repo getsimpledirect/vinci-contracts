@@ -76,7 +76,7 @@ An independent assessment of whether completed work satisfied its request. Names
 | `VerdictRecordV1` / `validateVerdictRecordV1` | version 1, frozen and unchanged |
 | `VerdictRecordV2` / `validateVerdictRecordV2` | version 2, with the required `issuer` |
 | `VerdictRecordAny` / `validateVerdictRecordAny` | either, dispatched on the record's own `schemaVersion` |
-| `VerdictRecord` / `validateVerdictRecord` | deprecated aliases, **bound to version 1** |
+| `VerdictRecord` / `validateVerdictRecord` | stable v1 compatibility aliases; **intentionally remain bound to v1** |
 
 Reach for `validateVerdictRecordAny` when reading STORED records whose version you do not know. It snapshots the input once and reads the version off the inert copy, so a getter cannot answer one version to the dispatch and serialize as another; hand-rolling `input.schemaVersion === 2 ? ... : ...` reads the untrusted value directly and can validate a v2 record against v1 rules.
 
