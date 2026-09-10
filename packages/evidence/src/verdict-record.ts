@@ -253,8 +253,11 @@ export type VerdictRecordV2 = VerdictRecordCommon & {
 export type VerdictRecordAny = VerdictRecordV1 | VerdictRecordV2;
 
 /**
- * @deprecated Prefer the explicit {@link VerdictRecordV1}, {@link
- * VerdictRecordV2} or {@link VerdictRecordAny}.
+ * Stable v1 compatibility export.
+ *
+ * Intentionally remains bound to VerdictRecordV1.
+ * New code that specifically requires issuer attribution should use
+ * VerdictRecordV2. This export must not be repointed to a later schema version.
  *
  * Kept, and kept pointing at VERSION 1, so that code written against this name
  * before version 2 existed still describes the records it was written to
@@ -808,9 +811,11 @@ export function validateVerdictRecordV2(input: unknown): ValidationResult<Verdic
 }
 
 /**
- * @deprecated Prefer {@link validateVerdictRecordV1}, {@link
- * validateVerdictRecordV2} or {@link validateVerdictRecordAny}, which say which
- * contract they are enforcing.
+ * Stable v1 compatibility export.
+ *
+ * Intentionally remains bound to validateVerdictRecordV1.
+ * New code that specifically requires issuer attribution should use
+ * validateVerdictRecordV2. This export must not be repointed to a later schema version.
  *
  * Kept, and kept bound to VERSION 1, for the reason {@link VerdictRecord} is:
  * an importer that wrote `validateVerdictRecord(x)` before version 2 existed
@@ -893,8 +898,11 @@ export const VERDICT_RECORD_V1_SCHEMA_META: SchemaMeta = {
 };
 
 /**
- * @deprecated Name the version: {@link VERDICT_RECORD_V1_SCHEMA_META} or
- * {@link VERDICT_RECORD_V2_SCHEMA_META}.
+ * Stable v1 compatibility export.
+ *
+ * Intentionally remains bound to VERDICT_RECORD_V1_SCHEMA_META.
+ * New code that specifically requires issuer attribution should use
+ * VERDICT_RECORD_V2_SCHEMA_META. This export must not be repointed to a later schema version.
  *
  * Bound to version 1 for the same reason the other unversioned names are: it is
  * what an importer reading this constant before version 2 existed was told.
