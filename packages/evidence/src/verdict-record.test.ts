@@ -20,7 +20,10 @@ function validRecord(): Record<string, unknown> {
   return {
     schemaVersion: 2,
     status: "VERIFIED_PASS",
-    issuedBy: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+    issuer: {
+      organizationId: "organization-1",
+      actor: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+    },
     snapshotDigest: "a".repeat(64),
     summary: "The endpoint returns 404 for unknown ids.",
     scope: "GET /widgets/:id at commit abc123, error paths only",
@@ -396,81 +399,127 @@ describe("every declared field is actually checked", () => {
   });
 });
 
+
 /**
- * THE ISSUER. A verdict must say whose conclusion it is.
+ * THE ISSUER. A verdict must say WHOSE conclusion it is — and an actor alone
+ * does not say that.
  *
- * Every negative case below asserts the PATH and CODE it produced, not merely
- * that validation failed. A verdict has fifteen other fields with their own
- * guards, so `.ok === false` is satisfied by any of them: a mutation that broke
- * `scope` as a side effect would satisfy a bare ok-is-false assertion while
- * proving nothing about the issuer at all.
+ * The shared `Actor` union's system arm is `{ kind: "system", component }`, so
+ * a verdict issued by `{ kind: "system", component: "control-plane" }` names a
+ * component that two unrelated organizations may each operate. Two verdicts
+ * from two different authorities are then byte-identical in their attribution.
+ * The same is true of every other arm: `worker-1`, `user-1` and
+ * `policy.auto-accept` are names scoped to some organization and none of them
+ * carries that scope. So the record carries an `issuer` object holding BOTH
+ * facts, and both are required.
  *
- * The load-bearing assertion is `issuePaths(...)` being EXACTLY `["/issuedBy"]`.
- * That is what establishes the guard was REACHED rather than masked by an
- * earlier one: the base record is otherwise valid and accepted, so a second
- * path appearing would mean the mutation broke something else too and the
- * localisation was a coincidence.
+ * The two are separately absent, and that is why there are TWO negative
+ * controls below rather than one "issuer missing" case. An actor with no
+ * organization is a principal nobody can scope; an organization with no actor
+ * is an authority with no principal. A single test covering both would pass
+ * while one of the halves was unguarded.
+ *
+ * Every negative case asserts the PATH and CODE it produced, not merely that
+ * validation failed. A verdict has fifteen other fields with their own guards,
+ * so `.ok === false` is satisfied by any of them: a mutation that broke `scope`
+ * as a side effect would satisfy a bare ok-is-false assertion while proving
+ * nothing about the issuer at all.
+ *
+ * The load-bearing assertion is `issuePaths(...)` being EXACTLY the one path
+ * under test. That is what establishes the guard was REACHED rather than masked
+ * by an earlier one: the base record is otherwise valid and accepted, so a
+ * second path appearing would mean the mutation broke something else too and
+ * the localisation was a coincidence.
  */
-describe("a verdict names who issued it", () => {
+describe("a verdict names the authority that issued it", () => {
   /** Every distinct issue path a record produced. */
   function issuePaths(record: Record<string, unknown>): string[] {
     const result = validateVerdictRecord(record);
     return result.ok ? [] : [...new Set(result.issues.map((i) => i.path))].sort();
   }
 
-  /** The issue codes recorded against /issuedBy specifically. */
-  function issuedByCodes(record: Record<string, unknown>): string[] {
+  /** The issue codes recorded against one path specifically. */
+  function codesAt(record: Record<string, unknown>, path: string): string[] {
     const result = validateVerdictRecord(record);
-    return result.ok ? [] : result.issues.filter((i) => i.path === "/issuedBy").map((i) => i.code);
+    return result.ok ? [] : result.issues.filter((i) => i.path === path).map((i) => i.code);
   }
 
-  /** The base record with one field deleted outright, not set to undefined. */
+  /** The base record with one top-level field deleted outright. */
   function withoutField(field: string): Record<string, unknown> {
     const record = validRecord();
     delete record[field];
     return record;
   }
 
-  // --- the negative control, and proof of WHY it is red -------------------
+  /** The base record with its issuer replaced wholesale. */
+  function withIssuer(issuer: unknown): Record<string, unknown> {
+    return { ...validRecord(), issuer };
+  }
 
-  it("refuses a verdict with no issuer at all, and for that reason alone", () => {
-    expect(issuePaths(withoutField("issuedBy"))).toEqual(["/issuedBy"]);
-    expect(issuedByCodes(withoutField("issuedBy"))).toEqual(["required_field"]);
+  const ACTOR = { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true };
+
+  // --- negative control 1: an actor with NO ORGANIZATION ------------------
+  //
+  // This is the case George's defect is about. Before the amendment this record
+  // was ACCEPTED, and `{ kind: "system", component: "control-plane" }` from two
+  // different organizations produced two indistinguishable verdicts.
+
+  it("refuses an issuer that names an actor but no organization, and for that reason alone", () => {
+    // The key is DELETED, not set to undefined. See the earlier-guard test
+    // below for why that distinction decides which mechanism answers.
+    const record = withIssuer({ actor: ACTOR });
+    expect(issuePaths(record)).toEqual(["/issuer/organizationId"]);
+    expect(codesAt(record, "/issuer/organizationId")).toEqual(["required_field"]);
   });
 
-  it("refuses an issuer that is not an actor-shaped value at all", () => {
-    // `null` is listed first because `typeof null === "object"` — the case a
-    // hand-rolled object check forgets. `undefined` is deliberately NOT in this
-    // list; see the test below for where it actually lands.
-    for (const issuedBy of [null, "acceptance-verifier-1", 7, true, []]) {
-      const label = String(JSON.stringify(issuedBy));
-      const record = { ...validRecord(), issuedBy };
-      expect(issuePaths(record), label).toEqual(["/issuedBy"]);
-      expect(issuedByCodes(record), label).toEqual(["required_field"]);
+  it("refuses an organization identifier that is not an identifier", () => {
+    // Not a typeof check: an organization id of spaces satisfies `typeof ===
+    // "string"` and `.length > 0` while naming nobody, and a value carrying a
+    // space or a slash is not the shape this repository's ids take.
+    const malformed: readonly (readonly [string, unknown])[] = [
+      ["null", null],
+      ["empty", ""],
+      ["whitespace", "   "],
+      ["number", 7],
+      ["boolean", true],
+      ["array", []],
+      ["object", { id: "organization-1" }],
+      ["contains a space", "organization 1"],
+      ["contains a slash", "organization/1"],
+      ["leading punctuation", "-organization-1"],
+      ["over 128 characters", "o".repeat(129)],
+    ];
+    for (const [label, organizationId] of malformed) {
+      const record = withIssuer({ organizationId, actor: ACTOR });
+      expect(issuePaths(record), label).toEqual(["/issuer/organizationId"]);
+      expect(codesAt(record, "/issuer/organizationId"), label).toEqual(["invalid_id"]);
     }
   });
 
-  it("refuses an explicitly undefined issuer EARLIER, at the record boundary", () => {
-    // Written as its own case because it does NOT reach the issuer guard, and
-    // filing it under the case above would have been a false claim about which
-    // mechanism answered.
-    //
-    // `toPlainRecord` refuses any record carrying an `undefined` value at all,
-    // at the root, before a single field is inspected. So the record is
-    // rejected — the outcome is right — but by the serialization boundary and
-    // not by the issuer check, and the path is "" rather than "/issuedBy".
-    //
-    // This is the distinction between an ABSENT key and a key explicitly set to
-    // undefined: the absent case (the test above this block) is the one that
-    // exercises the issuer guard, and it is the shape a real missing issuer
-    // takes on a record that was parsed from JSON.
-    const record = { ...validRecord(), issuedBy: undefined };
-    expect(issuePaths(record)).toEqual([""]);
-    const result = validateVerdictRecord(record);
-    expect(result.ok ? [] : result.issues.map((i) => i.code)).toEqual(["unsupported_value"]);
+  // --- negative control 2: an organization with NO ACTOR ------------------
+  //
+  // The other half, and separable from the first: an authority with no
+  // principal has nothing for §8.1's worker-versus-independent distinction to
+  // read. A single "issuer missing" test would not have reached this.
+
+  it("refuses an issuer that names an organization but no actor, and for that reason alone", () => {
+    const record = withIssuer({ organizationId: "organization-1" });
+    expect(issuePaths(record)).toEqual(["/issuer/actor"]);
+    expect(codesAt(record, "/issuer/actor")).toEqual(["required_field"]);
   });
 
-  it("refuses an actor whose own arm is malformed", () => {
+  it("refuses an issuing actor that is not an actor-shaped value at all", () => {
+    // `null` is listed first because `typeof null === "object"` — the case a
+    // hand-rolled object check forgets.
+    for (const actor of [null, "acceptance-verifier-1", 7, true, []]) {
+      const label = String(JSON.stringify(actor));
+      const record = withIssuer({ organizationId: "organization-1", actor });
+      expect(issuePaths(record), label).toEqual(["/issuer/actor"]);
+      expect(codesAt(record, "/issuer/actor"), label).toEqual(["required_field"]);
+    }
+  });
+
+  it("refuses an issuing actor whose own arm is malformed", () => {
     const malformed: readonly (readonly [string, unknown])[] = [
       ["unknown kind", { kind: "auditor", auditorId: "a-1" }],
       ["no kind", { verifierId: "v-1", independent: true }],
@@ -485,32 +534,107 @@ describe("a verdict names who issued it", () => {
       ["worker claiming independence", { kind: "worker", workerId: "w-1", independent: true }],
       ["blank identifier", { kind: "verifier", verifierId: "   ", independent: true }],
       ["worker with no id", { kind: "worker" }],
+      // Not a spelling check: a foreign field is how an actor smuggles in a
+      // claim its own arm does not permit it to make.
+      ["system carrying independence", { kind: "system", component: "acceptance", independent: true }],
     ];
-    for (const [label, issuedBy] of malformed) {
-      const record = { ...validRecord(), issuedBy };
-      expect(issuePaths(record), label).toEqual(["/issuedBy"]);
-      expect(issuedByCodes(record), label).toEqual(["invalid_actor"]);
+    for (const [label, actor] of malformed) {
+      const record = withIssuer({ organizationId: "organization-1", actor });
+      expect(issuePaths(record), label).toEqual(["/issuer/actor"]);
+      expect(codesAt(record, "/issuer/actor"), label).toEqual(["invalid_actor"]);
     }
   });
 
-  it("refuses an issuer carrying a field foreign to its own kind", () => {
-    // Not a spelling check: a foreign field is how an actor smuggles in a claim
-    // its own arm does not permit it to make.
-    const record = {
-      ...validRecord(),
-      issuedBy: { kind: "system", component: "acceptance", independent: true },
-    };
+  // --- both halves missing, and the whole object missing ------------------
+
+  it("reports BOTH halves when an issuer object is present but empty", () => {
+    // Not one issue. The two facts are separately absent and separately
+    // reported, so a consumer can see which one it has to supply.
+    const record = withIssuer({});
+    expect(issuePaths(record)).toEqual(["/issuer/actor", "/issuer/organizationId"]);
+    expect(codesAt(record, "/issuer/organizationId")).toEqual(["required_field"]);
+    expect(codesAt(record, "/issuer/actor")).toEqual(["required_field"]);
+  });
+
+  it("refuses a verdict with no issuer at all", () => {
+    expect(issuePaths(withoutField("issuer"))).toEqual(["/issuer"]);
+    expect(codesAt(withoutField("issuer"), "/issuer")).toEqual(["required_field"]);
+  });
+
+  it("refuses an issuer that is not an object at all", () => {
+    for (const issuer of [null, "organization-1", 7, true, []]) {
+      const label = String(JSON.stringify(issuer));
+      const record = withIssuer(issuer);
+      expect(issuePaths(record), label).toEqual(["/issuer"]);
+      expect(codesAt(record, "/issuer"), label).toEqual(["required_field"]);
+    }
+  });
+
+  it("refuses an issuer carrying a member it does not declare", () => {
+    // Closed, like every other shape in this record. An unknown member is how a
+    // second, unvalidated attribution rides alongside the one that was checked.
+    const record = withIssuer({
+      organizationId: "organization-1",
+      actor: ACTOR,
+      issuedBy: { kind: "worker", workerId: "w-1" },
+    });
+    expect(issuePaths(record)).toEqual(["/issuer/issuedBy"]);
+    expect(codesAt(record, "/issuer/issuedBy")).toEqual(["unknown_field"]);
+  });
+
+  it("refuses the v2-draft spelling `issuedBy` at the top level", () => {
+    // The field was called `issuedBy: Actor` in the first cut of v2, before it
+    // was found not to answer the question. A record still using that spelling
+    // is refused rather than half-read: it carries no organization, so silently
+    // accepting it would reintroduce exactly the ambiguity being closed.
+    const record = { ...validRecord(), issuedBy: ACTOR };
     expect(issuePaths(record)).toEqual(["/issuedBy"]);
-    expect(issuedByCodes(record)).toEqual(["invalid_actor"]);
+    expect(codesAt(record, "/issuedBy")).toEqual(["unknown_field"]);
+  });
+
+  // --- which inputs never reach the guard --------------------------------
+
+  it("refuses an explicitly undefined issuer EARLIER, at the record boundary", () => {
+    // Written as its own case because it does NOT reach the issuer guard, and
+    // filing it under the cases above would have been a false claim about which
+    // mechanism answered.
+    //
+    // `toPlainRecord` refuses any record carrying an `undefined` value at all,
+    // at the root, before a single field is inspected. So the record is
+    // rejected — the outcome is right — but by the serialization boundary and
+    // not by the issuer check, and the path is "" rather than "/issuer".
+    //
+    // This is the distinction between an ABSENT key and a key explicitly set to
+    // undefined: the absent case is the one that exercises the issuer guard,
+    // and it is the shape a real missing issuer takes on a record parsed from
+    // JSON.
+    const record = withIssuer(undefined);
+    expect(issuePaths(record)).toEqual([""]);
+    expect(codesAt(record, "")).toEqual(["unsupported_value"]);
+  });
+
+  it("refuses undefined issuer HALVES at the record boundary too, not at the guard", () => {
+    // The same masking one level down, and it applies to both halves. This is
+    // why the two negative controls above delete the key rather than set it to
+    // undefined: setting it to undefined would have tested toPlainRecord and
+    // been recorded as evidence about a guard it never reached.
+    for (const issuer of [
+      { organizationId: undefined, actor: ACTOR },
+      { organizationId: "organization-1", actor: undefined },
+    ]) {
+      const record = withIssuer(issuer);
+      expect(issuePaths(record)).toEqual([""]);
+      expect(codesAt(record, "")).toEqual(["unsupported_value"]);
+    }
   });
 
   // --- the positive control, through the SAME entry point -----------------
 
-  it("accepts every actor kind as an issuer", () => {
+  it("accepts every actor kind as an issuing principal, given an organization", () => {
     // Reachability. Without this, a validator that refused EVERY issuer would
     // satisfy all of the negative cases above while making the field unusable:
     // the guard would look pinned and the record would be unconstructible.
-    const issuers: readonly (readonly [string, unknown])[] = [
+    const actors: readonly (readonly [string, unknown])[] = [
       ["independent verifier", { kind: "verifier", verifierId: "v-1", independent: true }],
       // Accepted, and legible AS non-independent. Refusing it would push the
       // fact out of the record rather than disclose it.
@@ -518,25 +642,51 @@ describe("a verdict names who issued it", () => {
       ["worker", { kind: "worker", workerId: "worker-1" }],
       ["human", { kind: "user", userId: "user-1" }],
       ["human on a device", { kind: "user", userId: "user-1", deviceId: "device-1" }],
-      ["system", { kind: "system", component: "acceptance-runner" }],
+      // The arm the whole amendment is about: `control-plane` is only
+      // unambiguous once an organization is named beside it.
+      ["system", { kind: "system", component: "control-plane" }],
       ["policy", { kind: "policy", policyId: "policy.auto-accept", policyVersion: 3 }],
     ];
-    for (const [label, issuedBy] of issuers) {
-      const result = validateVerdictRecord({ ...validRecord(), issuedBy });
+    for (const [label, actor] of actors) {
+      const result = validateVerdictRecord(withIssuer({ organizationId: "organization-1", actor }));
       expect(result.ok ? [] : result.issues, label).toEqual([]);
       expect(result.ok, label).toBe(true);
     }
   });
 
-  it("carries the issuer through onto the validated record", () => {
-    // The field must SURVIVE validation, not merely be tolerated by it. A
-    // validator that accepted the record and dropped the issuer would pass
-    // every case above while leaving the aggregate unattributed — this defect
-    // reappearing one layer further along.
-    const issuedBy = { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true };
-    const result = validateVerdictRecord({ ...validRecord(), issuedBy });
+  it("accepts the organization identifier shapes this repository already uses", () => {
+    for (const organizationId of ["organization-1", "org.acme", "ORG:1", "o", "9", "o".repeat(128)]) {
+      const result = validateVerdictRecord(withIssuer({ organizationId, actor: ACTOR }));
+      expect(result.ok ? [] : result.issues, organizationId).toEqual([]);
+    }
+  });
+
+  it("carries the WHOLE issuer through onto the validated record", () => {
+    // The fields must SURVIVE validation, not merely be tolerated by it. A
+    // validator that accepted the record and dropped the organization would
+    // pass every negative case above while leaving the aggregate exactly as
+    // unattributable as it was before — the defect reappearing one layer along.
+    const issuer = { organizationId: "organization-9", actor: ACTOR };
+    const result = validateVerdictRecord(withIssuer(issuer));
     expect(result.ok).toBe(true);
-    if (result.ok) expect(result.value.issuedBy).toEqual(issuedBy);
+    if (!result.ok) return;
+    expect(result.value.issuer).toEqual(issuer);
+    expect(result.value.issuer.organizationId).toBe("organization-9");
+    expect(result.value.issuer.actor).toEqual(ACTOR);
+  });
+
+  it("carries the organization THE RECORD NAMED, not a constant that happens to match", () => {
+    // A discriminating version of the check above. Asserting one expected
+    // string would also pass against a validator that stamped every record with
+    // that same string. Two records differing ONLY in organizationId must
+    // validate to two values that still differ in organizationId.
+    const first = validateVerdictRecord(withIssuer({ organizationId: "organization-a", actor: ACTOR }));
+    const second = validateVerdictRecord(withIssuer({ organizationId: "organization-b", actor: ACTOR }));
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(first.value.issuer.organizationId).toBe("organization-a");
+    expect(second.value.issuer.organizationId).toBe("organization-b");
+    expect(first.value.issuer.organizationId).not.toBe(second.value.issuer.organizationId);
   });
 
   // --- the version bump, which is what made the field addable at all ------
@@ -546,17 +696,31 @@ describe("a verdict names who issued it", () => {
     // carries no issuer and none may be invented, so it is refused. Both paths
     // are expected: it is simultaneously the wrong version and missing the
     // field, and reporting only one would hide half of why it cannot be read.
-    const v1 = withoutField("issuedBy");
+    const v1 = withoutField("issuer");
     v1.schemaVersion = 1;
-    expect(issuePaths(v1)).toEqual(["/issuedBy", "/schemaVersion"]);
+    expect(issuePaths(v1)).toEqual(["/issuer", "/schemaVersion"]);
   });
 
   it("states a migration, because 'none' is only honest at version 1", () => {
     expect(VERDICT_RECORD_SCHEMA_META.version).toBe(2);
+    // NOT relaxed to additive-only to make the new field legal. Frozen means no
+    // change within a major version; the version bump is the mechanism.
     expect(VERDICT_RECORD_SCHEMA_META.compatibility).toBe("frozen");
+    expect(VERDICT_RECORD_SCHEMA_META.unknownFields).toBe("reject");
     // assertSchemaMetaComplete throws on migration "none" above version 1, so
     // bumping the version forces the migration question to be answered.
     expect(() => assertSchemaMetaComplete(VERDICT_RECORD_SCHEMA_META)).not.toThrow();
-    expect(VERDICT_RECORD_SCHEMA_META.migration).toContain("issuedBy");
+    // Both halves named, because a migration mentioning only the actor would
+    // understate what a re-issuer has to supply.
+    expect(VERDICT_RECORD_SCHEMA_META.migration).toContain("issuer");
+    expect(VERDICT_RECORD_SCHEMA_META.migration).toContain("organizationId");
+    expect(VERDICT_RECORD_SCHEMA_META.migration).toContain("actor");
+  });
+
+  it("records the issuer WITHOUT claiming it is attested", () => {
+    // The record states a claim about itself. Nothing here signs it, and the
+    // schema must not read as though something did — an over-claim in a doc
+    // comment is how a recorded issuer gets cited as a verified one.
+    expect(VERDICT_RECORD_SCHEMA_META.migration).not.toMatch(/attest|signed|cryptograph/i);
   });
 });

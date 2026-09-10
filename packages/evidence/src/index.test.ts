@@ -586,7 +586,10 @@ describe("a verdict cannot claim more than its evidence supports", () => {
   const verdict = (o: Record<string, unknown> = {}) => ({
     schemaVersion: 2,
     status: "VERIFIED_PASS",
-    issuedBy: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+    issuer: {
+      organizationId: "organization-1",
+      actor: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+    },
     snapshotDigest: "a".repeat(64),
     summary: "The requested endpoint behaves as specified",
     scope: "the /orders endpoint at commit abc123, by execution",

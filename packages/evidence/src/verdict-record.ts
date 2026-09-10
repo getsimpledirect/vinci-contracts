@@ -13,6 +13,7 @@ import {
   toPlainRecord,
   type Actor,
   type EvidenceId,
+  type OrganizationId,
   type RiskLevel,
   type SchemaMeta,
   type Timestamp,
@@ -65,6 +66,54 @@ export type StalenessCondition = {
 };
 
 /**
+ * The issuing authority behind a verdict: WHOSE, and WHO within it.
+ *
+ * An `Actor` alone does not answer the question this field exists to answer.
+ * The `system` arm is `{ kind: "system", component: string }`, and a verdict
+ * issued by `{ kind: "system", component: "control-plane" }` names a component
+ * that TWO DIFFERENT ORGANIZATIONS may both operate. Two such verdicts are
+ * byte-identical in their attribution while coming from unrelated authorities,
+ * so a consumer holding one cannot say whose word it is — which is the whole
+ * property `issuedBy` was added for. The same holds for every other arm:
+ * `worker-1`, `user-1` and `policy.auto-accept` are all names scoped to some
+ * organization, and none of them carries that scope.
+ *
+ * ONE object rather than two sibling fields on the record, because the two
+ * facts are only meaningful together. `organizationId` without an actor names
+ * an authority and no principal within it; an actor without an
+ * `organizationId` names a principal whose identifier could belong to anyone.
+ * Keeping them in one closed object means they are written together, read
+ * together, and cannot be separated by a partial copy — the failure mode where
+ * a consumer forwards the actor and drops the scope that made it unambiguous.
+ *
+ * `organizationId` is an `OrganizationId`, the branded identifier this
+ * repository already uses for the same noun (see `contracts/src/ids.ts`, and
+ * `SessionBindingRef.organizationId` on the relay wire). It is validated with
+ * `isIdentifier`, exactly as every other organization identifier here is.
+ *
+ * It is REQUIRED and NOT nullable, and that is a deliberate difference from
+ * `SessionBindingRef`, where `organizationId: OrganizationId | null` encodes a
+ * personal workspace. A routing header may legitimately say "no organization";
+ * a verdict may not, because the whole point of the field is that the issuing
+ * authority is nameable. A null here would restore the ambiguity it exists to
+ * remove, and a consumer could not tell "personal" from "unstated".
+ *
+ * THE SHAPE OF ATTRIBUTION, NOT PROOF OF IT. Both halves are unsigned and
+ * self-declared: nothing in this record establishes that the named
+ * organization exists, that the named actor belongs to it, or that either ran
+ * the evaluation. A record may name any organization it likes. This makes a
+ * verdict ATTRIBUTABLE — there is now a party to point at and to hold to it —
+ * and it does not make it ATTESTED. Binding an issuer to a key is a separate
+ * concern living in `device-auth` and `remote-protocol`.
+ */
+export type VerdictIssuer = {
+  /** WHICH issuing authority. Disambiguates identically-named principals. */
+  readonly organizationId: OrganizationId;
+  /** WHO within it concluded the verdict. The canonical `Actor` union. */
+  readonly actor: Actor;
+};
+
+/**
  * An independent assessment of whether completed work satisfied its request.
  *
  * This is the artifact the business is sold on, and until now it existed only
@@ -84,9 +133,9 @@ export type StalenessCondition = {
  * verdict that floats free of what it examined cannot be checked later, and
  * cannot be told apart from a stale one.
  *
- * `issuedBy` names WHO concluded it. Until version 2 this record had a scope, a
- * disposition and a subject digest but no issuer: attribution existed one level
- * down, on each `EvidenceRecord.attestation`, and on the harness
+ * `issuer` names WHOSE conclusion it is. Until version 2 this record had a
+ * scope, a disposition and a subject digest but no issuer: attribution existed
+ * one level down, on each `EvidenceRecord.attestation`, and on the harness
  * (`HarnessAttestation.issuedBy`), and was DROPPED at exactly the point the
  * items rolled up into the aggregate that states the conclusion. So the record
  * a consumer actually relies on said what was checked and how it came out
@@ -94,17 +143,24 @@ export type StalenessCondition = {
  * audited, disputed, or weighed by the one distinction §8.1 turns on, which is
  * whether the issuer was the worker or someone independent of it.
  *
- * It is an `Actor` and not a `verifierId` string for the same reason
- * `EvidenceRecord` uses one: the `verifier` arm carries `independent`, so a
- * verifier that is NOT independent must disclose that (FR-7.3) rather than be
- * indistinguishable from one that is. Reusing the union also means a worker
- * issuing its own verdict is visible as `kind: "worker"` instead of hiding
- * behind a free-text id that could say anything.
+ * It carries TWO facts in one closed object, `organizationId` and `actor`,
+ * because an actor alone does not identify an issuing authority: the `system`
+ * arm is `{ kind: "system", component: string }`, and two different
+ * organizations may each run a `control-plane`. See {@link VerdictIssuer} for
+ * why the two travel together rather than as sibling fields.
  *
- * This is the SHAPE of attribution, not proof of it. An `Actor` here is
- * unsigned and self-declared; nothing in this record establishes that the named
- * issuer is the one who actually ran the evaluation. Binding an issuer to a key
- * is a separate concern that lives in `device-auth` and `remote-protocol`.
+ * `actor` is the canonical `Actor` union and not a `verifierId` string, for the
+ * same reason `EvidenceRecord` uses one: the `verifier` arm carries
+ * `independent`, so a verifier that is NOT independent must disclose that
+ * (FR-7.3) rather than be indistinguishable from one that is. Reusing the union
+ * also means a worker issuing its own verdict is visible as `kind: "worker"`
+ * instead of hiding behind a free-text id that could say anything.
+ *
+ * This is the SHAPE of attribution, not proof of it. Both the organization and
+ * the actor are unsigned and self-declared; nothing in this record establishes
+ * that the named issuer is the one who actually ran the evaluation, or that the
+ * actor belongs to the organization it is recorded beside. Binding an issuer to
+ * a key is a separate concern that lives in `device-auth` and `remote-protocol`.
  */
 export type VerdictRecord = {
   /**
@@ -118,10 +174,11 @@ export type VerdictRecord = {
   readonly schemaVersion: 2;
   readonly status: VerdictStatus;
   /**
-   * Who issued this verdict. Snapshotted through `plainActor`, so a proxy
-   * cannot answer one thing to the validator and another to the consumer.
+   * The issuing authority: which organization, and which principal within it.
+   * The actor half is snapshotted through `plainActor`, so a proxy cannot
+   * answer one thing to the validator and another to the consumer.
    */
-  readonly issuedBy: Actor;
+  readonly issuer: VerdictIssuer;
   /** Exactly what was evaluated. */
   readonly snapshotDigest: string;
   readonly summary: string;
@@ -332,7 +389,7 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
   const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
 
   const known = new Set([
-    "schemaVersion", "status", "issuedBy", "snapshotDigest", "summary", "scope", "criterionResults",
+    "schemaVersion", "status", "issuer", "snapshotDigest", "summary", "scope", "criterionResults",
     "decisiveEvidenceIds", "unresolvedConditions", "residualRisks", "notTested",
     "policyVersion", "evaluatorVersion", "issuedAt", "expiresAt", "staleWhen",
   ]);
@@ -342,8 +399,16 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
 
   if (record.schemaVersion !== 2) add("/schemaVersion", "invalid_schema_version", "this schema is version 2");
 
-  // The issuer, through plainActor rather than a local shape check.
+  // --- the issuer: which organization, and which principal within it -----
   //
+  // The two halves are checked SEPARATELY and report separate paths, because
+  // they are separately absent. A record naming an actor with no organization
+  // and a record naming an organization with no actor are different defects —
+  // the first is a principal nobody can scope, the second an authority with no
+  // principal — and collapsing them into one "issuer is wrong" issue would
+  // leave a consumer unable to tell which fact it is missing.
+  //
+  // The actor half goes through plainActor rather than a local shape check.
   // plainActor is the single boundary this repository uses to decide "what is
   // this actor", and going through it is what keeps the answer the validator
   // reaches identical to the one a consumer reaches. A hand-rolled check here
@@ -356,19 +421,57 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
   // an actor of an unknown kind, a worker carrying `independent: true`, and a
   // blank identifier are all refused here without this file restating any of
   // them and drifting from the definition.
-  const issuedBy: unknown = record.issuedBy;
-  if (typeof issuedBy !== "object" || issuedBy === null || Array.isArray(issuedBy)) {
-    // Separated from the plainActor call below so that a missing or non-object
+  const issuer: unknown = record.issuer;
+  if (typeof issuer !== "object" || issuer === null || Array.isArray(issuer)) {
+    // Separated from the per-half checks below so that a missing or non-object
     // issuer reports "there is no issuer" rather than the more specific
-    // "this issuer is inconsistent", which would be a claim about a value that
-    // is not an actor at all.
+    // "this organization is not an identifier" or "this actor is inconsistent",
+    // which would be claims about values that are not there at all.
     add(
-      "/issuedBy",
+      "/issuer",
       "required_field",
-      "a verdict must name who issued it; an unattributed conclusion cannot be audited or disputed",
+      "a verdict must name the authority that issued it; an unattributed conclusion cannot be audited or disputed",
     );
-  } else if (plainActor(issuedBy as Readonly<Record<string, unknown>>) === null) {
-    add("/issuedBy", "invalid_actor", "issuedBy must be a consistent actor");
+  } else {
+    // Closed, like every other shape in this record: an issuer carrying a third
+    // member is refused rather than silently narrowed to the two we read. An
+    // unknown member here is how a second, unvalidated attribution gets carried
+    // alongside the one the validator checked.
+    const parts = issuer as Record<string, unknown>;
+    for (const key of Object.keys(parts)) {
+      if (key !== "organizationId" && key !== "actor") {
+        add(`/issuer/${key}`, "unknown_field", "an issuer carries only its declared fields");
+      }
+    }
+
+    // WHICH organization. Without it, `{ kind: "system", component:
+    // "control-plane" }` names a component that two different organizations may
+    // each operate, and two unrelated authorities produce byte-identical
+    // attribution. Required and never null: a routing header may say "no
+    // organization", a verdict may not, because a null would be
+    // indistinguishable from an issuer that simply declined to say.
+    if (!Object.hasOwn(parts, "organizationId")) {
+      add(
+        "/issuer/organizationId",
+        "required_field",
+        "a verdict must name the organization it was issued under; an actor id alone is not unique across organizations",
+      );
+    } else if (!isIdentifier(parts.organizationId)) {
+      add("/issuer/organizationId", "invalid_id", "organizationId must be an identifier");
+    }
+
+    // WHO within it. An organization alone names an authority and no principal,
+    // so §8.1's worker-versus-independent distinction has nothing to read.
+    const actor: unknown = parts.actor;
+    if (typeof actor !== "object" || actor === null || Array.isArray(actor)) {
+      add(
+        "/issuer/actor",
+        "required_field",
+        "a verdict must name the principal that concluded it; an organization alone does not say who",
+      );
+    } else if (plainActor(actor as Readonly<Record<string, unknown>>) === null) {
+      add("/issuer/actor", "invalid_actor", "the issuing actor must be a consistent actor");
+    }
   }
   if (!isVerdictStatus(record.status)) {
     add("/status", "invalid_enum", "a verdict status is VERIFIED_PASS, CONDITIONAL or BLOCKED");
@@ -569,7 +672,7 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
 export const VERDICT_RECORD_SCHEMA_META: SchemaMeta = {
   id: "vinci.verdict-record",
   /**
-   * BUMPED to 2 by the addition of `issuedBy`.
+   * BUMPED to 2 by the addition of `issuer`.
    *
    * Under a `frozen` policy a new field is not an additive change that a
    * version may absorb — frozen means no change within a major version. The
@@ -586,16 +689,20 @@ export const VERDICT_RECORD_SCHEMA_META: SchemaMeta = {
   /**
    * REFUSED, not up-converted, and the missing fact is the whole reason.
    *
-   * A v1 verdict does not record who issued it. There is no field to read it
-   * from and no safe default: `system` would attribute a human sign-off to a
-   * machine, and a `verifier` with `independent: true` would manufacture the
-   * exact disclosure FR-7.3 exists to force. Inventing an issuer for a record
-   * that never named one is worse than refusing it, because the invented issuer
-   * is indistinguishable from an observed one once written.
+   * A v1 verdict records neither the organization nor the principal that issued
+   * it. There is no field to read either from and no safe default: `system`
+   * would attribute a human sign-off to a machine, a `verifier` with
+   * `independent: true` would manufacture the exact disclosure FR-7.3 exists to
+   * force, and there is no organization to fall back on at all — deriving one
+   * from the reader's own tenancy would stamp every imported verdict with the
+   * importer's name. Inventing an issuer for a record that never named one is
+   * worse than refusing it, because the invented issuer is indistinguishable
+   * from an observed one once written.
    */
   migration:
-    "v1 records remain readable by a v1 validator only; v2 adds a required issuedBy (Actor) naming who concluded "
-    + "the verdict, which v1 never recorded at the aggregate level; a v2 consumer refuses a v1 record on "
-    + "schemaVersion rather than up-converting it, because there is no field an issuer could be derived from and "
-    + "any default would fabricate an attribution — the issuer must be re-stated by whoever re-issues the verdict",
+    "v1 records remain readable by a v1 validator only; v2 adds a required issuer "
+    + "({ organizationId, actor }) naming the authority that concluded the verdict and the principal within it, "
+    + "which v1 never recorded at the aggregate level; a v2 consumer refuses a v1 record on schemaVersion rather "
+    + "than up-converting it, because there is no field either half could be derived from and any default would "
+    + "fabricate an attribution — the issuer must be re-stated by whoever re-issues the verdict",
 };

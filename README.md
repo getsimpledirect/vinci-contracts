@@ -67,12 +67,14 @@ const result = validateEvidenceRecord(evidence);
 
 ### VerdictRecord
 
-An independent assessment of whether completed work satisfied its request. Names who concluded it via `issuedBy`, binds the conclusion to the exact artifact evaluated via `snapshotDigest`, states what it covered via `scope`, and lists what was not tested. A verdict with an unscoped or floating assessment cannot be checked later, and cannot be distinguished from a stale one; an unattributed one cannot be audited or disputed at all.
+An independent assessment of whether completed work satisfied its request. Names the authority that concluded it via `issuer`, binds the conclusion to the exact artifact evaluated via `snapshotDigest`, states what it covered via `scope`, and lists what was not tested. A verdict with an unscoped or floating assessment cannot be checked later, and cannot be distinguished from a stale one; an unattributed one cannot be audited or disputed at all.
 
-`issuedBy` is an `Actor`, so a verifier that is not independent of the worker discloses that (FR-7.3) instead of being indistinguishable from one that is. It records the SHAPE of attribution and not proof of it: the actor is unsigned and self-declared, and binding an issuer to a key belongs to `device-auth` and `remote-protocol`.
+`issuer` is a closed object carrying two facts that only mean something together: `organizationId`, the issuing authority, and `actor`, the principal within it. An actor alone is not enough — the `system` arm is `{ kind: "system", component }`, so `control-plane` names a component that two different organizations may each operate, and two unrelated authorities would produce identical attribution. `actor` is the canonical `Actor` union, so a verifier that is not independent of the worker discloses that (FR-7.3) instead of being indistinguishable from one that is.
+
+It records the SHAPE of attribution and not proof of it. Both halves are unsigned and self-declared: nothing in the record establishes that the named organization exists, that the actor belongs to it, or that either ran the evaluation. This makes a verdict **attributable**, not **attested** — binding an issuer to a key belongs to `device-auth` and `remote-protocol`.
 
 ```typescript
-import { toEvidenceId } from "@getsimpledirect/vinci-contracts";
+import { toEvidenceId, toOrganizationId } from "@getsimpledirect/vinci-contracts";
 import {
   validateVerdictRecord,
   type VerdictRecord,
@@ -81,7 +83,10 @@ import {
 const verdict: VerdictRecord = {
   schemaVersion: 2,
   status: "VERIFIED_PASS",
-  issuedBy: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+  issuer: {
+    organizationId: toOrganizationId("organization-001")!,
+    actor: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+  },
   snapshotDigest: "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
   summary: "All acceptance criteria supported by decisive evidence",
   scope: "Login endpoint with OAuth2 flow",
