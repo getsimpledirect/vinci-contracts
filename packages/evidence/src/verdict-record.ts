@@ -133,7 +133,67 @@ export type VerdictIssuer = {
  * verdict that floats free of what it examined cannot be checked later, and
  * cannot be told apart from a stale one.
  *
- * `issuer` names WHOSE conclusion it is. Until version 2 this record had a
+ * TWO VERSIONS ARE LIVE. Version 1 is the shape below and nothing else;
+ * version 2 adds a required `issuer`. They are declared as separate types with
+ * separate validators rather than one type that was edited in place, because
+ * version 1 declares `compatibility: "frozen"` and records written against it
+ * exist. A v2-only validator would have made every one of them unreadable by
+ * this package while `VERDICT_RECORD_V1_SCHEMA_META` still claimed they were a
+ * supported contract. See {@link VerdictRecordV1}, {@link VerdictRecordV2} and
+ * {@link validateVerdictRecordAny}.
+ *
+ * The fields common to both live here, in ONE declaration, so the fifteen that
+ * did not change cannot drift between the two versions. A version is then that
+ * common shape plus exactly what its version number adds — which is also what
+ * makes "v2 adds one field" a statement the type system enforces rather than a
+ * claim in a comment.
+ */
+export type VerdictRecordCommon = {
+  readonly status: VerdictStatus;
+  /** Exactly what was evaluated. */
+  readonly snapshotDigest: string;
+  readonly summary: string;
+  /** What this verdict covers — and by implication, what it does not. */
+  readonly scope: string;
+  readonly criterionResults: readonly CriterionResult[];
+  /** The evidence that actually decided it, not everything gathered. */
+  readonly decisiveEvidenceIds: readonly EvidenceId[];
+  readonly unresolvedConditions: readonly UnresolvedCondition[];
+  readonly residualRisks: readonly ResidualRisk[];
+  /** What was not checked, and why. Silence about coverage reads as coverage. */
+  readonly notTested: readonly NotTestedItem[];
+  readonly policyVersion: string;
+  /** Which evaluator produced this, so a bad one can be found later. */
+  readonly evaluatorVersion: string;
+  readonly issuedAt: Timestamp;
+  readonly expiresAt: Timestamp | null;
+  readonly staleWhen: readonly StalenessCondition[];
+};
+
+/**
+ * The frozen version 1 verdict record: the common fields and nothing else.
+ *
+ * This type is UNCHANGED. `VERDICT_RECORD_V1_SCHEMA_META` declares
+ * `compatibility: "frozen"`, and frozen is a promise to the records already
+ * written, not a label on the newest shape. Adding `issuer` here would have
+ * broken that promise; deleting this type in favour of v2 would have broken it
+ * harder, by leaving every stored v1 record with no validator in this package
+ * at all while the schema meta still said version 1 was a supported contract.
+ *
+ * It has no `issuer`, and that absence is the defect version 2 exists to close
+ * — not a bug to be patched here. A v1 record is unattributed at the aggregate
+ * level and must be read knowing that. The remedy is to RE-ISSUE it as a v2
+ * record naming a real issuer, which only whoever stands behind the conclusion
+ * can do; see the migration on {@link VERDICT_RECORD_V2_SCHEMA_META}.
+ */
+export type VerdictRecordV1 = VerdictRecordCommon & {
+  readonly schemaVersion: 1;
+};
+
+/**
+ * Version 2: the same verdict, now saying WHOSE conclusion it is.
+ *
+ * `issuer` names the issuing authority. Until version 2 this record had a
  * scope, a disposition and a subject digest but no issuer: attribution existed
  * one level down, on each `EvidenceRecord.attestation`, and on the harness
  * (`HarnessAttestation.issuedBy`), and was DROPPED at exactly the point the
@@ -159,45 +219,52 @@ export type VerdictIssuer = {
  * This is the SHAPE of attribution, not proof of it. Both the organization and
  * the actor are unsigned and self-declared; nothing in this record establishes
  * that the named issuer is the one who actually ran the evaluation, or that the
- * actor belongs to the organization it is recorded beside. Binding an issuer to
- * a key is a separate concern that lives in `device-auth` and `remote-protocol`.
+ * actor belongs to the organization it is recorded beside. It makes a verdict
+ * ATTRIBUTABLE, not ATTESTED. Binding an issuer to a key is a separate concern
+ * that lives in `device-auth` and `remote-protocol`.
+ *
+ * The version was BUMPED rather than the field added inside version 1, because
+ * version 1's compatibility policy is `frozen` and a new required field is a
+ * change. Frozen does not mean the shape may never change; it means it may not
+ * change WITHIN a major version. `HARNESS_ATTESTATION_SCHEMA_META` and
+ * `RUN_EVENT_SCHEMA_META` both set this precedent — bump and state the
+ * migration, rather than edit a frozen shape in place and leave every record
+ * already written claiming a `schemaVersion: 1` contract it does not satisfy.
  */
-export type VerdictRecord = {
-  /**
-   * BUMPED to 2, because this schema's compatibility policy is `frozen` and a
-   * new field is a change. Frozen does not mean the shape may never change; it
-   * means it may not change WITHIN a major version. `HARNESS_ATTESTATION_SCHEMA_META`
-   * and `RUN_EVENT_SCHEMA_META` both set this precedent — bump and state the
-   * migration, rather than edit a frozen shape in place and leave every record
-   * already written claiming a `schemaVersion: 1` contract it does not satisfy.
-   */
+export type VerdictRecordV2 = VerdictRecordCommon & {
   readonly schemaVersion: 2;
-  readonly status: VerdictStatus;
   /**
    * The issuing authority: which organization, and which principal within it.
    * The actor half is snapshotted through `plainActor`, so a proxy cannot
    * answer one thing to the validator and another to the consumer.
    */
   readonly issuer: VerdictIssuer;
-  /** Exactly what was evaluated. */
-  readonly snapshotDigest: string;
-  readonly summary: string;
-  /** What this verdict covers — and by implication, what it does not. */
-  readonly scope: string;
-  readonly criterionResults: readonly CriterionResult[];
-  /** The evidence that actually decided it, not everything gathered. */
-  readonly decisiveEvidenceIds: readonly EvidenceId[];
-  readonly unresolvedConditions: readonly UnresolvedCondition[];
-  readonly residualRisks: readonly ResidualRisk[];
-  /** What was not checked, and why. Silence about coverage reads as coverage. */
-  readonly notTested: readonly NotTestedItem[];
-  readonly policyVersion: string;
-  /** Which evaluator produced this, so a bad one can be found later. */
-  readonly evaluatorVersion: string;
-  readonly issuedAt: Timestamp;
-  readonly expiresAt: Timestamp | null;
-  readonly staleWhen: readonly StalenessCondition[];
 };
+
+/**
+ * A verdict record at whichever version it declares.
+ *
+ * The type a consumer reading STORED verdicts holds, because the version is a
+ * property of the record and not of the reading code. Narrow it on
+ * `schemaVersion`, which TypeScript discriminates: inside `if (v.schemaVersion
+ * === 2)` the `issuer` is present and typed, and outside it the compiler
+ * refuses to read a field version 1 does not have.
+ */
+export type VerdictRecordAny = VerdictRecordV1 | VerdictRecordV2;
+
+/**
+ * @deprecated Prefer the explicit {@link VerdictRecordV1}, {@link
+ * VerdictRecordV2} or {@link VerdictRecordAny}.
+ *
+ * Kept, and kept pointing at VERSION 1, so that code written against this name
+ * before version 2 existed still describes the records it was written to
+ * describe. Re-pointing it at v2 would have silently changed the meaning of
+ * every existing annotation rather than asking anyone to make a choice — an
+ * importer would have kept compiling while the shape it was promising changed
+ * underneath it. An unversioned name cannot follow the newest version without
+ * doing that, so it stays put and says so.
+ */
+export type VerdictRecord = VerdictRecordV1;
 
 /**
  * May this status be issued given these criterion results?
@@ -369,36 +436,29 @@ function eachEntry(
   return true;
 }
 
+/** The fields every live version of this record carries. */
+const COMMON_FIELDS = [
+  "schemaVersion", "status", "snapshotDigest", "summary", "scope", "criterionResults",
+  "decisiveEvidenceIds", "unresolvedConditions", "residualRisks", "notTested",
+  "policyVersion", "evaluatorVersion", "issuedAt", "expiresAt", "staleWhen",
+] as const;
+
+/** The versions this package can read. Anything else is refused, not guessed. */
+export const VERDICT_RECORD_SCHEMA_VERSIONS = [1, 2] as const;
+export type VerdictRecordSchemaVersion = (typeof VERDICT_RECORD_SCHEMA_VERSIONS)[number];
+
 /**
- * Validate a verdict record from untrusted input.
+ * The version-2 issuer guard: which organization, and which principal within it.
  *
- * Fail-closed, on an inert snapshot, as every validator in this repository is.
- *
- * Every field declared on `VerdictRecord` is checked here. That sentence used
- * to be false: seven fields — `decisiveEvidenceIds`, `unresolvedConditions`,
- * `residualRisks`, `notTested`, `issuedAt`, `expiresAt` and `staleWhen` — were
- * declared in the type, documented in prose, and never looked at once, so the
- * cast at the end promised a shape the function had not established. A type
- * assertion is not a check; it is a claim that a check already happened.
+ * Lifted into its own function because it is the ONLY field rule that differs
+ * between the two live versions. Calling it from the version-2 branch keeps
+ * the version-1 path byte-for-byte the code it always was, instead of a
+ * version-1 path threaded through a version-2 function body.
  */
-export function validateVerdictRecord(input: unknown): ValidationResult<VerdictRecord> {
-  const plain = toPlainRecord(input);
-  if (!plain.ok) return plain;
-  const record = plain.value;
-  const issues: ValidationIssue[] = [];
-  const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
-
-  const known = new Set([
-    "schemaVersion", "status", "issuer", "snapshotDigest", "summary", "scope", "criterionResults",
-    "decisiveEvidenceIds", "unresolvedConditions", "residualRisks", "notTested",
-    "policyVersion", "evaluatorVersion", "issuedAt", "expiresAt", "staleWhen",
-  ]);
-  for (const key of Object.keys(record)) {
-    if (!known.has(key)) add(`/${key}`, "unknown_field", "a verdict carries only its declared fields");
-  }
-
-  if (record.schemaVersion !== 2) add("/schemaVersion", "invalid_schema_version", "this schema is version 2");
-
+function validateIssuer(
+  record: Readonly<Record<string, unknown>>,
+  add: (path: string, code: string, message: string) => void,
+): void {
   // --- the issuer: which organization, and which principal within it -----
   //
   // The two halves are checked SEPARATELY and report separate paths, because
@@ -473,6 +533,56 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
       add("/issuer/actor", "invalid_actor", "the issuing actor must be a consistent actor");
     }
   }
+}
+
+/**
+ * Validate an ALREADY-SNAPSHOTTED record against ONE version's rules.
+ *
+ * Fail-closed, on an inert snapshot, as every validator in this repository is.
+ *
+ * Every field declared on the record is checked here. That sentence used to be
+ * false: seven fields — `decisiveEvidenceIds`, `unresolvedConditions`,
+ * `residualRisks`, `notTested`, `issuedAt`, `expiresAt` and `staleWhen` — were
+ * declared in the type, documented in prose, and never looked at once, so the
+ * cast at the end promised a shape the function had not established. A type
+ * assertion is not a check; it is a claim that a check already happened.
+ *
+ * ONE body, parameterised by version, rather than two copies. The two versions
+ * differ in exactly two ways — the accepted `schemaVersion` and whether
+ * `issuer` is a declared field — and everything else is the same fifteen
+ * fields with the same rules. Copying the body would have made "v1 still
+ * validates exactly as it did" a claim that decayed with the next edit to
+ * either copy; here the v1 path IS the original code, reached with `version`
+ * bound to 1.
+ *
+ * Note what falls out of that for a version the record was not written for:
+ * at version 1 `issuer` is NOT in the known set, so a v2 record reaches the v1
+ * validator and is refused for two stated reasons — the wrong `schemaVersion`
+ * and an undeclared `issuer` field — rather than being half-read or throwing.
+ */
+function validateAtVersion(
+  record: Readonly<Record<string, unknown>>,
+  version: VerdictRecordSchemaVersion,
+): ValidationResult<VerdictRecordAny> {
+  const issues: ValidationIssue[] = [];
+  const add = (path: string, code: string, message: string) => issues.push({ path, code, message });
+
+  const known = new Set<string>(COMMON_FIELDS);
+  if (version === 2) known.add("issuer");
+  for (const key of Object.keys(record)) {
+    if (!known.has(key)) add(`/${key}`, "unknown_field", "a verdict carries only its declared fields");
+  }
+
+  if (record.schemaVersion !== version) {
+    add("/schemaVersion", "invalid_schema_version", `this schema is version ${version}`);
+  }
+
+  // The issuer is a VERSION 2 field. At version 1 it is not merely unchecked:
+  // it is not a declared field at all, so the closed-shape loop above has
+  // already refused it as unknown_field. Silence here would have let a v2
+  // record through the v1 validator with its issuer neither validated nor
+  // rejected — accepted and unread, the worst of the three outcomes.
+  if (version === 2) validateIssuer(record, add);
   if (!isVerdictStatus(record.status)) {
     add("/status", "invalid_enum", "a verdict status is VERIFIED_PASS, CONDITIONAL or BLOCKED");
   }
@@ -666,10 +776,132 @@ export function validateVerdictRecord(input: unknown): ValidationResult<VerdictR
   }
 
   if (issues.length > 0) return fail(issues);
-  return ok(record as unknown as VerdictRecord, {});
+  return ok(record as unknown as VerdictRecordAny, {});
 }
 
-export const VERDICT_RECORD_SCHEMA_META: SchemaMeta = {
+/**
+ * Validate a VERSION 1 verdict record from untrusted input.
+ *
+ * The frozen contract, still independently readable. A record written against
+ * version 1 and valid then is valid here now, and nothing about version 2
+ * reaches it: `issuer` is not a declared field at this version, so a v2 record
+ * arriving here is refused — for the wrong version AND for the undeclared
+ * field — rather than silently accepted with its attribution unchecked.
+ */
+export function validateVerdictRecordV1(input: unknown): ValidationResult<VerdictRecordV1> {
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  return validateAtVersion(plain.value, 1) as ValidationResult<VerdictRecordV1>;
+}
+
+/**
+ * Validate a VERSION 2 verdict record from untrusted input.
+ *
+ * Version 2 requires `issuer`. A v1 record is REFUSED here and never
+ * up-converted: see the migration on {@link VERDICT_RECORD_V2_SCHEMA_META} for
+ * why no default issuer would be honest.
+ */
+export function validateVerdictRecordV2(input: unknown): ValidationResult<VerdictRecordV2> {
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  return validateAtVersion(plain.value, 2) as ValidationResult<VerdictRecordV2>;
+}
+
+/**
+ * @deprecated Prefer {@link validateVerdictRecordV1}, {@link
+ * validateVerdictRecordV2} or {@link validateVerdictRecordAny}, which say which
+ * contract they are enforcing.
+ *
+ * Kept, and kept bound to VERSION 1, for the reason {@link VerdictRecord} is:
+ * an importer that wrote `validateVerdictRecord(x)` before version 2 existed
+ * was enforcing the version-1 contract, and re-pointing this name at version 2
+ * would have changed what their code accepts without their touching it —
+ * turning a schema addition into a silent runtime rejection of every record
+ * they had. An unversioned name cannot track the newest version without doing
+ * that, so it does not try.
+ */
+export const validateVerdictRecord = validateVerdictRecordV1;
+
+/**
+ * Validate a verdict record at WHATEVER version it declares.
+ *
+ * This earns its place rather than being a convenience wrapper, and the reason
+ * is the one hazard this file already spends hundreds of lines on: two views of
+ * the same value.
+ *
+ * The obvious thing for a consumer holding a stored record to write is
+ *
+ *     if ((input as { schemaVersion?: unknown }).schemaVersion === 2) …
+ *
+ * and that reads `schemaVersion` off the HOSTILE INPUT, before any snapshot. A
+ * proxy or a getter can answer 1 to that dispatch and serialize as 2 — so the
+ * v1 validator runs, `issuer` is refused as an unknown field or never looked
+ * at, and what is stored afterwards is a version-2 record nobody validated at
+ * version 2. Every consumer that dispatches for itself has to get this right
+ * independently, and the failure is invisible when it does not.
+ *
+ * So the snapshot is taken ONCE, here, and the version is read from the INERT
+ * copy. Whatever `toPlainRecord` captured is both the value that chooses the
+ * validator and the value the validator inspects; there is no second view for a
+ * trap to differ in. The returned type is a discriminated union, so a consumer
+ * narrows on `schemaVersion` against a value that has already been checked.
+ *
+ * An unrecognised version is REFUSED with the versions this package actually
+ * supports, not silently coerced to the nearest one. Reading a version-3 record
+ * with version-2 rules would report it as valid against a contract it was never
+ * written for.
+ */
+export function validateVerdictRecordAny(input: unknown): ValidationResult<VerdictRecordAny> {
+  const plain = toPlainRecord(input);
+  if (!plain.ok) return plain;
+  const record = plain.value;
+  const declared: unknown = record.schemaVersion;
+  for (const version of VERDICT_RECORD_SCHEMA_VERSIONS) {
+    if (declared === version) return validateAtVersion(record, version);
+  }
+  return fail([
+    {
+      path: "/schemaVersion",
+      code: "invalid_schema_version",
+      message:
+        `a verdict record declares schemaVersion ${VERDICT_RECORD_SCHEMA_VERSIONS.join(" or ")}; `
+        + "an unrecognised version is refused rather than read with another version's rules",
+    },
+  ]);
+}
+
+/**
+ * VERSION 1, still frozen and still exported.
+ *
+ * UNCHANGED from before version 2 existed, deliberately and in every field.
+ * `compatibility: "frozen"` is not relaxed to `additive-only` to make the new
+ * field legal here — that would be editing the rule to fit the change — and
+ * `migration: "none"` remains the honest answer at version 1, which is also the
+ * only version at which the gate accepts it.
+ *
+ * It is kept rather than replaced because records written against it exist, and
+ * a schema meta that vanishes when the next version ships leaves a consumer
+ * holding those records with no statement of what they were required to carry.
+ */
+export const VERDICT_RECORD_V1_SCHEMA_META: SchemaMeta = {
+  id: "vinci.verdict-record",
+  version: 1,
+  compatibility: "frozen",
+  unknownFields: "reject",
+  malformedData: "fail-closed",
+  migration: "none",
+};
+
+/**
+ * @deprecated Name the version: {@link VERDICT_RECORD_V1_SCHEMA_META} or
+ * {@link VERDICT_RECORD_V2_SCHEMA_META}.
+ *
+ * Bound to version 1 for the same reason the other unversioned names are: it is
+ * what an importer reading this constant before version 2 existed was told.
+ */
+export const VERDICT_RECORD_SCHEMA_META: SchemaMeta = VERDICT_RECORD_V1_SCHEMA_META;
+
+export const VERDICT_RECORD_V2_SCHEMA_META: SchemaMeta = {
   id: "vinci.verdict-record",
   /**
    * BUMPED to 2 by the addition of `issuer`.
@@ -700,7 +932,8 @@ export const VERDICT_RECORD_SCHEMA_META: SchemaMeta = {
    * from an observed one once written.
    */
   migration:
-    "v1 records remain readable by a v1 validator only; v2 adds a required issuer "
+    "v1 records remain readable, unchanged, through validateVerdictRecordV1, which is still exported and still "
+    + "frozen; v2 adds a required issuer "
     + "({ organizationId, actor }) naming the authority that concluded the verdict and the principal within it, "
     + "which v1 never recorded at the aggregate level; a v2 consumer refuses a v1 record on schemaVersion rather "
     + "than up-converting it, because there is no field either half could be derived from and any default would "

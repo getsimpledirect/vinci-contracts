@@ -65,9 +65,20 @@ const result = validateEvidenceRecord(evidence);
 // Valid: true
 ```
 
-### VerdictRecord
+### VerdictRecord (two live versions)
 
 An independent assessment of whether completed work satisfied its request. Names the authority that concluded it via `issuer`, binds the conclusion to the exact artifact evaluated via `snapshotDigest`, states what it covered via `scope`, and lists what was not tested. A verdict with an unscoped or floating assessment cannot be checked later, and cannot be distinguished from a stale one; an unattributed one cannot be audited or disputed at all.
+
+**Version 1 and version 2 are both live.** Version 1 is `frozen` and unchanged; version 2 adds the required `issuer`. Each has its own type and its own validator, and neither reads the other's records — a v1 record at `validateVerdictRecordV2` is refused on `schemaVersion` and on the missing `issuer`, and a v2 record at `validateVerdictRecordV1` is refused on `schemaVersion` and on `issuer` as a field version 1 does not declare.
+
+| name | contract |
+| --- | --- |
+| `VerdictRecordV1` / `validateVerdictRecordV1` | version 1, frozen and unchanged |
+| `VerdictRecordV2` / `validateVerdictRecordV2` | version 2, with the required `issuer` |
+| `VerdictRecordAny` / `validateVerdictRecordAny` | either, dispatched on the record's own `schemaVersion` |
+| `VerdictRecord` / `validateVerdictRecord` | deprecated aliases, **bound to version 1** |
+
+Reach for `validateVerdictRecordAny` when reading STORED records whose version you do not know. It snapshots the input once and reads the version off the inert copy, so a getter cannot answer one version to the dispatch and serialize as another; hand-rolling `input.schemaVersion === 2 ? ... : ...` reads the untrusted value directly and can validate a v2 record against v1 rules.
 
 `issuer` is a closed object carrying two facts that only mean something together: `organizationId`, the issuing authority, and `actor`, the principal within it. An actor alone is not enough — the `system` arm is `{ kind: "system", component }`, so `control-plane` names a component that two different organizations may each operate, and two unrelated authorities would produce identical attribution. `actor` is the canonical `Actor` union, so a verifier that is not independent of the worker discloses that (FR-7.3) instead of being indistinguishable from one that is.
 
@@ -76,11 +87,11 @@ It records the SHAPE of attribution and not proof of it. Both halves are unsigne
 ```typescript
 import { toEvidenceId, toOrganizationId } from "@getsimpledirect/vinci-contracts";
 import {
-  validateVerdictRecord,
-  type VerdictRecord,
+  validateVerdictRecordV2,
+  type VerdictRecordV2,
 } from "@getsimpledirect/vinci-evidence";
 
-const verdict: VerdictRecord = {
+const verdict: VerdictRecordV2 = {
   schemaVersion: 2,
   status: "VERIFIED_PASS",
   issuer: {
@@ -109,7 +120,7 @@ const verdict: VerdictRecord = {
   staleWhen: [],
 };
 
-const result = validateVerdictRecord(verdict);
+const result = validateVerdictRecordV2(verdict);
 // Valid: true
 ```
 
