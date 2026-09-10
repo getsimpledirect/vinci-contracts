@@ -9,6 +9,11 @@ import {
   FAILURE_OWNERS,
   countsAgainstSubmittedWork,
   validateVerdictRecord,
+  validateVerdictRecordAny,
+  validateVerdictRecordV1,
+  validateVerdictRecordV2,
+  VERDICT_RECORD_V1_SCHEMA_META,
+  VERDICT_RECORD_V2_SCHEMA_META,
   isProvenanceConsistent,
   verdictAssessmentFor,
   validateEvidenceRecord,
@@ -907,5 +912,80 @@ describe("the enforced vocabulary and the exported vocabulary are one thing", ()
     expect(Array.isArray(EVIDENCE_RELIABILITIES)).toBe(true);
     expect(EVIDENCE_MODES).toContain("model_judgment");
     expect(EVIDENCE_RELIABILITIES).toContain("authoritative");
+  });
+});
+
+/**
+ * The two versions reach a CONSUMER of the package, not merely the module.
+ *
+ * Every assertion above and in verdict-record.test.ts imports from
+ * `./verdict-record.ts` or `./index.ts` within this package's own source. This
+ * block exists because the package entry point is a separate surface: a name
+ * can be correct in the file that defines it and never be re-exported, and an
+ * importer of `@getsimpledirect/vinci-contracts-evidence` would then find the
+ * v1 validator simply missing — which is the same outcome as deleting it, the
+ * defect this whole change is about.
+ */
+describe("both verdict versions are reachable from the package entry point", () => {
+  const v1 = () => ({
+    schemaVersion: 1,
+    status: "VERIFIED_PASS",
+    snapshotDigest: "a".repeat(64),
+    summary: "The requested endpoint behaves as specified",
+    scope: "the /orders endpoint at commit abc123, by execution",
+    criterionResults: [
+      { criterionId: "c-1", status: "supported", summary: "returns 404 for unknown ids", evidenceIds: ["e-1"] },
+    ],
+    decisiveEvidenceIds: ["e-1"],
+    unresolvedConditions: [],
+    residualRisks: [],
+    notTested: [],
+    policyVersion: "policy-v3",
+    evaluatorVersion: "acceptance-2026.08",
+    issuedAt: "2026-08-23T12:00:00.000Z",
+    expiresAt: null,
+    staleWhen: [],
+  });
+  const v2 = () => ({
+    ...v1(),
+    schemaVersion: 2,
+    issuer: {
+      organizationId: "organization-1",
+      actor: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+    },
+  });
+
+  it("exports a version-1 validator that accepts a version-1 record", () => {
+    expect(validateVerdictRecordV1(v1()).ok).toBe(true);
+  });
+
+  it("exports a version-2 validator that accepts a version-2 record", () => {
+    expect(validateVerdictRecordV2(v2()).ok).toBe(true);
+  });
+
+  it("keeps the unversioned export bound to version 1", () => {
+    // The backward-compatibility claim, checked at the surface an external
+    // importer actually reaches.
+    expect(validateVerdictRecord(v1()).ok).toBe(true);
+    expect(validateVerdictRecord(v2()).ok).toBe(false);
+  });
+
+  it("refuses each version's record at the other version's validator", () => {
+    expect(validateVerdictRecordV2(v1()).ok).toBe(false);
+    expect(validateVerdictRecordV1(v2()).ok).toBe(false);
+  });
+
+  it("exports a version-aware parser that accepts both", () => {
+    expect(validateVerdictRecordAny(v1()).ok).toBe(true);
+    expect(validateVerdictRecordAny(v2()).ok).toBe(true);
+  });
+
+  it("exports a complete SchemaMeta for each live version", () => {
+    expect(VERDICT_RECORD_V1_SCHEMA_META.version).toBe(1);
+    expect(VERDICT_RECORD_V2_SCHEMA_META.version).toBe(2);
+    expect(VERDICT_RECORD_V1_SCHEMA_META.compatibility).toBe("frozen");
+    expect(VERDICT_RECORD_V2_SCHEMA_META.compatibility).toBe("frozen");
+    expect(() => assertSchemaMetaComplete(VERDICT_RECORD_V1_SCHEMA_META)).not.toThrow();
+    expect(() => assertSchemaMetaComplete(VERDICT_RECORD_V2_SCHEMA_META)).not.toThrow();
   });
 });

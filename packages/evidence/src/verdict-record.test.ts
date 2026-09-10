@@ -1,7 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { assertSchemaMetaComplete } from "@getsimpledirect/vinci-contracts";
 import {
   statusIsSupportedBy,
   validateVerdictRecord,
+  validateVerdictRecordAny,
+  validateVerdictRecordV1,
+  validateVerdictRecordV2,
+  VERDICT_RECORD_SCHEMA_META,
+  VERDICT_RECORD_SCHEMA_VERSIONS,
+  VERDICT_RECORD_V1_SCHEMA_META,
+  VERDICT_RECORD_V2_SCHEMA_META,
   type CriterionResult,
 } from "./verdict-record.ts";
 
@@ -389,6 +397,580 @@ describe("every declared field is actually checked", () => {
     for (const field of ["summary", "scope", "policyVersion", "evaluatorVersion"]) {
       expect(validateVerdictRecord(withField(field, "   ")).ok, field).toBe(false);
       expect(validateVerdictRecord(withField(field, "")).ok, field).toBe(false);
+    }
+  });
+});
+
+
+/**
+ * The version-1 fixture above, RE-ISSUED as a version-2 record.
+ *
+ * Built by spreading `validRecord()` rather than restating sixteen fields, so
+ * the two versions cannot drift apart in the fixtures the way they must not
+ * drift apart in the types. Everything the v1 suite asserts about those fields
+ * is therefore being asserted about the same values here.
+ */
+function validV2Record(): Record<string, unknown> {
+  return {
+    ...validRecord(),
+    schemaVersion: 2,
+    issuer: {
+      organizationId: "organization-1",
+      actor: { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true },
+    },
+  };
+}
+
+/**
+ * THE ISSUER. A verdict must say WHOSE conclusion it is — and an actor alone
+ * does not say that.
+ *
+ * The shared `Actor` union's system arm is `{ kind: "system", component }`, so
+ * a verdict issued by `{ kind: "system", component: "control-plane" }` names a
+ * component that two unrelated organizations may each operate. Two verdicts
+ * from two different authorities are then byte-identical in their attribution.
+ * The same is true of every other arm: `worker-1`, `user-1` and
+ * `policy.auto-accept` are names scoped to some organization and none of them
+ * carries that scope. So the record carries an `issuer` object holding BOTH
+ * facts, and both are required.
+ *
+ * The two are separately absent, and that is why there are TWO negative
+ * controls below rather than one "issuer missing" case. An actor with no
+ * organization is a principal nobody can scope; an organization with no actor
+ * is an authority with no principal. A single test covering both would pass
+ * while one of the halves was unguarded.
+ *
+ * Every negative case asserts the PATH and CODE it produced, not merely that
+ * validation failed. A verdict has fifteen other fields with their own guards,
+ * so `.ok === false` is satisfied by any of them: a mutation that broke `scope`
+ * as a side effect would satisfy a bare ok-is-false assertion while proving
+ * nothing about the issuer at all.
+ *
+ * The load-bearing assertion is `issuePaths(...)` being EXACTLY the one path
+ * under test. That is what establishes the guard was REACHED rather than masked
+ * by an earlier one: the base record is otherwise valid and accepted, so a
+ * second path appearing would mean the mutation broke something else too and
+ * the localisation was a coincidence.
+ */
+describe("a verdict names the authority that issued it", () => {
+  /** Every distinct issue path a record produced. */
+  function issuePaths(record: Record<string, unknown>): string[] {
+    const result = validateVerdictRecordV2(record);
+    return result.ok ? [] : [...new Set(result.issues.map((i) => i.path))].sort();
+  }
+
+  /** The issue codes recorded against one path specifically. */
+  function codesAt(record: Record<string, unknown>, path: string): string[] {
+    const result = validateVerdictRecordV2(record);
+    return result.ok ? [] : result.issues.filter((i) => i.path === path).map((i) => i.code);
+  }
+
+  /** The base record with one top-level field deleted outright. */
+  function withoutField(field: string): Record<string, unknown> {
+    const record = validV2Record();
+    delete record[field];
+    return record;
+  }
+
+  /** The base record with its issuer replaced wholesale. */
+  function withIssuer(issuer: unknown): Record<string, unknown> {
+    return { ...validV2Record(), issuer };
+  }
+
+  const ACTOR = { kind: "verifier", verifierId: "acceptance-verifier-1", independent: true };
+
+  // --- negative control 1: an actor with NO ORGANIZATION ------------------
+  //
+  // This is the case George's defect is about. Before the amendment this record
+  // was ACCEPTED, and `{ kind: "system", component: "control-plane" }` from two
+  // different organizations produced two indistinguishable verdicts.
+
+  it("refuses an issuer that names an actor but no organization, and for that reason alone", () => {
+    // The key is DELETED, not set to undefined. See the earlier-guard test
+    // below for why that distinction decides which mechanism answers.
+    const record = withIssuer({ actor: ACTOR });
+    expect(issuePaths(record)).toEqual(["/issuer/organizationId"]);
+    expect(codesAt(record, "/issuer/organizationId")).toEqual(["required_field"]);
+  });
+
+  it("refuses an organization identifier that is not an identifier", () => {
+    // Not a typeof check: an organization id of spaces satisfies `typeof ===
+    // "string"` and `.length > 0` while naming nobody, and a value carrying a
+    // space or a slash is not the shape this repository's ids take.
+    const malformed: readonly (readonly [string, unknown])[] = [
+      ["null", null],
+      ["empty", ""],
+      ["whitespace", "   "],
+      ["number", 7],
+      ["boolean", true],
+      ["array", []],
+      ["object", { id: "organization-1" }],
+      ["contains a space", "organization 1"],
+      ["contains a slash", "organization/1"],
+      ["leading punctuation", "-organization-1"],
+      ["over 128 characters", "o".repeat(129)],
+    ];
+    for (const [label, organizationId] of malformed) {
+      const record = withIssuer({ organizationId, actor: ACTOR });
+      expect(issuePaths(record), label).toEqual(["/issuer/organizationId"]);
+      expect(codesAt(record, "/issuer/organizationId"), label).toEqual(["invalid_id"]);
+    }
+  });
+
+  // --- negative control 2: an organization with NO ACTOR ------------------
+  //
+  // The other half, and separable from the first: an authority with no
+  // principal has nothing for §8.1's worker-versus-independent distinction to
+  // read. A single "issuer missing" test would not have reached this.
+
+  it("refuses an issuer that names an organization but no actor, and for that reason alone", () => {
+    const record = withIssuer({ organizationId: "organization-1" });
+    expect(issuePaths(record)).toEqual(["/issuer/actor"]);
+    expect(codesAt(record, "/issuer/actor")).toEqual(["required_field"]);
+  });
+
+  it("refuses an issuing actor that is not an actor-shaped value at all", () => {
+    // `null` is listed first because `typeof null === "object"` — the case a
+    // hand-rolled object check forgets.
+    for (const actor of [null, "acceptance-verifier-1", 7, true, []]) {
+      const label = String(JSON.stringify(actor));
+      const record = withIssuer({ organizationId: "organization-1", actor });
+      expect(issuePaths(record), label).toEqual(["/issuer/actor"]);
+      expect(codesAt(record, "/issuer/actor"), label).toEqual(["required_field"]);
+    }
+  });
+
+  it("refuses an issuing actor whose own arm is malformed", () => {
+    const malformed: readonly (readonly [string, unknown])[] = [
+      ["unknown kind", { kind: "auditor", auditorId: "a-1" }],
+      ["no kind", { verifierId: "v-1", independent: true }],
+      ["verifier with no id", { kind: "verifier", independent: true }],
+      // FR-7.3: a verifier that will not say whether it was independent has not
+      // disclosed non-independence, it has omitted the question.
+      ["verifier with no independence flag", { kind: "verifier", verifierId: "v-1" }],
+      // Truthy but not boolean. "yes" is not a disclosure of anything.
+      ["independent: 'yes'", { kind: "verifier", verifierId: "v-1", independent: "yes" }],
+      // A worker asserting its own independence — the one thing the evidence
+      // layer must never accept. `independent` is foreign to the worker arm.
+      ["worker claiming independence", { kind: "worker", workerId: "w-1", independent: true }],
+      ["blank identifier", { kind: "verifier", verifierId: "   ", independent: true }],
+      ["worker with no id", { kind: "worker" }],
+      // Not a spelling check: a foreign field is how an actor smuggles in a
+      // claim its own arm does not permit it to make.
+      ["system carrying independence", { kind: "system", component: "acceptance", independent: true }],
+    ];
+    for (const [label, actor] of malformed) {
+      const record = withIssuer({ organizationId: "organization-1", actor });
+      expect(issuePaths(record), label).toEqual(["/issuer/actor"]);
+      expect(codesAt(record, "/issuer/actor"), label).toEqual(["invalid_actor"]);
+    }
+  });
+
+  // --- both halves missing, and the whole object missing ------------------
+
+  it("reports BOTH halves when an issuer object is present but empty", () => {
+    // Not one issue. The two facts are separately absent and separately
+    // reported, so a consumer can see which one it has to supply.
+    const record = withIssuer({});
+    expect(issuePaths(record)).toEqual(["/issuer/actor", "/issuer/organizationId"]);
+    expect(codesAt(record, "/issuer/organizationId")).toEqual(["required_field"]);
+    expect(codesAt(record, "/issuer/actor")).toEqual(["required_field"]);
+  });
+
+  it("refuses a verdict with no issuer at all", () => {
+    expect(issuePaths(withoutField("issuer"))).toEqual(["/issuer"]);
+    expect(codesAt(withoutField("issuer"), "/issuer")).toEqual(["required_field"]);
+  });
+
+  it("refuses an issuer that is not an object at all", () => {
+    for (const issuer of [null, "organization-1", 7, true, []]) {
+      const label = String(JSON.stringify(issuer));
+      const record = withIssuer(issuer);
+      expect(issuePaths(record), label).toEqual(["/issuer"]);
+      expect(codesAt(record, "/issuer"), label).toEqual(["required_field"]);
+    }
+  });
+
+  it("refuses an issuer carrying a member it does not declare", () => {
+    // Closed, like every other shape in this record. An unknown member is how a
+    // second, unvalidated attribution rides alongside the one that was checked.
+    const record = withIssuer({
+      organizationId: "organization-1",
+      actor: ACTOR,
+      issuedBy: { kind: "worker", workerId: "w-1" },
+    });
+    expect(issuePaths(record)).toEqual(["/issuer/issuedBy"]);
+    expect(codesAt(record, "/issuer/issuedBy")).toEqual(["unknown_field"]);
+  });
+
+  it("refuses the v2-draft spelling `issuedBy` at the top level", () => {
+    // The field was called `issuedBy: Actor` in the first cut of v2, before it
+    // was found not to answer the question. A record still using that spelling
+    // is refused rather than half-read: it carries no organization, so silently
+    // accepting it would reintroduce exactly the ambiguity being closed.
+    const record = { ...validV2Record(), issuedBy: ACTOR };
+    expect(issuePaths(record)).toEqual(["/issuedBy"]);
+    expect(codesAt(record, "/issuedBy")).toEqual(["unknown_field"]);
+  });
+
+  // --- which inputs never reach the guard --------------------------------
+
+  it("refuses an explicitly undefined issuer EARLIER, at the record boundary", () => {
+    // Written as its own case because it does NOT reach the issuer guard, and
+    // filing it under the cases above would have been a false claim about which
+    // mechanism answered.
+    //
+    // `toPlainRecord` refuses any record carrying an `undefined` value at all,
+    // at the root, before a single field is inspected. So the record is
+    // rejected — the outcome is right — but by the serialization boundary and
+    // not by the issuer check, and the path is "" rather than "/issuer".
+    //
+    // This is the distinction between an ABSENT key and a key explicitly set to
+    // undefined: the absent case is the one that exercises the issuer guard,
+    // and it is the shape a real missing issuer takes on a record parsed from
+    // JSON.
+    const record = withIssuer(undefined);
+    expect(issuePaths(record)).toEqual([""]);
+    expect(codesAt(record, "")).toEqual(["unsupported_value"]);
+  });
+
+  it("refuses undefined issuer HALVES at the record boundary too, not at the guard", () => {
+    // The same masking one level down, and it applies to both halves. This is
+    // why the two negative controls above delete the key rather than set it to
+    // undefined: setting it to undefined would have tested toPlainRecord and
+    // been recorded as evidence about a guard it never reached.
+    for (const issuer of [
+      { organizationId: undefined, actor: ACTOR },
+      { organizationId: "organization-1", actor: undefined },
+    ]) {
+      const record = withIssuer(issuer);
+      expect(issuePaths(record)).toEqual([""]);
+      expect(codesAt(record, "")).toEqual(["unsupported_value"]);
+    }
+  });
+
+  // --- the positive control, through the SAME entry point -----------------
+
+  it("accepts every actor kind as an issuing principal, given an organization", () => {
+    // Reachability. Without this, a validator that refused EVERY issuer would
+    // satisfy all of the negative cases above while making the field unusable:
+    // the guard would look pinned and the record would be unconstructible.
+    const actors: readonly (readonly [string, unknown])[] = [
+      ["independent verifier", { kind: "verifier", verifierId: "v-1", independent: true }],
+      // Accepted, and legible AS non-independent. Refusing it would push the
+      // fact out of the record rather than disclose it.
+      ["non-independent verifier", { kind: "verifier", verifierId: "v-1", independent: false }],
+      ["worker", { kind: "worker", workerId: "worker-1" }],
+      ["human", { kind: "user", userId: "user-1" }],
+      ["human on a device", { kind: "user", userId: "user-1", deviceId: "device-1" }],
+      // The arm the whole amendment is about: `control-plane` is only
+      // unambiguous once an organization is named beside it.
+      ["system", { kind: "system", component: "control-plane" }],
+      ["policy", { kind: "policy", policyId: "policy.auto-accept", policyVersion: 3 }],
+    ];
+    for (const [label, actor] of actors) {
+      const result = validateVerdictRecordV2(withIssuer({ organizationId: "organization-1", actor }));
+      expect(result.ok ? [] : result.issues, label).toEqual([]);
+      expect(result.ok, label).toBe(true);
+    }
+  });
+
+  it("accepts the organization identifier shapes this repository already uses", () => {
+    for (const organizationId of ["organization-1", "org.acme", "ORG:1", "o", "9", "o".repeat(128)]) {
+      const result = validateVerdictRecordV2(withIssuer({ organizationId, actor: ACTOR }));
+      expect(result.ok ? [] : result.issues, organizationId).toEqual([]);
+    }
+  });
+
+  it("carries the WHOLE issuer through onto the validated record", () => {
+    // The fields must SURVIVE validation, not merely be tolerated by it. A
+    // validator that accepted the record and dropped the organization would
+    // pass every negative case above while leaving the aggregate exactly as
+    // unattributable as it was before — the defect reappearing one layer along.
+    const issuer = { organizationId: "organization-9", actor: ACTOR };
+    const result = validateVerdictRecordV2(withIssuer(issuer));
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value.issuer).toEqual(issuer);
+    expect(result.value.issuer.organizationId).toBe("organization-9");
+    expect(result.value.issuer.actor).toEqual(ACTOR);
+  });
+
+  it("carries the organization THE RECORD NAMED, not a constant that happens to match", () => {
+    // A discriminating version of the check above. Asserting one expected
+    // string would also pass against a validator that stamped every record with
+    // that same string. Two records differing ONLY in organizationId must
+    // validate to two values that still differ in organizationId.
+    const first = validateVerdictRecordV2(withIssuer({ organizationId: "organization-a", actor: ACTOR }));
+    const second = validateVerdictRecordV2(withIssuer({ organizationId: "organization-b", actor: ACTOR }));
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(first.value.issuer.organizationId).toBe("organization-a");
+    expect(second.value.issuer.organizationId).toBe("organization-b");
+    expect(first.value.issuer.organizationId).not.toBe(second.value.issuer.organizationId);
+  });
+
+  // --- the version bump, which is what made the field addable at all ------
+
+  it("refuses a version-1 verdict rather than up-converting it", () => {
+    // The migration VERDICT_RECORD_V2_SCHEMA_META states, executed. A v1 record
+    // carries no issuer and none may be invented, so it is refused. Both paths
+    // are expected: it is simultaneously the wrong version and missing the
+    // field, and reporting only one would hide half of why it cannot be read.
+    const v1 = withoutField("issuer");
+    v1.schemaVersion = 1;
+    expect(issuePaths(v1)).toEqual(["/issuer", "/schemaVersion"]);
+  });
+
+  it("states a migration, because 'none' is only honest at version 1", () => {
+    expect(VERDICT_RECORD_V2_SCHEMA_META.version).toBe(2);
+    // NOT relaxed to additive-only to make the new field legal. Frozen means no
+    // change within a major version; the version bump is the mechanism.
+    expect(VERDICT_RECORD_V2_SCHEMA_META.compatibility).toBe("frozen");
+    expect(VERDICT_RECORD_V2_SCHEMA_META.unknownFields).toBe("reject");
+    // assertSchemaMetaComplete throws on migration "none" above version 1, so
+    // bumping the version forces the migration question to be answered.
+    expect(() => assertSchemaMetaComplete(VERDICT_RECORD_V2_SCHEMA_META)).not.toThrow();
+    // Both halves named, because a migration mentioning only the actor would
+    // understate what a re-issuer has to supply.
+    expect(VERDICT_RECORD_V2_SCHEMA_META.migration).toContain("issuer");
+    expect(VERDICT_RECORD_V2_SCHEMA_META.migration).toContain("organizationId");
+    expect(VERDICT_RECORD_V2_SCHEMA_META.migration).toContain("actor");
+  });
+
+  it("records the issuer WITHOUT claiming it is attested", () => {
+    // The record states a claim about itself. Nothing here signs it, and the
+    // schema must not read as though something did — an over-claim in a doc
+    // comment is how a recorded issuer gets cited as a verified one.
+    expect(VERDICT_RECORD_V2_SCHEMA_META.migration).not.toMatch(/attest|signed|cryptograph/i);
+  });
+});
+
+/**
+ * TWO LIVE VERSIONS, AND NEITHER ONE READS THE OTHER'S RECORDS.
+ *
+ * The defect this suite exists for is not a missing field. It is that adding
+ * `issuer` by editing `VerdictRecord` IN PLACE turned the only exported
+ * validator into a version-2 validator, so every record already written against
+ * the frozen version-1 contract became unreadable by this package — while
+ * `VERDICT_RECORD_V1_SCHEMA_META` went on declaring `compatibility: "frozen"`,
+ * which is a promise to exactly those records.
+ *
+ * So the controls here are about COEXISTENCE, and they are separate from the
+ * issuer controls above:
+ *
+ *   1. A v1 record that validated before still validates, through a v1
+ *      validator, unchanged. The whole 394-line suite at the top of this file
+ *      IS that control at full strength — it is the pre-change file, running
+ *      the pre-change fixture through `validateVerdictRecord`, and it passes
+ *      only because that name still enforces version 1.
+ *   2. A v1 record is refused BY THE V2 VALIDATOR, for a version reason.
+ *   3. A v2 record is refused BY THE V1 VALIDATOR, for a version reason.
+ *   4. Neither refusal is a crash, and neither is a silent half-read.
+ *
+ * (2) and (3) are asserted on PATHS AND CODES, not on `.ok === false`. A
+ * validator that threw, or that refused every record it was given, would
+ * satisfy a bare `ok === false` while failing the property being claimed — so
+ * each negative is paired with the positive that proves the same validator
+ * still accepts its own version.
+ */
+describe("version 1 and version 2 coexist, and each refuses the other's records", () => {
+  function paths(result: ReturnType<typeof validateVerdictRecordV1>): string[] {
+    return result.ok ? [] : [...new Set(result.issues.map((i) => i.path))].sort();
+  }
+  function codesAt(result: { ok: boolean }, path: string): string[] {
+    const r = result as ReturnType<typeof validateVerdictRecordV1>;
+    return r.ok ? [] : r.issues.filter((i) => i.path === path).map((i) => i.code);
+  }
+
+  // --- 1. the frozen contract is still readable --------------------------
+
+  it("still accepts the version-1 record, through the version-1 validator", () => {
+    const result = validateVerdictRecordV1(validRecord());
+    expect(result.ok ? [] : result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  it("carries a version-1 record through validation with its fields intact", () => {
+    // Acceptance is not enough: a v1 record must come back OUT still being the
+    // record that went in. Two records differing only in snapshotDigest must
+    // survive DISTINCTLY, so a validator returning a constant cannot pass.
+    const first = validateVerdictRecordV1({ ...validRecord(), snapshotDigest: "a".repeat(64) });
+    const second = validateVerdictRecordV1({ ...validRecord(), snapshotDigest: "b".repeat(64) });
+    expect(first.ok && second.ok).toBe(true);
+    if (!first.ok || !second.ok) return;
+    expect(first.value.schemaVersion).toBe(1);
+    expect(first.value.snapshotDigest).toBe("a".repeat(64));
+    expect(second.value.snapshotDigest).toBe("b".repeat(64));
+    expect(first.value.snapshotDigest).not.toBe(second.value.snapshotDigest);
+  });
+
+  it("keeps the unversioned names bound to version 1, so existing importers are unaffected", () => {
+    // The compatibility claim, executed rather than asserted in a comment.
+    // `validateVerdictRecord` is the name every importer written before version
+    // 2 used; if it had been re-pointed at v2, their records would now be
+    // refused without a line of their code changing.
+    expect(validateVerdictRecord).toBe(validateVerdictRecordV1);
+    expect(VERDICT_RECORD_SCHEMA_META).toBe(VERDICT_RECORD_V1_SCHEMA_META);
+    expect(validateVerdictRecord(validRecord()).ok).toBe(true);
+  });
+
+  it("has NOT relaxed version 1 from frozen, and still answers migration 'none'", () => {
+    expect(VERDICT_RECORD_V1_SCHEMA_META.version).toBe(1);
+    expect(VERDICT_RECORD_V1_SCHEMA_META.compatibility).toBe("frozen");
+    expect(VERDICT_RECORD_V1_SCHEMA_META.unknownFields).toBe("reject");
+    expect(VERDICT_RECORD_V1_SCHEMA_META.malformedData).toBe("fail-closed");
+    // "none" is the honest migration answer at version 1 and only at version 1.
+    expect(VERDICT_RECORD_V1_SCHEMA_META.migration).toBe("none");
+    expect(() => assertSchemaMetaComplete(VERDICT_RECORD_V1_SCHEMA_META)).not.toThrow();
+  });
+
+  // --- 2. a v1 record is refused by the v2 validator ---------------------
+
+  it("refuses a version-1 record at the version-2 validator, on the version and the missing issuer", () => {
+    const result = validateVerdictRecordV2(validRecord());
+    expect(result.ok).toBe(false);
+    // Both, not one. It is simultaneously the wrong version and missing the
+    // field that version adds; reporting only the version would leave a
+    // re-issuer without the one thing they have to supply.
+    expect(paths(result)).toEqual(["/issuer", "/schemaVersion"]);
+    expect(codesAt(result, "/schemaVersion")).toEqual(["invalid_schema_version"]);
+    expect(codesAt(result, "/issuer")).toEqual(["required_field"]);
+  });
+
+  it("says version 2 in the version-2 refusal, and version 1 in the version-1 one", () => {
+    // The message must name the version the validator enforces. One shared
+    // string reading "this schema is version 2" on both paths would tell a v2
+    // consumer holding a v1 record the opposite of what it needs to know.
+    const atV2 = validateVerdictRecordV2(validRecord());
+    const atV1 = validateVerdictRecordV1(validV2Record());
+    expect(atV2.ok || atV1.ok).toBe(false);
+    if (atV2.ok || atV1.ok) return;
+    const messageAt = (r: typeof atV2, path: string) =>
+      r.issues.filter((i) => i.path === path).map((i) => i.message);
+    expect(messageAt(atV2, "/schemaVersion")).toEqual(["this schema is version 2"]);
+    expect(messageAt(atV1, "/schemaVersion")).toEqual(["this schema is version 1"]);
+  });
+
+  // --- 3. a v2 record is refused by the v1 validator ---------------------
+
+  it("refuses a version-2 record at the version-1 validator, on the version and the undeclared issuer", () => {
+    const result = validateVerdictRecordV1(validV2Record());
+    expect(result.ok).toBe(false);
+    // `/issuer` as unknown_field is the load-bearing half. Version 1 declares
+    // `unknownFields: "reject"`, so an issuer arriving at a v1 validator must
+    // be REFUSED, not ignored — ignoring it is how a v2 record gets stored as a
+    // v1 record with its attribution silently discarded.
+    expect(paths(result)).toEqual(["/issuer", "/schemaVersion"]);
+    expect(codesAt(result, "/schemaVersion")).toEqual(["invalid_schema_version"]);
+    expect(codesAt(result, "/issuer")).toEqual(["unknown_field"]);
+  });
+
+  it("still accepts a version-2 record at the version-2 validator", () => {
+    // The positive control for the two refusals above. Without it, a validator
+    // that refused everything would satisfy both.
+    const result = validateVerdictRecordV2(validV2Record());
+    expect(result.ok ? [] : result.issues).toEqual([]);
+    expect(result.ok).toBe(true);
+  });
+
+  // --- 4. neither refusal is a crash -------------------------------------
+
+  it("returns a result rather than throwing, at both versions, for every cross-version shape", () => {
+    const shapes: readonly unknown[] = [
+      validRecord(),
+      validV2Record(),
+      { ...validRecord(), schemaVersion: 2 },
+      { ...validV2Record(), schemaVersion: 1 },
+      { schemaVersion: 1 },
+      { schemaVersion: 2 },
+      {},
+    ];
+    for (const shape of shapes) {
+      const label = JSON.stringify(shape).slice(0, 60);
+      expect(() => validateVerdictRecordV1(shape), label).not.toThrow();
+      expect(() => validateVerdictRecordV2(shape), label).not.toThrow();
+      expect(() => validateVerdictRecordAny(shape), label).not.toThrow();
+    }
+  });
+
+  // --- the version-aware parser ------------------------------------------
+
+  it("routes each record to its own version's rules", () => {
+    const v1 = validateVerdictRecordAny(validRecord());
+    const v2 = validateVerdictRecordAny(validV2Record());
+    expect(v1.ok ? [] : v1.issues).toEqual([]);
+    expect(v2.ok ? [] : v2.issues).toEqual([]);
+    if (!v1.ok || !v2.ok) return;
+    expect(v1.value.schemaVersion).toBe(1);
+    expect(v2.value.schemaVersion).toBe(2);
+    // Narrowed on the validated discriminant, the issuer is reachable on the
+    // v2 arm and absent from the v1 one.
+    expect(v2.value.schemaVersion === 2 ? v2.value.issuer.organizationId : null).toBe("organization-1");
+  });
+
+  it("does not merely accept everything: each record still fails its own version's rules", () => {
+    // The parser dispatches; it does not weaken. A v1 record with a bad digest
+    // must fail at /snapshotDigest through the parser exactly as it does
+    // through validateVerdictRecordV1.
+    const broken = validateVerdictRecordAny({ ...validRecord(), snapshotDigest: "not-a-digest" });
+    expect(paths(broken as ReturnType<typeof validateVerdictRecordV1>)).toEqual(["/snapshotDigest"]);
+    const noIssuer = validateVerdictRecordAny({ ...validV2Record(), issuer: {} });
+    expect(paths(noIssuer as ReturnType<typeof validateVerdictRecordV1>))
+      .toEqual(["/issuer/actor", "/issuer/organizationId"]);
+  });
+
+  it("refuses an unrecognised version rather than reading it with the nearest one's rules", () => {
+    for (const schemaVersion of [0, 3, 99, -1, 1.5, "1", "2", null, true]) {
+      const label = String(schemaVersion);
+      const result = validateVerdictRecordAny({ ...validV2Record(), schemaVersion });
+      expect(result.ok, label).toBe(false);
+      if (result.ok) continue;
+      expect(paths(result as ReturnType<typeof validateVerdictRecordV1>), label)
+        .toEqual(["/schemaVersion"]);
+      expect(codesAt(result, "/schemaVersion"), label).toEqual(["invalid_schema_version"]);
+    }
+  });
+
+  it("dispatches on the SNAPSHOT, so a value cannot answer one version and serialize as another", () => {
+    // The reason this parser exists instead of leaving each consumer to write
+    // `input.schemaVersion === 2 ? … : …` for itself. That dispatch reads the
+    // hostile input directly, and a getter can answer 1 to it while the value
+    // that actually gets stored is a version-2 record — validated, if at all,
+    // against the wrong contract.
+    //
+    // Here the version is read from the inert copy `toPlainRecord` produced, so
+    // the getter runs ONCE, during snapshotting, and the single answer it gave
+    // is both the one that chose the validator and the one that was validated.
+    let reads = 0;
+    const record = validV2Record();
+    const hostile = {
+      ...record,
+      get schemaVersion() {
+        reads += 1;
+        return reads === 1 ? 2 : 1;
+      },
+    };
+    const result = validateVerdictRecordAny(hostile);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Whatever the getter would have said on a second read, the validated value
+    // carries the version that was actually captured — not a live getter.
+    expect(result.value.schemaVersion).toBe(2);
+    expect(Object.getOwnPropertyDescriptor(result.value, "schemaVersion")?.get).toBeUndefined();
+  });
+
+  it("names the versions it supports, and supports exactly those", () => {
+    expect([...VERDICT_RECORD_SCHEMA_VERSIONS]).toEqual([1, 2]);
+    // Not a spelling check: every version in the list must be reachable through
+    // the parser with a record that actually validates at it, so the constant
+    // cannot claim support this package does not have.
+    const fixtures: Record<number, Record<string, unknown>> = { 1: validRecord(), 2: validV2Record() };
+    for (const version of VERDICT_RECORD_SCHEMA_VERSIONS) {
+      const result = validateVerdictRecordAny(fixtures[version]);
+      expect(result.ok, `version ${version}`).toBe(true);
+      if (!result.ok) continue;
+      expect(result.value.schemaVersion, `version ${version}`).toBe(version);
     }
   });
 });
