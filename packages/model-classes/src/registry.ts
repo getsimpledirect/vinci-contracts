@@ -444,6 +444,188 @@ const fortissimoFireworksEndpoint: OpenWeightEndpoint = {
 };
 
 /**
+ * Vinci-hosted Qwen lane — Qwen/Qwen3.8-27B served over vLLM on GPU capacity
+ * Vinci rents from Telus.
+ *
+ * TOPOLOGY, CORRECTED 2026-09-06: an earlier version of this entry modelled
+ * Telus as a third-party inference provider (serving.kind: "third_party_api",
+ * provider: "telus", plus a MODEL_PROVIDERS widening to match). That was
+ * wrong. George (the accountable human): "it's our GPU we rent it from Telus
+ * and we serve vLLM" -- Telus rents Vinci GPU capacity; Vinci runs the vLLM
+ * process on it. No third party sits in the inference path receiving prompts
+ * or completions the way an actual API provider (DeepInfra, Fireworks,
+ * OpenRouter) does. That is the same arrangement as Vinci's own rented 8xH200
+ * fleet, which this registry already treats as Vinci-hosted, not as a
+ * "fleet-vendor" third-party lane. So this is `serving.kind: "vinci_hosted"`,
+ * which -- per endpoint.ts's own doc comment on that kind -- carries no
+ * `provider` field at all. Nothing needed widening in vocabulary.ts;
+ * MODEL_PROVIDERS is the vocabulary of third-party *inference* providers, and
+ * Telus renting us hardware doesn't make it one.
+ *
+ * endpointId: renamed from the prior "telus-paas-qwen3-8-27b", which named a
+ * PaaS this has just been established not to be. Existing lanes above follow
+ * `<class>-<provider>`, but no MODEL_CLASS_IDS entry fits (see the prior
+ * comment kept in spirit below) and there is now no third-party `provider`
+ * to name either. "vinci-hosted-qwen3-8-27b" instead names who serves it
+ * (vinci_hosted, this endpoint's own `serving.kind`) and what is served,
+ * which is what is actually true about this lane.
+ *
+ * PROVENANCE OF EVERY CAPABILITY FACT BELOW, WITH ONE EXCEPTION: reported to
+ * this lane by peer sessions projects-e4 and projects-2a on 2026-09-06. NOT
+ * verified by this lane -- neither this lane nor the author of this file has
+ * called this endpoint for capabilities, tool support, or the other declared
+ * capabilities below. The credential lives at ~/.vinci-gpu/keys/telus-qwen.env,
+ * held by a different lane, and was deliberately not opened to write this
+ * entry. Nothing here should be read as first-hand observation, and no id
+ * here (endpointId, credentialId) is a secret or a path to one. The topology
+ * correction above changes who is in the inference path; it does not touch
+ * these peer-reported capability facts, which are unaffected either way.
+ *
+ * THE EXCEPTION: capabilityProfile.contextLimit. This lane independently
+ * called the endpoint's /v1/models listing on 2026-09-07 and measured
+ * max_model_len: 262144 directly (see that field's own comment for the
+ * detail and the operational facts that came with it). That number is
+ * first-hand for this lane; everything else in this entry remains
+ * peer-reported and unverified by it.
+ *
+ * NOT bound to any role (see role-registry.ts): the Oracle roles this
+ * endpoint was reported for do not exist yet, and binding it to an existing
+ * role would require a qualification measurement nobody has run.
+ */
+const telusQwenEndpoint: OpenWeightEndpoint = {
+  schemaVersion: 1,
+  endpointId: "vinci-hosted-qwen3-8-27b",
+  // sourceClass is about artifact provenance (what the weights are), which is
+  // independent of who serves them (see endpoint.ts's doc comment on
+  // EndpointSourceClass). Qwen3.8-27B is an open-weights release regardless
+  // of the topology correction above, so this stays unchanged.
+  sourceClass: "open_weight",
+  serving: { kind: "vinci_hosted" },
+  weightsDigest: { kind: "unknown" },
+  tokenizerDigest: { kind: "unknown" },
+  architectureDigest: { kind: "unknown" },
+  servingImageDigest: { kind: "unknown" },
+  quantizationDigest: { kind: "unknown" },
+  capabilityProfile: {
+    // PEER-REPORTED, NOT verified by this lane (projects-e4 / projects-2a,
+    // 2026-09-06): tool-calling and streaming were reported working against
+    // the live endpoint over its OpenAI-compatible chat-completions API.
+    // "text" is the one entry that needs no citation: every LLM supports it.
+    // Unlike contextLimit below, this lane's 2026-09-07 call only hit
+    // /v1/models to read the context ceiling -- it did not exercise
+    // tool-calling, structured output, or continuation, so those stay on
+    // peer attribution.
+    capabilities: ["text", "tool_use"],
+    // FIRST-HAND, verified by THIS lane on 2026-09-07 against the live
+    // endpoint's own /v1/models listing (https://qwen3-8-27b-1fdds.paas.ai
+    // .telus.com/v1/models), which returned HTTP 200 with
+    // `id: Qwen/Qwen3.8-27B | max_model_len: 262144 | owned_by: vllm`. This
+    // supersedes the peer-reported 32768 recorded 2026-09-06 (projects-e4 /
+    // projects-2a) -- Ayush upgraded the endpoint, an 8x increase, not a
+    // correction of the earlier number. Unlike the capabilities and
+    // toolSupport fields below, this one qualifier is retired: it was
+    // re-run by this lane, not merely relayed.
+    //
+    // Same call surfaced two more operational facts, recorded here because
+    // there is nowhere else in this schema for them:
+    // (1) the stored credential returned HTTP 401 until it was rotated
+    //     today -- the upgrade came with a key rotation, not just a config
+    //     change;
+    // (2) the endpoint sits behind a Cloudflare WAF that returns HTTP 403
+    //     on some ordinary source content well within any size limit --
+    //     demonstrated with a single comment line containing
+    //     `` `cwd = job.get("cwd") or os.path.expanduser("~")`. `python -m ` ``
+    //     (blocked), while each token in it individually passes, and 100 KB
+    //     of filler passes fine. This is a WAF content trigger, not a model
+    //     or size limit, and it is a real constraint on what can be sent to
+    //     this endpoint for analysis.
+    //
+    // The ceiling this unblocks is a role-eligibility fact, not merely a
+    // number: see the "Vinci-hosted Qwen endpoint retention eligibility"
+    // describe block in model-classes.test.ts for what actually changed
+    // once 32768 stopped being the limiting factor for the 64k-minimum
+    // production roles.
+    contextLimit: 262144,
+    // PEER-REPORTED, NOT verified by this lane. The schema requires a
+    // boolean here and has no "reported but unmeasured" grade the way the
+    // ExplicitValue-typed rights fields below do, so this records the peers'
+    // report as the field's value; the caveat lives in this comment and in
+    // declaredCapabilities' comment, not in a fabricated third schema state.
+    toolSupport: true,
+  },
+  // structured_tool_use: peer-reported (see capabilityProfile comment above),
+  // not this lane's own observation. Kept as a declared capability, the same
+  // treatment the DeepInfra/Fireworks lanes give tool forwarding above.
+  //
+  // Known quirks reported alongside the above, not represented by any field
+  // in this schema (there is nowhere to put them): `reasoning_effort` is
+  // reported to accept only low|medium|xhigh -- passing `high` reportedly
+  // returns HTTP 400 -- and a `developer`-role message is reportedly
+  // rejected. Recorded here so a future caller does not have to rediscover
+  // them by getting a live 400.
+  declaredCapabilities: ["structured_tool_use"],
+  credentials: {
+    source: {
+      kind: "managed-credential",
+      credentialId: "telus-qwen-api-key",
+    },
+  },
+  // KNOWN BY CONSTRUCTION, not by observation: this is Vinci's own vLLM
+  // process running on GPU capacity Vinci rents (serving.kind:
+  // "vinci_hosted"), so inference runs on Vinci-controlled infrastructure --
+  // per endpoint.ts's own doc comment on ServingDescriptor, vinci_hosted
+  // implies inferenceIsExternal is false. That is true regardless of what
+  // remains unverified about the endpoint's runtime behavior above.
+  inferenceIsExternal: { kind: "known", value: false },
+  // A separate approval nobody has given. Unaffected by the topology
+  // correction: Vinci hosting the inference does not by itself clear this
+  // endpoint for protected data.
+  approvedForProtectedData: { kind: "unknown" },
+  rights: {
+    // UNKNOWN, and deliberately left that way rather than inferred. With no
+    // third-party inference provider in the path, there is no external
+    // rights-holder imposing training/evaluation terms on the outputs -- but
+    // that is an absence of a restriction, not by itself a declared grant of
+    // permission, and George's DECLARED BY GEORGE, 2026-08-31 note above (the
+    // forte/vision/mezzo lanes) names DeepInfra, Fireworks and OpenRouter
+    // only. Asserting `known(true)` here from the topology alone would be
+    // exactly the kind of confidently-asserted-but-ungranted permission this
+    // registry exists to prevent. See OPEN_QUESTIONS in this change's commit
+    // message for whether the schema should grow a way to express "no
+    // external rights-holder" cleanly; until then this stays unknown.
+    trainingAllowed: { kind: "unknown" },
+    evaluationAllowed: { kind: "unknown" },
+    // UNKNOWN for the same reason as trainingAllowed/evaluationAllowed above:
+    // no external rights-holder to have granted or withheld this either.
+    redistributionAllowed: { kind: "unknown" },
+    // KNOWN BY CONSTRUCTION, not by observation, and this is the one rights
+    // field the topology correction actually resolves: there is no
+    // third-party inference provider anywhere in this endpoint's path, so
+    // there is no one else who could retain the output. This is a different
+    // basis than the DeepInfra/Fireworks/OpenRouter lanes' `known(false)`
+    // above, which rests on a specific enforced mechanism in a real
+    // third-party adapter (vinci-chat/lib/llm/proxy.ts's NoZdrProviderError
+    // for any provider outside APPROVED_ZDR) -- evidence about a provider
+    // that exists. Here the basis is structural: the provider that would
+    // need to be checked does not exist in the first place.
+    outputRetainedByProvider: { kind: "known", value: false },
+    // UNKNOWN, but for a different reason than the sibling third-party
+    // lanes' unresolved-terms unknowns: there is no contract with a
+    // third-party inference provider to snapshot, because there is no
+    // third-party inference provider (George: "nothing blocks no contract
+    // etc."). This is an absent document, not an unread one -- writing a
+    // digest here would fabricate an audit trail for a reading that was
+    // never possible, not merely one nobody has done yet.
+    policySnapshotDigest: { kind: "unknown" },
+  },
+  // Matches the registry's existing validFrom convention for every other
+  // lane above rather than asserting a specific date this GPU rental began,
+  // which this lane does not know either.
+  validFrom: "2026-01-01T00:00:00.000Z",
+  expiresAt: null,
+};
+
+/**
  * Registry of Vinci's real inference endpoints.
  * Each endpoint declares the facts we know with certainty; `unknown` marks
  * what we have not yet verified.
@@ -455,6 +637,7 @@ export const VINCI_ENDPOINTS = deepFreeze([
   visionOpenrouterEndpoint,
   mezzoDeepinfraEndpoint,
   fortissimoFireworksEndpoint,
+  telusQwenEndpoint,
 ] as const satisfies readonly ModelEndpointSpec[]);
 
 /**
