@@ -1,0 +1,75 @@
+{
+  "schemaVersion": 1,
+  "reportId": "oracle-report-1",
+  "requestRef": "oracle-request-1",
+  "runRef": "run-oracle-1",
+  "workspaceRef": "ws-institutional-1",
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "decisionQuestion": "Can the reader distinguish a complete requested section from a search snippet?",
+  "summary": "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, so the smallest next step is a bounded installed-reader test.",
+  "scope": {
+    "subject": "institutional source reading",
+    "observationWindow": {
+      "startedAt": "2026-09-06T11:40:00.000Z",
+      "endedAt": "2026-09-06T11:58:00.000Z"
+    },
+    "revisions": [
+      { "repositoryId": "vinci-contracts", "revision": "365fe6ce6adaed1753e322d4e75331f331930131" }
+    ]
+  },
+  "reportCompleteness": "PARTIAL",
+  "assessmentCoverage": {
+    "claimsTotal": 2,
+    "claimsWithStoredAssessment": 1,
+    "claimsNotAssessed": 1
+  },
+  "runTerminal": { "kind": "completed", "outcome": "SUPERSEDED" },
+  "claims": [
+    {
+      "claimRef": "oracle-claim-1",
+      "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+      "assessmentRef": "oracle-assessment-1"
+    },
+    {
+      "claimRef": "oracle-claim-2",
+      "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+      "assessmentRef": null
+    }
+  ],
+  "sourceManifest": [
+    {
+      "sourceId": "oracle-source-1",
+      "citationRefs": ["oracle-citation-1"],
+      "completeness": "FULL_REQUESTED_RANGE",
+      "observationMode": "INDEPENDENT_RETRIEVAL",
+      "retrievedAt": "2026-09-06T11:42:00.000Z"
+    },
+    {
+      "sourceId": "oracle-source-2",
+      "citationRefs": [],
+      "completeness": "SNIPPET_ONLY",
+      "observationMode": "PROVIDER_REPORTED",
+      "retrievedAt": "2026-09-06T11:45:00.000Z"
+    }
+  ],
+  "alternatives": [
+    "Change nothing and accept that the installed behaviour is unobserved.",
+    "Run the smaller installed-reader fixture instead of the full suite."
+  ],
+  "contradictions": [],
+  "materialUnknowns": [
+    "Whether the installed artifact behaves as the captured source does."
+  ],
+  "proposalRef": "oracle-proposal-1",
+  "stopExplanation": "The installed-reader probe timed out, so the second claim was never assessed.",
+  "cost": {
+    "state": "RECONCILIATION_PENDING",
+    "amountMicrousd": null,
+    "ledgerRef": "ledger-oracle-14"
+  },
+  "invalidationConditions": [
+    "The installed artifact is rebuilt.",
+    "The source revision changes."
+  ],
+  "issuedAt": "2026-09-06T12:15:00.000Z"
+}

@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "sourceId": "oracle-source-3",
+  "requestRef": "oracle-request-1",
+  "runRef": "run-oracle-1",
+  "workspaceRef": "ws-institutional-1",
+  "sourceKind": "web_document",
+  "presentationIndex": null,
+  "origin": {
+    "locator": "https://example.invalid/sealed.pdf",
+    "repositoryId": null,
+    "repositoryPath": null,
+    "repositoryRevision": null,
+    "publisher": null
+  },
+  "time": {
+    "retrievedAt": "2026-09-06T11:47:00.000Z",
+    "publishedAt": null,
+    "updatedAt": null,
+    "eventAt": null
+  },
+  "observation": {
+    "mode": "INDEPENDENT_RETRIEVAL",
+    "adapterVersion": "http-read/3.0.0",
+    "contentType": "application/pdf",
+    "encoding": "binary",
+    "observedBytesDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+    "retrievedRange": null,
+    "retrievalCostMicrousd": null
+  },
+  "requestedRange": {
+    "kind": "entire_document"
+  },
+  "completeness": "NOT_OBTAINED",
+  "coversEntireDocument": null,
+  "readOutcome": "UNSUPPORTED_FORMAT",
+  "matchState": "NOT_SEARCHED",
+  "content": null,
+  "limitations": [
+    "unsupported_format"
+  ],
+  "policy": {
+    "classification": "internal",
+    "permittedAudiences": [
+      "institutional_workspace"
+    ],
+    "retentionRule": "retention:days_90",
+    "researchUse": "permitted",
+    "trainingUse": "unknown"
+  },
+  "relationships": []
+}

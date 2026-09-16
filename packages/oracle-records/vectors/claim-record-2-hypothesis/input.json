@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "claimId": "oracle-claim-2",
+  "requestRef": "oracle-request-1",
+  "runRef": "run-oracle-1",
+  "workspaceRef": "ws-institutional-1",
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "claimType": "HYPOTHESIS",
+  "proposition": "The installed reader exhibits the same limitation as the captured source.",
+  "applicability": {
+    "subject": "the installed oracle-records reader",
+    "revision": null,
+    "applicableFrom": null,
+    "applicableUntil": null,
+    "scope": "installed_artifact; not observed by this run"
+  },
+  "materiality": "SUPPORTING",
+  "sourceSpans": [],
+  "contradictingEvidence": [],
+  "assumptions": ["The installed artifact was built from the captured revision."],
+  "derivation": null,
+  "discriminatingTest": {
+    "test": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+    "wouldSupport": "The installed reader returns a typed unavailable result for the unsupported format.",
+    "wouldRefute": "The installed reader returns an empty success record."
+  },
+  "author": { "kind": "worker", "workerId": "worker-oracle-1" },
+  "invalidationConditions": ["The installed artifact is rebuilt."],
+  "issuedAt": "2026-09-06T12:11:00.000Z"
+}

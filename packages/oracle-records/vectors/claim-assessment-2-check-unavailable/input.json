@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "assessmentId": "oracle-assessment-2",
+  "claimRef": "oracle-claim-2",
+  "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+  "reportDigest": null,
+  "status": "CHECK_UNAVAILABLE",
+  "evaluator": { "kind": "verifier", "verifierId": "oracle-installed-reader-probe", "independent": true },
+  "evaluatorVersion": "installed-probe/0.3.0",
+  "method": "EXECUTION",
+  "independence": "A probe executing the installed artifact, independent of the run that wrote the claim.",
+  "limitations": ["The probe never started, so nothing about the installed reader was observed."],
+  "unavailableReason": "timed_out",
+  "detail": "The installed-reader probe exceeded its wall clock before producing a result.",
+  "issuedAt": "2026-09-06T12:13:00.000Z"
+}

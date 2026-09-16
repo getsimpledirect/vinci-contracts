@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "runId": "run-oracle-1",
+  "entries": [
+    {
+      "section": "stable_prefix",
+      "ref": "mission-truthful-source-reading",
+      "digest": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "trust": "ratified"
+    },
+    {
+      "section": "repository",
+      "ref": "repo:vinci-contracts@365fe6ce",
+      "digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "trust": "machine_observed"
+    },
+    {
+      "section": "files",
+      "ref": "packages/run/src/context-manifest.ts",
+      "digest": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "trust": "machine_observed"
+    }
+  ],
+  "excluded": [
+    {
+      "ref": "personal-notes-2026",
+      "reason": "rights_restricted"
+    }
+  ]
+}

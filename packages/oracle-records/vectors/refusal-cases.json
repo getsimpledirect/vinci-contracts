@@ -1,0 +1,3315 @@
+{
+  "comment": "Shared refusal vectors. Each case is a VALID committed vector with exactly one field changed, so the refusal below is attributable to that field and not to a second defect the fixture happened to carry (QUAL-02). src/vectors.test.ts runs the validators; python/test_oracle_vectors.py checks this file's shape and independently evaluates the enum-drift cases against its own pinned vocabularies.",
+  "schemaVersion": 1,
+  "cases": [
+    {
+      "label": "request at an unsupported schema version",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 2,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/schemaVersion",
+        "code": "unsupported_schema_version"
+      }
+    },
+    {
+      "label": "model payload carrying a host-resolved authority field",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          },
+          "policyRef": "policy.the-model-picked-this"
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/policyRef",
+        "code": "authority_field_in_model_payload"
+      }
+    },
+    {
+      "label": "model payload carrying an authority field one level down",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "budgetGrantRef": "grant-the-model-picked"
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/freshness/budgetGrantRef",
+        "code": "authority_field_in_model_payload"
+      }
+    },
+    {
+      "label": "negative cost",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": -1,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/hostResolved/effort/budgetMicrousd",
+        "code": "negative_cost"
+      }
+    },
+    {
+      "label": "unknown research mode",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "guessing",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/hostResolved/effort/mode",
+        "code": "unknown_research_mode"
+      },
+      "vocabulary": "RESEARCH_MODES"
+    },
+    {
+      "label": "boolean where a number belongs",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": true,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/policyVersion",
+        "code": "invalid_type"
+      }
+    },
+    {
+      "label": "empty required output",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/requiredOutput",
+        "code": "empty_required_output"
+      }
+    },
+    {
+      "label": "null decision to inform",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": null,
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/decisionToInform",
+        "code": "required_field"
+      }
+    },
+    {
+      "label": "exploration without an approved portfolio",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "exploration",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/payload/freshness/asOfCutoff",
+              "assumed": "No cutoff was stated, so the question is read as being about the current state.",
+              "basis": "ratified_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/hostResolved/effort/explorationPortfolioRef",
+        "code": "exploration_without_portfolio"
+      }
+    },
+    {
+      "label": "labeled assumption over a critical element",
+      "kind": "research-request",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_request",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional",
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": "budget-reservation-7",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:00:00.000Z",
+        "attestedBy": {
+          "component": "oracle-admission-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "requestId": "oracle-request-1",
+          "originatingEventRef": "run-event-114",
+          "missionOwner": {
+            "kind": "user",
+            "userId": "owner-1"
+          },
+          "intendedRecipient": {
+            "kind": "worker",
+            "workerId": "worker-oracle-1"
+          },
+          "scope": {
+            "repositoryRefs": [
+              "repo:vinci-contracts@365fe6ce"
+            ],
+            "evidenceRefs": [
+              "evidence-dev-441"
+            ],
+            "exclusions": [
+              "personal_data",
+              "sealed_evaluation",
+              "credentials"
+            ],
+            "taskClass": "source_verification"
+          },
+          "authority": {
+            "readScope": "request_scope_only",
+            "proposeScope": "advisory_only"
+          },
+          "contextSnapshotRefs": [
+            "snapshot-context-1"
+          ],
+          "effort": {
+            "mode": "investigation",
+            "maxWallSeconds": 900,
+            "maxToolCalls": 40,
+            "maxBytes": 4000000,
+            "maxTokens": 200000,
+            "budgetMicrousd": 2500000,
+            "attentionBudget": {
+              "interruptions": 1,
+              "decisions": 0
+            },
+            "explorationPortfolioRef": null
+          },
+          "lineage": {
+            "parentInvestigationRef": null,
+            "childRelationship": "none",
+            "idempotencyKey": "idem-oracle-1",
+            "version": 1
+          },
+          "admissionAssumptions": [
+            {
+              "about": "/principal",
+              "assumed": "The requester is probably the worker that asked.",
+              "basis": "requester_default"
+            }
+          ]
+        },
+        "payload": {
+          "decisionToInform": "Choose the smallest change needed for truthful institutional source reading.",
+          "question": "At the captured source revision, can the reader distinguish a complete requested section from a search snippet, a truncated page, a failed fetch and an unsupported PDF?",
+          "requiredOutput": [
+            "claim_level_evidence",
+            "material_unknowns",
+            "alternatives_including_no_change",
+            "bounded_proposal",
+            "falsification_test"
+          ],
+          "consequenceOfNoAnswer": "The reader ships with four read outcomes collapsed into one, and every claim built on it inherits an unstated limitation.",
+          "freshness": {
+            "horizon": "current",
+            "asOfCutoff": null,
+            "mandatoryRechecks": [
+              "repo:vinci-contracts@365fe6ce"
+            ]
+          },
+          "completion": {
+            "acceptanceCriteria": [
+              "Each of the four read outcomes is distinguishable from the delivered record alone."
+            ],
+            "stopConditions": [
+              "decision_has_sufficient_evidence",
+              "approved_budget_or_deadline_reached"
+            ],
+            "deliveryDestination": "run-oracle-1/report"
+          }
+        }
+      },
+      "expectedIssue": {
+        "path": "/hostResolved/admissionAssumptions/0/about",
+        "code": "assumption_over_critical_element"
+      }
+    },
+    {
+      "label": "credential-shaped field in a context binding",
+      "kind": "context-binding",
+      "record": {
+        "schemaVersion": 1,
+        "bindingId": "oracle-context-binding-1",
+        "runRef": "run-oracle-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "compiledAt": "2026-09-06T11:59:00.000Z",
+        "compilerVersion": "oracle-context-compiler/2.1.0",
+        "completeness": "CONTEXT_COMPLETE",
+        "missionRefs": [
+          "mission-truthful-source-reading"
+        ],
+        "ratifiedPolicyRefs": [
+          "policy.oracle.research@3"
+        ],
+        "observationWindow": {
+          "startedAt": "2026-09-06T11:40:00.000Z",
+          "endedAt": "2026-09-06T11:58:00.000Z"
+        },
+        "revisionVector": [
+          {
+            "repositoryId": "vinci-contracts",
+            "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "revisionKind": "git_object_id",
+            "observedAt": "2026-09-06T11:41:00.000Z"
+          },
+          {
+            "repositoryId": "vinci-gpu-control",
+            "revision": "snapshot-2026-09-06T11:57Z",
+            "revisionKind": "api_snapshot_id",
+            "observedAt": "2026-09-06T11:57:00.000Z"
+          }
+        ],
+        "unavailableSections": [
+          {
+            "section": "institutional_state/ledger",
+            "reason": "access_denied",
+            "detail": "The ledger service refused the read; the binding records the gap rather than an empty section."
+          }
+        ],
+        "dataClassifications": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce",
+            "classification": "internal"
+          },
+          {
+            "ref": "evidence-dev-441",
+            "classification": "confidential"
+          }
+        ],
+        "publicBriefRef": "public-brief-source-reading",
+        "selectionDecisions": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce/README.md",
+            "decision": "included_truncated",
+            "reason": "Only the layering section bears on the question; the remainder was dropped to fit."
+          }
+        ],
+        "droppedMandatoryConstraints": [],
+        "omittedCriticalContradictions": [],
+        "apiToken": "not-a-real-secret"
+      },
+      "expectedIssue": {
+        "path": "/apiToken",
+        "code": "credential_field_in_context"
+      }
+    },
+    {
+      "label": "observation outside the declared window",
+      "kind": "context-binding",
+      "record": {
+        "schemaVersion": 1,
+        "bindingId": "oracle-context-binding-1",
+        "runRef": "run-oracle-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "compiledAt": "2026-09-06T11:59:00.000Z",
+        "compilerVersion": "oracle-context-compiler/2.1.0",
+        "completeness": "CONTEXT_COMPLETE",
+        "missionRefs": [
+          "mission-truthful-source-reading"
+        ],
+        "ratifiedPolicyRefs": [
+          "policy.oracle.research@3"
+        ],
+        "observationWindow": {
+          "startedAt": "2026-09-06T11:40:00.000Z",
+          "endedAt": "2026-09-06T11:58:00.000Z"
+        },
+        "revisionVector": [
+          {
+            "repositoryId": "vinci-contracts",
+            "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "revisionKind": "git_object_id",
+            "observedAt": "2026-09-06T11:41:00.000Z"
+          },
+          {
+            "repositoryId": "vinci-gpu-control",
+            "revision": "snapshot-2026-09-06T11:57Z",
+            "revisionKind": "api_snapshot_id",
+            "observedAt": "2026-09-06T12:30:00.000Z"
+          }
+        ],
+        "unavailableSections": [
+          {
+            "section": "institutional_state/ledger",
+            "reason": "access_denied",
+            "detail": "The ledger service refused the read; the binding records the gap rather than an empty section."
+          }
+        ],
+        "dataClassifications": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce",
+            "classification": "internal"
+          },
+          {
+            "ref": "evidence-dev-441",
+            "classification": "confidential"
+          }
+        ],
+        "publicBriefRef": "public-brief-source-reading",
+        "selectionDecisions": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce/README.md",
+            "decision": "included_truncated",
+            "reason": "Only the layering section bears on the question; the remainder was dropped to fit."
+          }
+        ],
+        "droppedMandatoryConstraints": [],
+        "omittedCriticalContradictions": []
+      },
+      "expectedIssue": {
+        "path": "/revisionVector/1/observedAt",
+        "code": "observation_outside_window"
+      }
+    },
+    {
+      "label": "mandatory constraint dropped under CONTEXT_COMPLETE",
+      "kind": "context-binding",
+      "record": {
+        "schemaVersion": 1,
+        "bindingId": "oracle-context-binding-1",
+        "runRef": "run-oracle-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "compiledAt": "2026-09-06T11:59:00.000Z",
+        "compilerVersion": "oracle-context-compiler/2.1.0",
+        "completeness": "CONTEXT_COMPLETE",
+        "missionRefs": [
+          "mission-truthful-source-reading"
+        ],
+        "ratifiedPolicyRefs": [
+          "policy.oracle.research@3"
+        ],
+        "observationWindow": {
+          "startedAt": "2026-09-06T11:40:00.000Z",
+          "endedAt": "2026-09-06T11:58:00.000Z"
+        },
+        "revisionVector": [
+          {
+            "repositoryId": "vinci-contracts",
+            "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "revisionKind": "git_object_id",
+            "observedAt": "2026-09-06T11:41:00.000Z"
+          },
+          {
+            "repositoryId": "vinci-gpu-control",
+            "revision": "snapshot-2026-09-06T11:57Z",
+            "revisionKind": "api_snapshot_id",
+            "observedAt": "2026-09-06T11:57:00.000Z"
+          }
+        ],
+        "unavailableSections": [
+          {
+            "section": "institutional_state/ledger",
+            "reason": "access_denied",
+            "detail": "The ledger service refused the read; the binding records the gap rather than an empty section."
+          }
+        ],
+        "dataClassifications": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce",
+            "classification": "internal"
+          },
+          {
+            "ref": "evidence-dev-441",
+            "classification": "confidential"
+          }
+        ],
+        "publicBriefRef": "public-brief-source-reading",
+        "selectionDecisions": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce/README.md",
+            "decision": "included_truncated",
+            "reason": "Only the layering section bears on the question; the remainder was dropped to fit."
+          }
+        ],
+        "droppedMandatoryConstraints": [
+          "The ratified retention constraint did not fit the context budget."
+        ],
+        "omittedCriticalContradictions": []
+      },
+      "expectedIssue": {
+        "path": "/droppedMandatoryConstraints",
+        "code": "mandatory_context_dropped_under_complete"
+      }
+    },
+    {
+      "label": "CONTEXT_INCOMPLETE naming no gap",
+      "kind": "context-binding",
+      "record": {
+        "schemaVersion": 1,
+        "bindingId": "oracle-context-binding-1",
+        "runRef": "run-oracle-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "compiledAt": "2026-09-06T11:59:00.000Z",
+        "compilerVersion": "oracle-context-compiler/2.1.0",
+        "completeness": "CONTEXT_INCOMPLETE",
+        "missionRefs": [
+          "mission-truthful-source-reading"
+        ],
+        "ratifiedPolicyRefs": [
+          "policy.oracle.research@3"
+        ],
+        "observationWindow": {
+          "startedAt": "2026-09-06T11:40:00.000Z",
+          "endedAt": "2026-09-06T11:58:00.000Z"
+        },
+        "revisionVector": [
+          {
+            "repositoryId": "vinci-contracts",
+            "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "revisionKind": "git_object_id",
+            "observedAt": "2026-09-06T11:41:00.000Z"
+          },
+          {
+            "repositoryId": "vinci-gpu-control",
+            "revision": "snapshot-2026-09-06T11:57Z",
+            "revisionKind": "api_snapshot_id",
+            "observedAt": "2026-09-06T11:57:00.000Z"
+          }
+        ],
+        "unavailableSections": [
+          {
+            "section": "institutional_state/ledger",
+            "reason": "access_denied",
+            "detail": "The ledger service refused the read; the binding records the gap rather than an empty section."
+          }
+        ],
+        "dataClassifications": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce",
+            "classification": "internal"
+          },
+          {
+            "ref": "evidence-dev-441",
+            "classification": "confidential"
+          }
+        ],
+        "publicBriefRef": "public-brief-source-reading",
+        "selectionDecisions": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce/README.md",
+            "decision": "included_truncated",
+            "reason": "Only the layering section bears on the question; the remainder was dropped to fit."
+          }
+        ],
+        "droppedMandatoryConstraints": [],
+        "omittedCriticalContradictions": []
+      },
+      "expectedIssue": {
+        "path": "/completeness",
+        "code": "incomplete_without_named_gap"
+      }
+    },
+    {
+      "label": "one repository at two revisions",
+      "kind": "context-binding",
+      "record": {
+        "schemaVersion": 1,
+        "bindingId": "oracle-context-binding-1",
+        "runRef": "run-oracle-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "compiledAt": "2026-09-06T11:59:00.000Z",
+        "compilerVersion": "oracle-context-compiler/2.1.0",
+        "completeness": "CONTEXT_COMPLETE",
+        "missionRefs": [
+          "mission-truthful-source-reading"
+        ],
+        "ratifiedPolicyRefs": [
+          "policy.oracle.research@3"
+        ],
+        "observationWindow": {
+          "startedAt": "2026-09-06T11:40:00.000Z",
+          "endedAt": "2026-09-06T11:58:00.000Z"
+        },
+        "revisionVector": [
+          {
+            "repositoryId": "vinci-contracts",
+            "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "revisionKind": "git_object_id",
+            "observedAt": "2026-09-06T11:41:00.000Z"
+          },
+          {
+            "repositoryId": "vinci-contracts",
+            "revision": "snapshot-2026-09-06T11:57Z",
+            "revisionKind": "api_snapshot_id",
+            "observedAt": "2026-09-06T11:57:00.000Z"
+          }
+        ],
+        "unavailableSections": [
+          {
+            "section": "institutional_state/ledger",
+            "reason": "access_denied",
+            "detail": "The ledger service refused the read; the binding records the gap rather than an empty section."
+          }
+        ],
+        "dataClassifications": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce",
+            "classification": "internal"
+          },
+          {
+            "ref": "evidence-dev-441",
+            "classification": "confidential"
+          }
+        ],
+        "publicBriefRef": "public-brief-source-reading",
+        "selectionDecisions": [
+          {
+            "ref": "repo:vinci-contracts@365fe6ce/README.md",
+            "decision": "included_truncated",
+            "reason": "Only the layering section bears on the question; the remainder was dropped to fit."
+          }
+        ],
+        "droppedMandatoryConstraints": [],
+        "omittedCriticalContradictions": []
+      },
+      "expectedIssue": {
+        "path": "/revisionVector/1/repositoryId",
+        "code": "duplicate_repository_revision"
+      }
+    },
+    {
+      "label": "provider report claiming an adapter it never ran",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-2",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "provider_research_response",
+        "presentationIndex": 2,
+        "origin": {
+          "locator": "https://example.invalid/whitepaper",
+          "repositoryId": null,
+          "repositoryPath": null,
+          "repositoryRevision": null,
+          "publisher": "Example Standards Body"
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:45:00.000Z",
+          "publishedAt": "2019-03-01T00:00:00.000Z",
+          "updatedAt": "2021-07-14T00:00:00.000Z",
+          "eventAt": "2014-11-02T00:00:00.000Z"
+        },
+        "observation": {
+          "mode": "PROVIDER_REPORTED",
+          "providerId": "provider-research-1",
+          "providerReceiptRef": "provider-receipt-88",
+          "retrievedRange": null,
+          "retrievalCostMicrousd": 1500,
+          "adapterVersion": "git-read/1.2.0"
+        },
+        "requestedRange": {
+          "kind": "search_query",
+          "query": "requested range versus full document"
+        },
+        "completeness": "SNIPPET_ONLY",
+        "coversEntireDocument": false,
+        "readOutcome": "READ_PARTIAL",
+        "matchState": "MATCHED",
+        "content": {
+          "rawArtifactRef": "artifact-raw-2",
+          "rawDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractedArtifactRef": null,
+          "extractedDigest": null,
+          "extractionVersion": "provider-passthrough/1.0.0",
+          "textOffsets": null,
+          "pageLocations": [
+            2,
+            3
+          ]
+        },
+        "limitations": [
+          "provider_only_attribution",
+          "truncated"
+        ],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": [
+          {
+            "kind": "same_origin",
+            "sourceId": "oracle-source-1"
+          }
+        ]
+      },
+      "expectedIssue": {
+        "path": "/observation/adapterVersion",
+        "code": "provider_reported_claims_independent_retrieval"
+      }
+    },
+    {
+      "label": "failed read carrying content",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-3",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "web_document",
+        "presentationIndex": null,
+        "origin": {
+          "locator": "https://example.invalid/sealed.pdf",
+          "repositoryId": null,
+          "repositoryPath": null,
+          "repositoryRevision": null,
+          "publisher": null
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:47:00.000Z",
+          "publishedAt": null,
+          "updatedAt": null,
+          "eventAt": null
+        },
+        "observation": {
+          "mode": "INDEPENDENT_RETRIEVAL",
+          "adapterVersion": "http-read/3.0.0",
+          "contentType": "application/pdf",
+          "encoding": "binary",
+          "observedBytesDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "retrievedRange": null,
+          "retrievalCostMicrousd": null
+        },
+        "requestedRange": {
+          "kind": "entire_document"
+        },
+        "completeness": "NOT_OBTAINED",
+        "coversEntireDocument": null,
+        "readOutcome": "UNSUPPORTED_FORMAT",
+        "matchState": "NOT_SEARCHED",
+        "content": {
+          "rawArtifactRef": "artifact-raw-1",
+          "rawDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+          "extractedArtifactRef": "artifact-extracted-1",
+          "extractedDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractionVersion": "text-extract/0.9.1",
+          "textOffsets": {
+            "startOffset": 0,
+            "endOffset": 6144
+          },
+          "pageLocations": []
+        },
+        "limitations": [
+          "unsupported_format"
+        ],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": []
+      },
+      "expectedIssue": {
+        "path": "/content",
+        "code": "failed_read_with_content"
+      }
+    },
+    {
+      "label": "full requested range claimed as the full document",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "repository_file",
+        "presentationIndex": 1,
+        "origin": {
+          "locator": "repo:vinci-contracts/packages/run/src/context-manifest.ts",
+          "repositoryId": "vinci-contracts",
+          "repositoryPath": "packages/run/src/context-manifest.ts",
+          "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+          "publisher": null
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:42:00.000Z",
+          "publishedAt": null,
+          "updatedAt": null,
+          "eventAt": null
+        },
+        "observation": {
+          "mode": "INDEPENDENT_RETRIEVAL",
+          "adapterVersion": "git-read/1.2.0",
+          "contentType": "text/x-typescript",
+          "encoding": "utf-8",
+          "observedBytesDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+          "retrievedRange": "lines 1-172",
+          "retrievalCostMicrousd": 0
+        },
+        "requestedRange": {
+          "kind": "line_range",
+          "startLine": 1,
+          "endLine": 172
+        },
+        "completeness": "FULL_REQUESTED_RANGE",
+        "coversEntireDocument": true,
+        "readOutcome": "READ_COMPLETE",
+        "matchState": "MATCHED",
+        "content": {
+          "rawArtifactRef": "artifact-raw-1",
+          "rawDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+          "extractedArtifactRef": "artifact-extracted-1",
+          "extractedDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractionVersion": "text-extract/0.9.1",
+          "textOffsets": {
+            "startOffset": 0,
+            "endOffset": 6144
+          },
+          "pageLocations": []
+        },
+        "limitations": [],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": []
+      },
+      "expectedIssue": {
+        "path": "/coversEntireDocument",
+        "code": "full_document_claimed_for_partial_range"
+      }
+    },
+    {
+      "label": "null document coverage on an obtained read",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "repository_file",
+        "presentationIndex": 1,
+        "origin": {
+          "locator": "repo:vinci-contracts/packages/run/src/context-manifest.ts",
+          "repositoryId": "vinci-contracts",
+          "repositoryPath": "packages/run/src/context-manifest.ts",
+          "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+          "publisher": null
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:42:00.000Z",
+          "publishedAt": null,
+          "updatedAt": null,
+          "eventAt": null
+        },
+        "observation": {
+          "mode": "INDEPENDENT_RETRIEVAL",
+          "adapterVersion": "git-read/1.2.0",
+          "contentType": "text/x-typescript",
+          "encoding": "utf-8",
+          "observedBytesDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+          "retrievedRange": "lines 1-172",
+          "retrievalCostMicrousd": 0
+        },
+        "requestedRange": {
+          "kind": "line_range",
+          "startLine": 1,
+          "endLine": 172
+        },
+        "completeness": "FULL_REQUESTED_RANGE",
+        "coversEntireDocument": null,
+        "readOutcome": "READ_COMPLETE",
+        "matchState": "MATCHED",
+        "content": {
+          "rawArtifactRef": "artifact-raw-1",
+          "rawDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+          "extractedArtifactRef": "artifact-extracted-1",
+          "extractedDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractionVersion": "text-extract/0.9.1",
+          "textOffsets": {
+            "startOffset": 0,
+            "endOffset": 6144
+          },
+          "pageLocations": []
+        },
+        "limitations": [],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": []
+      },
+      "expectedIssue": {
+        "path": "/coversEntireDocument",
+        "code": "required_field"
+      }
+    },
+    {
+      "label": "unknown read outcome",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-2",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "provider_research_response",
+        "presentationIndex": 2,
+        "origin": {
+          "locator": "https://example.invalid/whitepaper",
+          "repositoryId": null,
+          "repositoryPath": null,
+          "repositoryRevision": null,
+          "publisher": "Example Standards Body"
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:45:00.000Z",
+          "publishedAt": "2019-03-01T00:00:00.000Z",
+          "updatedAt": "2021-07-14T00:00:00.000Z",
+          "eventAt": "2014-11-02T00:00:00.000Z"
+        },
+        "observation": {
+          "mode": "PROVIDER_REPORTED",
+          "providerId": "provider-research-1",
+          "providerReceiptRef": "provider-receipt-88",
+          "retrievedRange": null,
+          "retrievalCostMicrousd": 1500
+        },
+        "requestedRange": {
+          "kind": "search_query",
+          "query": "requested range versus full document"
+        },
+        "completeness": "SNIPPET_ONLY",
+        "coversEntireDocument": false,
+        "readOutcome": "SKIMMED",
+        "matchState": "MATCHED",
+        "content": {
+          "rawArtifactRef": "artifact-raw-2",
+          "rawDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractedArtifactRef": null,
+          "extractedDigest": null,
+          "extractionVersion": "provider-passthrough/1.0.0",
+          "textOffsets": null,
+          "pageLocations": [
+            2,
+            3
+          ]
+        },
+        "limitations": [
+          "provider_only_attribution",
+          "truncated"
+        ],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": [
+          {
+            "kind": "same_origin",
+            "sourceId": "oracle-source-1"
+          }
+        ]
+      },
+      "expectedIssue": {
+        "path": "/readOutcome",
+        "code": "unknown_read_outcome"
+      },
+      "vocabulary": "SOURCE_READ_OUTCOMES"
+    },
+    {
+      "label": "unknown match state",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-2",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "provider_research_response",
+        "presentationIndex": 2,
+        "origin": {
+          "locator": "https://example.invalid/whitepaper",
+          "repositoryId": null,
+          "repositoryPath": null,
+          "repositoryRevision": null,
+          "publisher": "Example Standards Body"
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:45:00.000Z",
+          "publishedAt": "2019-03-01T00:00:00.000Z",
+          "updatedAt": "2021-07-14T00:00:00.000Z",
+          "eventAt": "2014-11-02T00:00:00.000Z"
+        },
+        "observation": {
+          "mode": "PROVIDER_REPORTED",
+          "providerId": "provider-research-1",
+          "providerReceiptRef": "provider-receipt-88",
+          "retrievedRange": null,
+          "retrievalCostMicrousd": 1500
+        },
+        "requestedRange": {
+          "kind": "search_query",
+          "query": "requested range versus full document"
+        },
+        "completeness": "SNIPPET_ONLY",
+        "coversEntireDocument": false,
+        "readOutcome": "READ_PARTIAL",
+        "matchState": "PERHAPS",
+        "content": {
+          "rawArtifactRef": "artifact-raw-2",
+          "rawDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractedArtifactRef": null,
+          "extractedDigest": null,
+          "extractionVersion": "provider-passthrough/1.0.0",
+          "textOffsets": null,
+          "pageLocations": [
+            2,
+            3
+          ]
+        },
+        "limitations": [
+          "provider_only_attribution",
+          "truncated"
+        ],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": [
+          {
+            "kind": "same_origin",
+            "sourceId": "oracle-source-1"
+          }
+        ]
+      },
+      "expectedIssue": {
+        "path": "/matchState",
+        "code": "unknown_match_state"
+      },
+      "vocabulary": "SOURCE_MATCH_STATES"
+    },
+    {
+      "label": "provider report without its attribution limitation",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-2",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "provider_research_response",
+        "presentationIndex": 2,
+        "origin": {
+          "locator": "https://example.invalid/whitepaper",
+          "repositoryId": null,
+          "repositoryPath": null,
+          "repositoryRevision": null,
+          "publisher": "Example Standards Body"
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:45:00.000Z",
+          "publishedAt": "2019-03-01T00:00:00.000Z",
+          "updatedAt": "2021-07-14T00:00:00.000Z",
+          "eventAt": "2014-11-02T00:00:00.000Z"
+        },
+        "observation": {
+          "mode": "PROVIDER_REPORTED",
+          "providerId": "provider-research-1",
+          "providerReceiptRef": "provider-receipt-88",
+          "retrievedRange": null,
+          "retrievalCostMicrousd": 1500
+        },
+        "requestedRange": {
+          "kind": "search_query",
+          "query": "requested range versus full document"
+        },
+        "completeness": "SNIPPET_ONLY",
+        "coversEntireDocument": false,
+        "readOutcome": "READ_PARTIAL",
+        "matchState": "MATCHED",
+        "content": {
+          "rawArtifactRef": "artifact-raw-2",
+          "rawDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractedArtifactRef": null,
+          "extractedDigest": null,
+          "extractionVersion": "provider-passthrough/1.0.0",
+          "textOffsets": null,
+          "pageLocations": [
+            2,
+            3
+          ]
+        },
+        "limitations": [
+          "truncated"
+        ],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": [
+          {
+            "kind": "same_origin",
+            "sourceId": "oracle-source-1"
+          }
+        ]
+      },
+      "expectedIssue": {
+        "path": "/limitations",
+        "code": "provider_report_without_attribution_limit"
+      }
+    },
+    {
+      "label": "repository source read at no revision",
+      "kind": "source-record",
+      "record": {
+        "schemaVersion": 1,
+        "sourceId": "oracle-source-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "sourceKind": "repository_file",
+        "presentationIndex": 1,
+        "origin": {
+          "locator": "repo:vinci-contracts/packages/run/src/context-manifest.ts",
+          "repositoryId": "vinci-contracts",
+          "repositoryPath": "packages/run/src/context-manifest.ts",
+          "repositoryRevision": null,
+          "publisher": null
+        },
+        "time": {
+          "retrievedAt": "2026-09-06T11:42:00.000Z",
+          "publishedAt": null,
+          "updatedAt": null,
+          "eventAt": null
+        },
+        "observation": {
+          "mode": "INDEPENDENT_RETRIEVAL",
+          "adapterVersion": "git-read/1.2.0",
+          "contentType": "text/x-typescript",
+          "encoding": "utf-8",
+          "observedBytesDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+          "retrievedRange": "lines 1-172",
+          "retrievalCostMicrousd": 0
+        },
+        "requestedRange": {
+          "kind": "line_range",
+          "startLine": 1,
+          "endLine": 172
+        },
+        "completeness": "FULL_REQUESTED_RANGE",
+        "coversEntireDocument": false,
+        "readOutcome": "READ_COMPLETE",
+        "matchState": "MATCHED",
+        "content": {
+          "rawArtifactRef": "artifact-raw-1",
+          "rawDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+          "extractedArtifactRef": "artifact-extracted-1",
+          "extractedDigest": "3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d3d",
+          "extractionVersion": "text-extract/0.9.1",
+          "textOffsets": {
+            "startOffset": 0,
+            "endOffset": 6144
+          },
+          "pageLocations": []
+        },
+        "limitations": [],
+        "policy": {
+          "classification": "internal",
+          "permittedAudiences": [
+            "institutional_workspace"
+          ],
+          "retentionRule": "retention:days_90",
+          "researchUse": "permitted",
+          "trainingUse": "unknown"
+        },
+        "relationships": []
+      },
+      "expectedIssue": {
+        "path": "/origin/repositoryRevision",
+        "code": "repository_source_without_revision"
+      }
+    },
+    {
+      "label": "unknown envelope kind",
+      "kind": "source-citation",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_research_report",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:05:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "citationId": "oracle-citation-1",
+          "appearsInRef": "oracle-report-1#findings/0"
+        },
+        "payload": {
+          "sourceId": "oracle-source-1",
+          "quotedSpan": {
+            "startOffset": 120,
+            "endOffset": 480
+          },
+          "offeredFor": "The manifest requires a trust label on every entry."
+        }
+      },
+      "expectedIssue": {
+        "path": "/envelopeKind",
+        "code": "unknown_envelope_kind"
+      },
+      "vocabulary": "ATTESTED_ENVELOPE_KINDS"
+    },
+    {
+      "label": "citation asserting an observation the model never made",
+      "kind": "source-citation",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_source_citation",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-read-institutional"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:05:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "citationId": "oracle-citation-1",
+          "appearsInRef": "oracle-report-1#findings/0"
+        },
+        "payload": {
+          "sourceId": "oracle-source-1",
+          "quotedSpan": {
+            "startOffset": 120,
+            "endOffset": 480
+          },
+          "offeredFor": "The manifest requires a trust label on every entry.",
+          "observedBytesDigest": "9999999999999999999999999999999999999999999999999999999999999999"
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/observedBytesDigest",
+        "code": "authority_field_in_model_payload"
+      }
+    },
+    {
+      "label": "an observation carrying an inference's premises",
+      "kind": "claim-record",
+      "record": {
+        "schemaVersion": 1,
+        "claimId": "oracle-claim-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "claimType": "OBSERVED",
+        "proposition": "The captured reader refuses an unsupported format rather than returning empty text.",
+        "applicability": {
+          "subject": "packages/oracle-records/src/source-record.ts",
+          "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+          "applicableFrom": null,
+          "applicableUntil": null,
+          "scope": "captured_source_revision_only; nothing here is a statement about a deployed reader"
+        },
+        "materiality": "DECISION_CHANGING",
+        "sourceSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "contradictingEvidence": [],
+        "assumptions": [
+          "The captured revision is the one that would be deployed."
+        ],
+        "derivation": {
+          "premises": [
+            "`completeness` describes the requested range, not the document.",
+            "`coversEntireDocument` is a separate field."
+          ],
+          "reasoningSummary": "Two fields carry the distinction, so a consumer reading one of them has half of it.",
+          "analysisRef": null
+        },
+        "discriminatingTest": null,
+        "author": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "invalidationConditions": [
+          "The source revision changes.",
+          "The extraction version changes."
+        ],
+        "issuedAt": "2026-09-06T12:10:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/derivation",
+        "code": "inference_labeled_as_observed"
+      }
+    },
+    {
+      "label": "a hypothesis with no discriminating test",
+      "kind": "claim-record",
+      "record": {
+        "schemaVersion": 1,
+        "claimId": "oracle-claim-2",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "claimType": "HYPOTHESIS",
+        "proposition": "The installed reader exhibits the same limitation as the captured source.",
+        "applicability": {
+          "subject": "the installed oracle-records reader",
+          "revision": null,
+          "applicableFrom": null,
+          "applicableUntil": null,
+          "scope": "installed_artifact; not observed by this run"
+        },
+        "materiality": "SUPPORTING",
+        "sourceSpans": [],
+        "contradictingEvidence": [],
+        "assumptions": [
+          "The installed artifact was built from the captured revision."
+        ],
+        "derivation": null,
+        "discriminatingTest": null,
+        "author": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt."
+        ],
+        "issuedAt": "2026-09-06T12:11:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/discriminatingTest",
+        "code": "hypothesis_without_discriminating_test"
+      }
+    },
+    {
+      "label": "unknown claim type",
+      "kind": "claim-record",
+      "record": {
+        "schemaVersion": 1,
+        "claimId": "oracle-claim-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "claimType": "PROBABLY_TRUE",
+        "proposition": "The captured reader refuses an unsupported format rather than returning empty text.",
+        "applicability": {
+          "subject": "packages/oracle-records/src/source-record.ts",
+          "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+          "applicableFrom": null,
+          "applicableUntil": null,
+          "scope": "captured_source_revision_only; nothing here is a statement about a deployed reader"
+        },
+        "materiality": "DECISION_CHANGING",
+        "sourceSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "contradictingEvidence": [],
+        "assumptions": [
+          "The captured revision is the one that would be deployed."
+        ],
+        "derivation": null,
+        "discriminatingTest": null,
+        "author": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "invalidationConditions": [
+          "The source revision changes.",
+          "The extraction version changes."
+        ],
+        "issuedAt": "2026-09-06T12:10:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/claimType",
+        "code": "unknown_claim_type"
+      },
+      "vocabulary": "CLAIM_TYPES"
+    },
+    {
+      "label": "supported assessment naming no reviewed span",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-1",
+        "claimRef": "oracle-claim-1",
+        "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+        "reportDigest": null,
+        "status": "SUPPORTED",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-provenance-checker",
+          "independent": true
+        },
+        "evaluatorVersion": "provenance-check/2.0.1",
+        "method": "DETERMINISTIC",
+        "independence": "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+        "limitations": [
+          "CLM-02: provenance validation is not semantic fact-checking."
+        ],
+        "reviewedSpans": [],
+        "execution": {
+          "completed": true,
+          "reviewerRunRef": "reviewer-run-41"
+        },
+        "issuedAt": "2026-09-06T12:12:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/reviewedSpans",
+        "code": "unearned_support"
+      }
+    },
+    {
+      "label": "supported assessment whose reviewer run did not complete",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-1",
+        "claimRef": "oracle-claim-1",
+        "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+        "reportDigest": null,
+        "status": "SUPPORTED",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-provenance-checker",
+          "independent": true
+        },
+        "evaluatorVersion": "provenance-check/2.0.1",
+        "method": "DETERMINISTIC",
+        "independence": "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+        "limitations": [
+          "CLM-02: provenance validation is not semantic fact-checking."
+        ],
+        "reviewedSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "execution": {
+          "completed": false,
+          "reviewerRunRef": "reviewer-run-41"
+        },
+        "issuedAt": "2026-09-06T12:12:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/execution/completed",
+        "code": "unearned_support"
+      }
+    },
+    {
+      "label": "unavailable check claiming it reviewed something",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-2",
+        "claimRef": "oracle-claim-2",
+        "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+        "reportDigest": null,
+        "status": "CHECK_UNAVAILABLE",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-installed-reader-probe",
+          "independent": true
+        },
+        "evaluatorVersion": "installed-probe/0.3.0",
+        "method": "EXECUTION",
+        "independence": "A probe executing the installed artifact, independent of the run that wrote the claim.",
+        "limitations": [
+          "The probe never started, so nothing about the installed reader was observed."
+        ],
+        "unavailableReason": "timed_out",
+        "detail": "The installed-reader probe exceeded its wall clock before producing a result.",
+        "issuedAt": "2026-09-06T12:13:00.000Z",
+        "reviewedSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ]
+      },
+      "expectedIssue": {
+        "path": "/reviewedSpans",
+        "code": "unavailable_check_claims_review"
+      }
+    },
+    {
+      "label": "unknown assessment status",
+      "kind": "claim-assessment",
+      "record": {
+        "schemaVersion": 1,
+        "assessmentId": "oracle-assessment-1",
+        "claimRef": "oracle-claim-1",
+        "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+        "reportDigest": null,
+        "status": "PROBABLY_SUPPORTED",
+        "evaluator": {
+          "kind": "verifier",
+          "verifierId": "oracle-provenance-checker",
+          "independent": true
+        },
+        "evaluatorVersion": "provenance-check/2.0.1",
+        "method": "DETERMINISTIC",
+        "independence": "A provenance checker run by the host, with no access to the claim's author or to the report prose.",
+        "limitations": [
+          "CLM-02: provenance validation is not semantic fact-checking."
+        ],
+        "reviewedSpans": [
+          {
+            "sourceId": "oracle-source-1",
+            "span": {
+              "startOffset": 120,
+              "endOffset": 480
+            }
+          }
+        ],
+        "execution": {
+          "completed": true,
+          "reviewerRunRef": "reviewer-run-41"
+        },
+        "issuedAt": "2026-09-06T12:12:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/status",
+        "code": "unknown_assessment_status"
+      },
+      "vocabulary": "ASSESSMENT_STATUSES"
+    },
+    {
+      "label": "report carrying an inline model-written assessment status",
+      "kind": "research-report",
+      "record": {
+        "schemaVersion": 1,
+        "reportId": "oracle-report-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "decisionQuestion": "Can the reader distinguish a complete requested section from a search snippet?",
+        "summary": "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, so the smallest next step is a bounded installed-reader test.",
+        "scope": {
+          "subject": "institutional source reading",
+          "observationWindow": {
+            "startedAt": "2026-09-06T11:40:00.000Z",
+            "endedAt": "2026-09-06T11:58:00.000Z"
+          },
+          "revisions": [
+            {
+              "repositoryId": "vinci-contracts",
+              "revision": "365fe6ce6adaed1753e322d4e75331f331930131"
+            }
+          ]
+        },
+        "reportCompleteness": "PARTIAL",
+        "assessmentCoverage": {
+          "claimsTotal": 2,
+          "claimsWithStoredAssessment": 1,
+          "claimsNotAssessed": 1
+        },
+        "runTerminal": {
+          "kind": "completed",
+          "outcome": "SUPERSEDED"
+        },
+        "claims": [
+          {
+            "claimRef": "oracle-claim-1",
+            "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+            "assessmentRef": "oracle-assessment-1",
+            "assessmentStatus": "SUPPORTED"
+          },
+          {
+            "claimRef": "oracle-claim-2",
+            "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+            "assessmentRef": null
+          }
+        ],
+        "sourceManifest": [
+          {
+            "sourceId": "oracle-source-1",
+            "citationRefs": [
+              "oracle-citation-1"
+            ],
+            "completeness": "FULL_REQUESTED_RANGE",
+            "observationMode": "INDEPENDENT_RETRIEVAL",
+            "retrievedAt": "2026-09-06T11:42:00.000Z"
+          },
+          {
+            "sourceId": "oracle-source-2",
+            "citationRefs": [],
+            "completeness": "SNIPPET_ONLY",
+            "observationMode": "PROVIDER_REPORTED",
+            "retrievedAt": "2026-09-06T11:45:00.000Z"
+          }
+        ],
+        "alternatives": [
+          "Change nothing and accept that the installed behaviour is unobserved.",
+          "Run the smaller installed-reader fixture instead of the full suite."
+        ],
+        "contradictions": [],
+        "materialUnknowns": [
+          "Whether the installed artifact behaves as the captured source does."
+        ],
+        "proposalRef": "oracle-proposal-1",
+        "stopExplanation": "The installed-reader probe timed out, so the second claim was never assessed.",
+        "cost": {
+          "state": "RECONCILIATION_PENDING",
+          "amountMicrousd": null,
+          "ledgerRef": "ledger-oracle-14"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt.",
+          "The source revision changes."
+        ],
+        "issuedAt": "2026-09-06T12:15:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/claims/0/assessmentStatus",
+        "code": "inline_assessment_status"
+      }
+    },
+    {
+      "label": "assessment coverage that contradicts the claim list",
+      "kind": "research-report",
+      "record": {
+        "schemaVersion": 1,
+        "reportId": "oracle-report-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "decisionQuestion": "Can the reader distinguish a complete requested section from a search snippet?",
+        "summary": "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, so the smallest next step is a bounded installed-reader test.",
+        "scope": {
+          "subject": "institutional source reading",
+          "observationWindow": {
+            "startedAt": "2026-09-06T11:40:00.000Z",
+            "endedAt": "2026-09-06T11:58:00.000Z"
+          },
+          "revisions": [
+            {
+              "repositoryId": "vinci-contracts",
+              "revision": "365fe6ce6adaed1753e322d4e75331f331930131"
+            }
+          ]
+        },
+        "reportCompleteness": "PARTIAL",
+        "assessmentCoverage": {
+          "claimsTotal": 2,
+          "claimsWithStoredAssessment": 2,
+          "claimsNotAssessed": 1
+        },
+        "runTerminal": {
+          "kind": "completed",
+          "outcome": "SUPERSEDED"
+        },
+        "claims": [
+          {
+            "claimRef": "oracle-claim-1",
+            "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+            "assessmentRef": "oracle-assessment-1"
+          },
+          {
+            "claimRef": "oracle-claim-2",
+            "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+            "assessmentRef": null
+          }
+        ],
+        "sourceManifest": [
+          {
+            "sourceId": "oracle-source-1",
+            "citationRefs": [
+              "oracle-citation-1"
+            ],
+            "completeness": "FULL_REQUESTED_RANGE",
+            "observationMode": "INDEPENDENT_RETRIEVAL",
+            "retrievedAt": "2026-09-06T11:42:00.000Z"
+          },
+          {
+            "sourceId": "oracle-source-2",
+            "citationRefs": [],
+            "completeness": "SNIPPET_ONLY",
+            "observationMode": "PROVIDER_REPORTED",
+            "retrievedAt": "2026-09-06T11:45:00.000Z"
+          }
+        ],
+        "alternatives": [
+          "Change nothing and accept that the installed behaviour is unobserved.",
+          "Run the smaller installed-reader fixture instead of the full suite."
+        ],
+        "contradictions": [],
+        "materialUnknowns": [
+          "Whether the installed artifact behaves as the captured source does."
+        ],
+        "proposalRef": "oracle-proposal-1",
+        "stopExplanation": "The installed-reader probe timed out, so the second claim was never assessed.",
+        "cost": {
+          "state": "RECONCILIATION_PENDING",
+          "amountMicrousd": null,
+          "ledgerRef": "ledger-oracle-14"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt.",
+          "The source revision changes."
+        ],
+        "issuedAt": "2026-09-06T12:15:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/assessmentCoverage/claimsWithStoredAssessment",
+        "code": "assessment_coverage_miscounted"
+      }
+    },
+    {
+      "label": "partial report that never says what stopped",
+      "kind": "research-report",
+      "record": {
+        "schemaVersion": 1,
+        "reportId": "oracle-report-1",
+        "requestRef": "oracle-request-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "decisionQuestion": "Can the reader distinguish a complete requested section from a search snippet?",
+        "summary": "The captured implementation distinguishes the read outcomes; deployed behaviour was not observed, so the smallest next step is a bounded installed-reader test.",
+        "scope": {
+          "subject": "institutional source reading",
+          "observationWindow": {
+            "startedAt": "2026-09-06T11:40:00.000Z",
+            "endedAt": "2026-09-06T11:58:00.000Z"
+          },
+          "revisions": [
+            {
+              "repositoryId": "vinci-contracts",
+              "revision": "365fe6ce6adaed1753e322d4e75331f331930131"
+            }
+          ]
+        },
+        "reportCompleteness": "PARTIAL",
+        "assessmentCoverage": {
+          "claimsTotal": 2,
+          "claimsWithStoredAssessment": 1,
+          "claimsNotAssessed": 1
+        },
+        "runTerminal": {
+          "kind": "completed",
+          "outcome": "SUPERSEDED"
+        },
+        "claims": [
+          {
+            "claimRef": "oracle-claim-1",
+            "claimDigest": "afbf2347a919afb2b8799c8f5329a30b0de1ec7f383c43ba1a88860d4c2fb637",
+            "assessmentRef": "oracle-assessment-1"
+          },
+          {
+            "claimRef": "oracle-claim-2",
+            "claimDigest": "6851e2e45c793affef1e8ee3496bd45defa876e82ca528c9d054a52bd7e9289b",
+            "assessmentRef": null
+          }
+        ],
+        "sourceManifest": [
+          {
+            "sourceId": "oracle-source-1",
+            "citationRefs": [
+              "oracle-citation-1"
+            ],
+            "completeness": "FULL_REQUESTED_RANGE",
+            "observationMode": "INDEPENDENT_RETRIEVAL",
+            "retrievedAt": "2026-09-06T11:42:00.000Z"
+          },
+          {
+            "sourceId": "oracle-source-2",
+            "citationRefs": [],
+            "completeness": "SNIPPET_ONLY",
+            "observationMode": "PROVIDER_REPORTED",
+            "retrievedAt": "2026-09-06T11:45:00.000Z"
+          }
+        ],
+        "alternatives": [
+          "Change nothing and accept that the installed behaviour is unobserved.",
+          "Run the smaller installed-reader fixture instead of the full suite."
+        ],
+        "contradictions": [],
+        "materialUnknowns": [
+          "Whether the installed artifact behaves as the captured source does."
+        ],
+        "proposalRef": "oracle-proposal-1",
+        "stopExplanation": null,
+        "cost": {
+          "state": "RECONCILIATION_PENDING",
+          "amountMicrousd": null,
+          "ledgerRef": "ledger-oracle-14"
+        },
+        "invalidationConditions": [
+          "The installed artifact is rebuilt.",
+          "The source revision changes."
+        ],
+        "issuedAt": "2026-09-06T12:15:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/stopExplanation",
+        "code": "incomplete_report_without_stop_explanation"
+      }
+    },
+    {
+      "label": "proposal payload writing its own execution authority",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": false,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "REQUEST_OBSERVATION",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [
+            {
+              "summary": "Change nothing and record the installed behaviour as unobserved.",
+              "whyNotChosen": "The unknown is the one the decision turns on."
+            }
+          ],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ],
+          "authorityToExecute": true
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/authorityToExecute",
+        "code": "authority_field_in_model_payload"
+      }
+    },
+    {
+      "label": "proposal host half claiming execution authority",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": true,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "REQUEST_OBSERVATION",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [
+            {
+              "summary": "Change nothing and record the installed behaviour as unobserved.",
+              "whyNotChosen": "The unknown is the one the decision turns on."
+            }
+          ],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ]
+        }
+      },
+      "expectedIssue": {
+        "path": "/hostResolved/authorityToExecute",
+        "code": "proposal_claims_execution_authority"
+      }
+    },
+    {
+      "label": "unknown proposal kind",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": false,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "MERGE_THE_PR",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [
+            {
+              "summary": "Change nothing and record the installed behaviour as unobserved.",
+              "whyNotChosen": "The unknown is the one the decision turns on."
+            }
+          ],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ]
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/kind",
+        "code": "unknown_proposal_kind"
+      },
+      "vocabulary": "PROPOSAL_KINDS"
+    },
+    {
+      "label": "proposal compared to nothing",
+      "kind": "decision-proposal",
+      "record": {
+        "schemaVersion": 1,
+        "envelopeKind": "oracle_decision_proposal",
+        "workspaceRef": "ws-institutional-1",
+        "principal": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "runRef": "run-oracle-1",
+        "workOrderRef": "wo-oracle-1",
+        "policyRef": "policy.oracle.research",
+        "policyVersion": 3,
+        "grantRefs": [
+          "grant-propose-advisory"
+        ],
+        "budgetReservationRef": null,
+        "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+        "issuedAt": "2026-09-06T12:16:00.000Z",
+        "attestedBy": {
+          "component": "oracle-report-host",
+          "version": "1.4.0"
+        },
+        "hostResolved": {
+          "proposalId": "oracle-proposal-1",
+          "reportRef": "oracle-report-1",
+          "proposeScope": "advisory_with_job_shape_ref",
+          "authorityToExecute": false,
+          "admissibility": {
+            "state": "ADMISSIBLE",
+            "missingDecision": null
+          }
+        },
+        "payload": {
+          "kind": "REQUEST_OBSERVATION",
+          "basis": {
+            "reportRef": "oracle-report-1",
+            "claimRefs": [
+              "oracle-claim-1",
+              "oracle-claim-2"
+            ],
+            "contextBindingRef": "oracle-context-binding-1",
+            "sourceIds": [
+              "oracle-source-1"
+            ]
+          },
+          "target": {
+            "decision": "Whether the installed reader needs a change before the next release.",
+            "artifactRef": "artifact-installed-reader",
+            "repositoryRevision": "365fe6ce6adaed1753e322d4e75331f331930131",
+            "workstream": null
+          },
+          "action": "Run the approved positive and unavailable-format reader fixtures against the installed artifact.",
+          "acceptance": "Report actual outcomes and coverage from the installed artifact, including a positive control.",
+          "proposedJobShapeRef": "job-shape-installed-reader-probe",
+          "cost": {
+            "estimatedMicrousd": 40000,
+            "estimatedWallSeconds": 600,
+            "reversibility": "reversible",
+            "operationalRisks": [
+              "The probe shares a runner with the release gate."
+            ],
+            "dataNeeds": [
+              "Read access to the installed artifact."
+            ]
+          },
+          "alternatives": [],
+          "falsifier": "The installed reader returns a typed unavailable result, making the hypothesis wrong.",
+          "consequences": {
+            "onSuccess": "The release proceeds with the installed behaviour observed.",
+            "onFailure": "The reader is changed before the release.",
+            "onInconclusive": "The probe is rerun with a longer wall clock, or the claim stays unassessed."
+          },
+          "invalidationConditions": [
+            "The installed artifact is rebuilt."
+          ]
+        }
+      },
+      "expectedIssue": {
+        "path": "/payload/alternatives",
+        "code": "proposal_without_alternative"
+      }
+    },
+    {
+      "label": "an author certifying its own work useful",
+      "kind": "outcome-record",
+      "record": {
+        "schemaVersion": 1,
+        "outcomeId": "oracle-outcome-1",
+        "proposalRef": "oracle-proposal-1",
+        "proposalDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+        "reportRef": "oracle-report-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "authorizedWorkRef": "wo-installed-reader-probe",
+        "executionEvidenceRefs": [
+          "evidence-probe-run-77"
+        ],
+        "outcomeClass": "HELPFUL_OBSERVED",
+        "justification": "The probe ran and showed the installed reader does NOT share the limitation, which settled the question the report was written to settle.",
+        "observedWindow": {
+          "startedAt": "2026-09-07T09:00:00.000Z",
+          "endedAt": "2026-09-07T09:12:00.000Z"
+        },
+        "costMicrousd": 38000,
+        "uncertaintyResolved": true,
+        "hypothesisResult": "DISPROVED_BY_RESULT",
+        "evidence": {
+          "linkedFollowThrough": {
+            "workRef": "wo-installed-reader-probe",
+            "detail": "The proposed fixtures were the ones that ran."
+          },
+          "temporalAssociation": null,
+          "measuredCounterfactual": null
+        },
+        "causationClaimed": false,
+        "authoringIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "assessingIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "rubricRef": "rubric:oracle-usefulness-v1",
+        "creditKind": "ACCEPTED_WORK",
+        "duplicateOfOutcomeRef": null,
+        "issuedAt": "2026-09-07T09:30:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/assessingIdentity",
+        "code": "self_certified_usefulness"
+      }
+    },
+    {
+      "label": "causation claimed without a measured comparison",
+      "kind": "outcome-record",
+      "record": {
+        "schemaVersion": 1,
+        "outcomeId": "oracle-outcome-1",
+        "proposalRef": "oracle-proposal-1",
+        "proposalDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+        "reportRef": "oracle-report-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "authorizedWorkRef": "wo-installed-reader-probe",
+        "executionEvidenceRefs": [
+          "evidence-probe-run-77"
+        ],
+        "outcomeClass": "HELPFUL_OBSERVED",
+        "justification": "The probe ran and showed the installed reader does NOT share the limitation, which settled the question the report was written to settle.",
+        "observedWindow": {
+          "startedAt": "2026-09-07T09:00:00.000Z",
+          "endedAt": "2026-09-07T09:12:00.000Z"
+        },
+        "costMicrousd": 38000,
+        "uncertaintyResolved": true,
+        "hypothesisResult": "DISPROVED_BY_RESULT",
+        "evidence": {
+          "linkedFollowThrough": {
+            "workRef": "wo-installed-reader-probe",
+            "detail": "The proposed fixtures were the ones that ran."
+          },
+          "temporalAssociation": null,
+          "measuredCounterfactual": null
+        },
+        "causationClaimed": true,
+        "authoringIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "assessingIdentity": {
+          "kind": "verifier",
+          "verifierId": "release-verifier-2",
+          "independent": true
+        },
+        "rubricRef": "rubric:oracle-usefulness-v1",
+        "creditKind": "ACCEPTED_WORK",
+        "duplicateOfOutcomeRef": null,
+        "issuedAt": "2026-09-07T09:30:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/evidence/measuredCounterfactual",
+        "code": "causation_without_counterfactual"
+      }
+    },
+    {
+      "label": "unknown outcome class",
+      "kind": "outcome-record",
+      "record": {
+        "schemaVersion": 1,
+        "outcomeId": "oracle-outcome-1",
+        "proposalRef": "oracle-proposal-1",
+        "proposalDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+        "reportRef": "oracle-report-1",
+        "runRef": "run-oracle-1",
+        "workspaceRef": "ws-institutional-1",
+        "authorizedWorkRef": "wo-installed-reader-probe",
+        "executionEvidenceRefs": [
+          "evidence-probe-run-77"
+        ],
+        "outcomeClass": "VERY_HELPFUL",
+        "justification": "The probe ran and showed the installed reader does NOT share the limitation, which settled the question the report was written to settle.",
+        "observedWindow": {
+          "startedAt": "2026-09-07T09:00:00.000Z",
+          "endedAt": "2026-09-07T09:12:00.000Z"
+        },
+        "costMicrousd": 38000,
+        "uncertaintyResolved": true,
+        "hypothesisResult": "DISPROVED_BY_RESULT",
+        "evidence": {
+          "linkedFollowThrough": {
+            "workRef": "wo-installed-reader-probe",
+            "detail": "The proposed fixtures were the ones that ran."
+          },
+          "temporalAssociation": null,
+          "measuredCounterfactual": null
+        },
+        "causationClaimed": false,
+        "authoringIdentity": {
+          "kind": "worker",
+          "workerId": "worker-oracle-1"
+        },
+        "assessingIdentity": {
+          "kind": "verifier",
+          "verifierId": "release-verifier-2",
+          "independent": true
+        },
+        "rubricRef": "rubric:oracle-usefulness-v1",
+        "creditKind": "ACCEPTED_WORK",
+        "duplicateOfOutcomeRef": null,
+        "issuedAt": "2026-09-07T09:30:00.000Z"
+      },
+      "expectedIssue": {
+        "path": "/outcomeClass",
+        "code": "unknown_outcome_class"
+      },
+      "vocabulary": "OUTCOME_CLASSES"
+    }
+  ]
+}

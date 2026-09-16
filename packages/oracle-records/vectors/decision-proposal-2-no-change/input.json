@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "envelopeKind": "oracle_decision_proposal",
+  "workspaceRef": "ws-institutional-1",
+  "principal": { "kind": "worker", "workerId": "worker-oracle-1" },
+  "runRef": "run-oracle-1",
+  "workOrderRef": "wo-oracle-1",
+  "policyRef": "policy.oracle.research",
+  "policyVersion": 3,
+  "grantRefs": ["grant-propose-advisory"],
+  "budgetReservationRef": null,
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "issuedAt": "2026-09-06T12:17:00.000Z",
+  "attestedBy": { "component": "oracle-report-host", "version": "1.4.0" },
+  "hostResolved": {
+    "proposalId": "oracle-proposal-2",
+    "reportRef": "oracle-report-1",
+    "proposeScope": "advisory_only",
+    "authorityToExecute": false,
+    "admissibility": {
+      "state": "INADMISSIBLE_RETAINED_AS_ADVISORY",
+      "missingDecision": {
+        "decision": "Whether a probe may read the installed artifact outside the release window.",
+        "owner": "release-captain",
+        "ruleRef": "policy.oracle.research#installed-read"
+      }
+    }
+  },
+  "payload": {
+    "kind": "NO_CHANGE",
+    "basis": {
+      "reportRef": "oracle-report-1",
+      "claimRefs": ["oracle-claim-1"],
+      "contextBindingRef": "oracle-context-binding-1",
+      "sourceIds": ["oracle-source-1"]
+    },
+    "target": {
+      "decision": "Whether the installed reader needs a change before the next release.",
+      "artifactRef": null,
+      "repositoryRevision": null,
+      "workstream": null
+    },
+    "action": "Keep the current reader and record the installed behaviour as unobserved.",
+    "acceptance": null,
+    "proposedJobShapeRef": null,
+    "cost": {
+      "estimatedMicrousd": 0,
+      "estimatedWallSeconds": 0,
+      "reversibility": "reversible",
+      "operationalRisks": [],
+      "dataNeeds": []
+    },
+    "alternatives": [
+      {
+        "summary": "Run the installed-reader probe now.",
+        "whyNotChosen": "The decision it informs is not due until the next release."
+      }
+    ],
+    "falsifier": "An installed-reader observation showing the limitation would make no-change wrong.",
+    "consequences": {
+      "onSuccess": "The release proceeds with the unknown recorded rather than resolved.",
+      "onFailure": "The limitation is discovered in the field instead of in a probe.",
+      "onInconclusive": "The unknown stays recorded and is revisited at the next release."
+    },
+    "invalidationConditions": ["The release window changes.", "The installed artifact is rebuilt."]
+  }
+}

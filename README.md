@@ -14,13 +14,15 @@ This repository enforces a strict downward dependency rule: a package may depend
 | **1** | `policy`, `model-classes`, `evidence`, `approvals`, `device-auth` |
 | **2** | `receipts`, `run-events`, `work-orders` |
 | **3** | `remote-protocol` (session identity, roles, the authority channel) |
-| **4** | `session-stream` (the ephemeral human-facing channel of a remote session), `worker-capabilities` (what an adapter can enforce, and the trust level derived from it) |
+| **4** | `session-stream` (the ephemeral human-facing channel of a remote session), `worker-capabilities` (what an adapter can enforce, and the trust level derived from it), `oracle-records` (the Oracle research contract, bound to an existing `ContextManifest`) |
 
 Each layer knows everything below it; nothing above. Packages export only the types and validators they define—never re-export upward.
 
 Three channels, three packages, deliberately not one: `run-events` (layer 2) is the durable, content-minimal record — its payload values are ids, enums, counts, digests, timestamps and flags, never free text; `remote-protocol` (layer 3) carries signed authority commands; `session-stream` (layer 4) carries what a supervising human sees while a worker runs — current action, a bounded diff, a question, a warning — with `retention: "ephemeral"` so it is never mistaken for the record.
 
 `remote-protocol` also defines the signed [`GitHubActionAttribution` v1](docs/github-action-attribution-v1.md) envelope. It binds the central `Actor` and `SessionBindingRef` to an exact pull-request object while recording a shared GitHub login as explicitly non-authoritative transport metadata.
+
+`oracle-records` (layer 4) carries the Oracle research contract: a `ResearchRequest`, an `OracleContextBinding`, a `SourceRecord` and a `SourceCitation`. It sits above `run` because a context binding REFERENCES an existing `ContextManifest` by digest instead of restating it, and `resolveContextBinding` recomputes that digest from the manifest's own bytes — a digest nothing recomputes is a field, not an identity. Its central idea is the envelope/payload split described under `ResearchRequest` below.
 
 `worker-capabilities` (layer 4) answers a different question: what can THIS worker's adapter actually honour? A `WorkerDeclaration` carries a closed `CapabilityMatrix`; the trust level (`inventoried → observed → supervised → governed → assured`) is derived from the matrix, never trusted from the declaration, and a declaration that claims more than it demonstrates is rejected. A UI renders `renderableRemoteCommands(matrix, role)` — the adapter axis intersected with what remote-protocol lets the role issue — and nothing else, so a control is never shown that the system cannot enforce.
 
@@ -306,6 +308,284 @@ const binding: SessionBinding = {
 const result = validateSessionBinding(binding);
 // Valid: true
 ```
+
+### ResearchRequest
+
+An admitted Oracle research request. Its one structural idea is worth more than its field list: the record is TWO disjoint subtrees. `hostResolved`, and every field of the envelope itself, is written by the attesting component; `payload` is everything a model or a requester wrote. There is no third place.
+
+That split is enforced three ways, and each fails independently. `ModelAuthored<T>` maps any authority-bearing key name in a payload type to `never`, so a payload declaring one does not compile. `validateAttestedEnvelope` walks the whole payload subtree at runtime and refuses an authority-bearing key **by name**, at any depth, with its own `authority_field_in_model_payload` code — because the compiler is not present when JSON arrives from a model. And the same field name is ACCEPTED on the envelope, which is what makes this a rule about who resolved the value rather than a rule about spelling.
+
+```typescript
+import { toUserId, toWorkerId } from "@getsimpledirect/vinci-contracts";
+import {
+  admitResearchRequest,
+  researchRequestDigest,
+  validateResearchRequest,
+  type ResearchRequest,
+} from "@getsimpledirect/vinci-oracle-records";
+
+const request: ResearchRequest = {
+  schemaVersion: 1,
+  envelopeKind: "oracle_research_request",
+  // Everything from here to `attestedBy` is host-resolved. A model proposes
+  // none of it, and cannot: see the payload below.
+  workspaceRef: "ws-institutional-1",
+  principal: { kind: "worker", workerId: toWorkerId("worker-oracle-1")! },
+  runRef: "run-oracle-1",
+  workOrderRef: "wo-oracle-1",
+  policyRef: "policy.oracle.research",
+  policyVersion: 3,
+  grantRefs: ["grant-read-institutional"],
+  // Required KEY, nullable VALUE: absent means the budget was never
+  // considered, null means it was considered and there is none.
+  budgetReservationRef: "budget-reservation-7",
+  contextManifestDigest: "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  issuedAt: "2026-09-06T12:00:00.000Z",
+  attestedBy: { component: "oracle-admission-host", version: "1.4.0" },
+  hostResolved: {
+    requestId: "oracle-request-1",
+    originatingEventRef: null,
+    missionOwner: { kind: "user", userId: toUserId("owner-1")! },
+    intendedRecipient: { kind: "worker", workerId: toWorkerId("worker-oracle-1")! },
+    // Scope is a POLICY INTERSECTION, not a model choice, which is why it
+    // lives here and why a payload cannot express it at all.
+    scope: {
+      repositoryRefs: ["repo:vinci-contracts@365fe6ce"],
+      evidenceRefs: [],
+      exclusions: ["personal_data", "credentials"],
+      taskClass: "source_verification",
+    },
+    // Every member of ORACLE_PROPOSE_SCOPES is advisory. INV-01 is the
+    // vocabulary, not a comment.
+    authority: { readScope: "request_scope_only", proposeScope: "advisory_only" },
+    contextSnapshotRefs: [],
+    effort: {
+      mode: "investigation",
+      maxWallSeconds: 900,
+      maxToolCalls: 40,
+      maxBytes: 4_000_000,
+      maxTokens: 200_000,
+      budgetMicrousd: 0, // zero is a value: this request may spend nothing
+      attentionBudget: { interruptions: 1, decisions: 0 },
+      explorationPortfolioRef: null,
+    },
+    lineage: {
+      parentInvestigationRef: null,
+      childRelationship: "none",
+      idempotencyKey: "idem-oracle-1",
+      version: 1,
+    },
+    // REQ-02: a NONCRITICAL detail the requester omitted is carried as a
+    // labeled assumption. Authority, identity, protected-data scope and the
+    // essential decision parameters cannot be assumed even here.
+    admissionAssumptions: [
+      {
+        about: "/payload/freshness/asOfCutoff",
+        assumed: "No cutoff was stated, so the question is read as current.",
+        basis: "ratified_default",
+      },
+    ],
+  },
+  payload: {
+    decisionToInform: "Choose the smallest change needed for truthful source reading.",
+    question: "Can the reader distinguish a complete section from a search snippet?",
+    requiredOutput: ["claim_level_evidence", "material_unknowns"],
+    consequenceOfNoAnswer: "Four read outcomes ship collapsed into one.",
+    freshness: { horizon: "current", asOfCutoff: null, mandatoryRechecks: [] },
+    completion: {
+      acceptanceCriteria: ["Each read outcome is distinguishable from the record alone."],
+      stopConditions: ["decision_has_sufficient_evidence"],
+      deliveryDestination: "run-oracle-1/report",
+    },
+    // Adding `policyRef` here would not compile: ModelAuthored maps it to
+    // `never`. Arriving over the wire, it is refused as
+    // authority_field_in_model_payload rather than as an unknown field.
+  },
+};
+
+const result = validateResearchRequest(request);
+// Valid: true
+
+// ADMITTED means admitted to RESEARCH. It is not approval to execute whatever
+// the research eventually recommends.
+const admission = admitResearchRequest(request);
+// admission.outcome === "ADMITTED"
+
+// REQ-03: the digest covers the WHOLE record, so reusing an idempotency key
+// after the scope was widened is a named conflict, not the same request.
+const digest = researchRequestDigest(request);
+```
+
+### SourceRecord
+
+What was actually observed, and how far that observation reaches. A failed read is a typed result rather than a success record with empty text, and `FULL_REQUESTED_RANGE` never means "the whole document" unless the request was for the whole document.
+
+```typescript
+import {
+  deliveredHandle,
+  resolveCitations,
+  validateSourceRecord,
+  type SourceRecord,
+} from "@getsimpledirect/vinci-oracle-records";
+
+const unreadable: SourceRecord = {
+  schemaVersion: 1,
+  sourceId: "oracle-source-3",
+  requestRef: "oracle-request-1",
+  runRef: "run-oracle-1",
+  workspaceRef: "ws-institutional-1",
+  sourceKind: "web_document",
+  // Presentation numbering is a rendering artefact and is not a reference.
+  presentationIndex: null,
+  origin: {
+    locator: "https://example.invalid/sealed.pdf",
+    repositoryId: null,
+    repositoryPath: null,
+    repositoryRevision: null,
+    publisher: null,
+  },
+  // Four times, four different facts. Each is set only when actually known.
+  time: {
+    retrievedAt: "2026-09-06T11:47:00.000Z",
+    publishedAt: null,
+    updatedAt: null,
+    eventAt: null,
+  },
+  observation: {
+    mode: "INDEPENDENT_RETRIEVAL",
+    adapterVersion: "http-read/3.0.0",
+    contentType: "application/pdf",
+    encoding: "binary",
+    observedBytesDigest: "3d".repeat(32),
+    retrievedRange: null,
+    retrievalCostMicrousd: null,
+  },
+  requestedRange: { kind: "entire_document" },
+  completeness: "NOT_OBTAINED",
+  // null, not false: nothing was obtained, so the question has no answer.
+  coversEntireDocument: null,
+  readOutcome: "UNSUPPORTED_FORMAT",
+  matchState: "NOT_SEARCHED",
+  // Null exactly when the read obtained nothing. An empty text here is the
+  // shape SRC-04 exists to refuse.
+  content: null,
+  limitations: ["unsupported_format"],
+  policy: {
+    classification: "public",
+    permittedAudiences: ["institutional_workspace"],
+    retentionRule: "retention:days_90",
+    researchUse: "permitted",
+    // A third state, distinct from permitted and prohibited: nobody looked.
+    trainingUse: "unknown",
+  },
+  relationships: [],
+};
+
+const parsed = validateSourceRecord(unreadable);
+// Valid: true — a failed read is a record, not an error
+
+// A model may cite only a source it was actually handed. An invented id, an
+// id from another run or workspace, and the presentation NUMBER each get
+// their own refusal code.
+if (parsed.ok) {
+  const resolution = resolveCitations([], [deliveredHandle(parsed.value)]);
+  // resolution.outcome === "RESOLVED"
+}
+```
+
+### ClaimRecord and ClaimAssessment
+
+A claim states one proposition, scoped narrowly enough that something could check it. An assessment says what a check found — and it is the record this package exists for.
+
+`vinci-chat`'s `lib/harness/grader.ts` returns `{status:'supported'}` from a catch block, and its comment explains why: "the grader must never block an answer". That is correct for a nonblocking consumer chat checker, where a false negative costs a refused reply. It is catastrophic as an institutional assessment, where the costs invert: a check that could not run would report that the claim is supported, and every consumer downstream inherits a conclusion nothing established.
+
+So the two behaviours are separated by construction, not by a comment. `ClaimAssessment` is a union discriminated on `status`, and the `SUPPORTED` arm is the only one carrying `reviewedSpans` and `execution` — a supported assessment cannot be WRITTEN without naming the spans that were read and the reviewer run that completed. `StatusForOutcome` maps every reviewer failure to `CHECK_UNAVAILABLE` at the type level, so an error path that tries to produce `SUPPORTED` does not compile. And `statusForReviewerOutcome` is the runtime half, for the JSON that arrives with no compiler present.
+
+```typescript
+import {
+  statusForReviewerOutcome,
+  validateClaimAssessment,
+  type ClaimAssessment,
+} from "@getsimpledirect/vinci-oracle-records";
+
+// Every reviewer failure, and every input the function cannot recognise.
+statusForReviewerOutcome({ kind: "TIMED_OUT", detail: "wall clock exceeded" });
+// "CHECK_UNAVAILABLE"
+statusForReviewerOutcome({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: [] });
+// "INSUFFICIENT_EVIDENCE" — a completed run over empty material is not support
+statusForReviewerOutcome(undefined);
+// "CHECK_UNAVAILABLE" — never a throw, because the caller is an error path
+
+const supported: ClaimAssessment = {
+  schemaVersion: 1,
+  assessmentId: "oracle-assessment-1",
+  claimRef: "oracle-claim-1",
+  claimDigest: "5e".repeat(32),
+  reportDigest: null,
+  status: "SUPPORTED",
+  evaluator: { kind: "verifier", verifierId: "oracle-provenance-checker", independent: true },
+  evaluatorVersion: "provenance-check/2.0.1",
+  // CLM-02: which method produced this result, so a consumer can filter on it.
+  method: "DETERMINISTIC",
+  independence: "A host-run checker with no access to the claim's author.",
+  limitations: ["Provenance validation is not semantic fact-checking."],
+  // The evidence that earns the status. Neither field exists on any arm a
+  // failure can reach, which is what makes SUPPORTED unwritable without them.
+  reviewedSpans: [{ sourceId: "oracle-source-1", span: { startOffset: 120, endOffset: 480 } }],
+  execution: { completed: true, reviewerRunRef: "reviewer-run-41" },
+  issuedAt: "2026-09-06T12:12:00.000Z",
+};
+
+validateClaimAssessment(supported).ok;
+// true
+
+// And the stored record refuses the same thing the status function does, at the field:
+validateClaimAssessment({ ...supported, reviewedSpans: [] });
+// { ok: false, issues: [{ path: "/reviewedSpans", code: "unearned_support", ... }] }
+```
+
+`NOT_ASSESSED` is deliberately distinct from every other status, including from a check that ran and found nothing. Its arm carries no evaluator and no method at all, because none ran. Absence of assessment must never read as absence of problems.
+
+A `HYPOTHESIS` claim is valid with NO source spans: it is not required to be true before it is investigated, and a validator demanding source support for the future outcome of a proposed experiment would refuse the record the Oracle exists to produce. What it must carry is a discriminating test naming both arms — what would support it AND what would refute it, because one arm is a plan to find agreement.
+
+### ResearchReport and DecisionProposal
+
+A report's completeness, its assessment coverage and its run's terminal state are **three separate fields**, and nothing here derives one from another. A `COMPLETE` report of a run that ended `SUPERSEDED`, with zero assessments, is a valid record — the run stopped being worth doing, and the report still said everything it set out to say. A schema with one `status` field forces whoever writes it to pick one, and the one they pick is the flattering one.
+
+`runTerminal` reuses `packages/run-events`' own vocabularies rather than a fourth private list: `{ kind: "completed", outcome }` from `RUN_OUTCOMES`, `{ kind: "failed", failureCode }` from `RUN_FAILURE_CODES`, or `{ kind: "not_terminal" }` for a report written while the run is still open. The first version of this field was a private four-member list that contradicted run-events on five of its six members, so a report could not say a run ended `SUPERSEDED` or `DUPLICATE` at all — and those are productive terminals, not failures.
+
+Coverage is counts, not a label, and the counts are cross-checked against the claim list: a report cannot declare coverage its own claims contradict. Claim entries REFERENCE a stored assessment; a field named `assessmentStatus` on one is refused by that name (`inline_assessment_status`), because §22.2's warning is that a strict implementation uses the canonical independently stored assessment rather than an inline model-written status.
+
+A `DecisionProposal` is an `AttestedEnvelope`, so the model writes only `payload` — where an authority-bearing key does not compile and is refused at runtime. `authorityToExecute` lives on the host half, typed as the literal `false`: a boundary that could be written `true` is a setting, not a boundary. `mapProposalToJobShape` is the S3 contract and has three answers, not two: `REFUSED` (malformed), `UNMAPPED` (well-formed and not on the allowlist), `MAPPED`. Collapsing the first two into "false" is what "approximately matched" looks like from the inside.
+
+`NO_CHANGE`, `DEFER` and a justified `STOP_PROPOSAL` are valid, complete proposals. A package that refuses everything has not qualified.
+
+### OutcomeRecord
+
+Whether the proposal actually helped, observed rather than assumed. Four distinctions, each of which the record refuses to collapse:
+
+- **Not attempted is not failed.** `NOT_ATTEMPTED` carries no execution evidence, and nothing converts it into `NOT_HELPFUL_OBSERVED`.
+- **Unavailable is not zero benefit.** `OBSERVATION_UNAVAILABLE` leaves `uncertaintyResolved` null — unknown, not false.
+- **A disproved hypothesis can still be helpful.** `HELPFUL_OBSERVED` with `hypothesisResult: "DISPROVED_BY_RESULT"` is a valid record: it settled the question the report was written to settle.
+- **Temporal consistency is not causation.** `linkedFollowThrough`, `temporalAssociation` and `measuredCounterfactual` are three separate fields rather than one ranked enum, and a record claiming causation without a measured comparison is refused.
+
+The report's author cannot self-certify accepted usefulness: a `HELPFUL_OBSERVED` record whose assessing identity equals its authoring identity is refused. That rule is scoped to the class that claims usefulness — the same pair of identities is accepted on `NOT_HELPFUL_OBSERVED`, because a team reporting that its own work did not help is not the failure OUT-02 exists for.
+
+`resolveOutcomeCredits(outcomes, authorizedWork)` answers the cross-record half, and the anchor is its **second argument** — the work orders the host authorized — exactly as `resolveCitations` takes `delivered`. The first version carried a `creditKey` string on the record and keyed on that, which meant two outcomes with identical `proposalRef`, `proposalDigest`, `authorizedWorkRef` and `outcomeClass` took two accepted-work credits by spelling the key differently. A consistency rule is defeated by a consistent lie unless it is anchored to something outside the record making the claim, so the field was removed rather than kept as a label nothing keys on. Naming the work order on the record was not enough either — a record writes that field too — so the resolver looks every claimed work ref up in the set it is handed, and two outcomes citing the same execution evidence are one credit however many work orders they name.
+
+Five answers, not two: `REFUSED` (malformed), `UNAUTHORIZED_WORK` (a work ref no host authorized), `DOUBLE_CREDITED` (two accepted-work credits for one underlying outcome, naming which record already holds it), `MISBOUND_REUSE` (a reuse naming an outcome that holds no credit to reuse), and `CREDITED` — which carries `unresolvedReuse`, the reuses whose original is not in the set handed in. Those are reported rather than refused, because the original may live in a part of the ledger the caller did not pass.
+
+### Cross-record bindings
+
+Every rule in this package that compares one record to another is anchored on something neither record can write, and `src/cross-record-anchors.test.ts` enumerates all of them with the anchor each one uses. There are three anchors and only three: **recomputation** (derive the value from the referenced record's own bytes — `resolveContextBinding`, `resolveIdempotency`, `resolveReportBundle`), **a second argument** the caller supplies from host state (`resolveCitations`, `mapProposalToJobShape`, `resolveOutcomeCredits`), and **the envelope split** (a host-attested half against a model-authored half).
+
+`resolveContextBinding(binding, manifest, runRef)` takes the caller's own run identity as a third argument. Its digest check is a recomputation anchor, but its run check used to compare `binding.runRef` to `manifest.runId` — two fields of two untrusted inputs — so a forger writing the same wrong run into both passed. That anchor exists in reach (a host resolving a binding knows which run it is operating for), which is why it is a fix rather than a declared limit.
+
+`resolveReportBundle` is what a renderer must go through. It recomputes each claim's digest with `claimRecordDigest` and returns an assessment **only** for a claim it actually binds, so a report and an assessment that agree on a fabricated digest bind nothing. Every negative for these rules is built as a *consistent lie* — all copies made to agree — because a single-copy mutation is what the defeated versions of these rules already passed.
+
+The rules that have **no** anchor are listed in that file too, as limits, each with a test demonstrating the lie succeeding: a report and its claims can agree on a run neither belongs to; a proposal and a report can name each other while both are forged; one party can write both identities on an outcome; a `ClaimAssessment`'s `claimDigest` is an assertion its own validator cannot check; and **two disjoint descriptions of one execution take two accepted-work credits**.
+
+That last one is deliberate. OUT-04 was defeated three times and each repair moved the anchor to another string the record authors — `creditKey`, then `authorizedWorkRef`, then `executionEvidenceRefs`. Identical and overlapping evidence claims are caught; two disjoint descriptions of one run are not, and a fourth anchor in the same position would look closed until someone probed the new dimension. Closing it needs a host-attested identity for the *execution*, resolved from outside these records, which belongs to whatever component authorizes the work. See `claim-assessment.ts` for why an attested envelope would not close the authoring path either.
 
 ## Handling Validation Failures
 

@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "claimId": "oracle-claim-1",
+  "requestRef": "oracle-request-1",
+  "runRef": "run-oracle-1",
+  "workspaceRef": "ws-institutional-1",
+  "contextManifestDigest": "15d7e478560348d91f5595faded5a97f3279020640f411c816f48598c4392f94",
+  "claimType": "OBSERVED",
+  "proposition": "The captured reader refuses an unsupported format rather than returning empty text.",
+  "applicability": {
+    "subject": "packages/oracle-records/src/source-record.ts",
+    "revision": "365fe6ce6adaed1753e322d4e75331f331930131",
+    "applicableFrom": null,
+    "applicableUntil": null,
+    "scope": "captured_source_revision_only; nothing here is a statement about a deployed reader"
+  },
+  "materiality": "DECISION_CHANGING",
+  "sourceSpans": [
+    { "sourceId": "oracle-source-1", "span": { "startOffset": 120, "endOffset": 480 } }
+  ],
+  "contradictingEvidence": [],
+  "assumptions": ["The captured revision is the one that would be deployed."],
+  "derivation": null,
+  "discriminatingTest": null,
+  "author": { "kind": "worker", "workerId": "worker-oracle-1" },
+  "invalidationConditions": [
+    "The source revision changes.",
+    "The extraction version changes."
+  ],
+  "issuedAt": "2026-09-06T12:10:00.000Z"
+}

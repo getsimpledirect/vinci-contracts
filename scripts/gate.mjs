@@ -22,18 +22,21 @@ const STEPS = [
   ["build", "npx tsc --build packages/*/tsconfig.json --force"],
   ["lint", "npx eslint packages --max-warnings=0"],
   ["tests", "npx vitest run"],
-  // The digest vectors in packages/work-orders/vectors and packages/run/vectors
+  // The digest vectors in packages/work-orders/vectors, packages/run/vectors and
+  // packages/oracle-records/vectors
   // are shared with a Python implementation. Node's side runs inside vitest;
   // this is the other language reading the same files. -B: no __pycache__ left
   // in the tree.
   //
-  // BOTH suites, and both named: `unittest discover` takes one start directory,
+  // ALL THREE suites, each named: `unittest discover` takes one start directory,
   // so a single invocation would have covered work-orders and silently said
-  // nothing about run — the shape this gate exists to prevent one level up.
+  // nothing about run or oracle-records — the shape this gate exists to prevent
+  // one level up. Adding a fourth Python twin means adding a fourth clause here.
   [
     "digest vectors (python)",
     "python3 -B -m unittest discover -s packages/work-orders/python"
-      + " && python3 -B -m unittest discover -s packages/run/python",
+      + " && python3 -B -m unittest discover -s packages/run/python"
+      + " && python3 -B -m unittest discover -s packages/oracle-records/python",
   ],
   ["dependency graph", "node scripts/check-dependency-graph.mjs"],
   ["SchemaMeta conformance", "node scripts/check-schema-meta.mjs"],

@@ -77,6 +77,123 @@ function hostileInputs() {
  *
  * Add a guard here when you export one. The registry is the contract.
  */
+/**
+ * One committed Oracle vector, by directory name.
+ *
+ * The oracle-records guards below need a WHOLE valid research request, and a
+ * copy of one typed into this file would be a second definition of the contract
+ * that drifts the moment the schema moves. Reading the committed vector means
+ * the positive control below runs against the same bytes the cross-language
+ * suite pins, so a schema change breaks this check loudly instead of leaving it
+ * asserting something about a record shape that no longer exists.
+ */
+function oracleVector(name) {
+  return JSON.parse(
+    readFileSync(join(root, "packages", "oracle-records", "vectors", name, "input.json"), "utf8"),
+  );
+}
+
+/** Deep clone with ONE field replaced at a JSON pointer. */
+function oracleWithout(value, pointer) {
+  const copy = JSON.parse(JSON.stringify(value));
+  const segments = pointer.split("/").slice(1);
+  const last = segments.pop();
+  let node = copy;
+  for (const segment of segments) node = node[segment];
+  delete node[last];
+  return copy;
+}
+
+const ORACLE_REQUEST = oracleVector("research-request-1-admitted");
+const ORACLE_CITATION = oracleVector("source-citation-1-delivered");
+const ORACLE_SOURCE = oracleVector("source-record-1-repository-read");
+const ORACLE_HANDLES = [
+  {
+    sourceId: ORACLE_SOURCE.sourceId,
+    runRef: ORACLE_SOURCE.runRef,
+    workspaceRef: ORACLE_SOURCE.workspaceRef,
+    presentationIndex: ORACLE_SOURCE.presentationIndex,
+  },
+];
+const ORACLE_BINDING = oracleVector("context-binding-1-complete");
+const ORACLE_CLAIM = oracleVector("claim-record-1-observed");
+const ORACLE_PROPOSAL = oracleVector("decision-proposal-1-request-observation");
+const ORACLE_OUTCOME = oracleVector("outcome-record-1-helpful-disproved");
+/** The S3 job-shape allowlist PROP-03 maps against. One kind, one shape. */
+/** The work orders a host authorized, and the report bundle, for the guards below. */
+const ORACLE_AUTHORIZED_WORK = [
+  {
+    workRef: ORACLE_OUTCOME.authorizedWorkRef,
+    runRef: ORACLE_OUTCOME.runRef,
+    workspaceRef: ORACLE_OUTCOME.workspaceRef,
+  },
+];
+const ORACLE_BUNDLE = {
+  report: oracleVector("research-report-1-partial"),
+  claims: [oracleVector("claim-record-1-observed"), oracleVector("claim-record-2-hypothesis")],
+  assessments: [oracleVector("claim-assessment-1-supported")],
+  proposal: null,
+  delivered: [
+    {
+      sourceId: ORACLE_SOURCE.sourceId,
+      runRef: ORACLE_SOURCE.runRef,
+      workspaceRef: ORACLE_SOURCE.workspaceRef,
+      presentationIndex: ORACLE_SOURCE.presentationIndex,
+    },
+  ],
+};
+/**
+ * One BOUND claim from the fixture bundle, for the evidenceIsMissing control.
+ *
+ * Resolved lazily through the package's own resolver rather than typed here: a
+ * hand-built BoundClaim would be a second definition of the shape, and it would
+ * agree with a broken resolver.
+ */
+let ORACLE_BOUND_CLAIM = () => undefined;
+/** The same claim with every cited span unresolved, i.e. evidence genuinely missing. */
+let ORACLE_MISSING_CLAIM = () => undefined;
+function bindOracleBoundClaim(mod) {
+  ORACLE_MISSING_CLAIM = () => {
+    const bound = ORACLE_BOUND_CLAIM();
+    if (bound === undefined) return undefined;
+    return {
+      ...bound,
+      assessment: undefined,
+      unresolvedSourceIds: bound.claim.sourceSpans.map((span) => span.sourceId),
+    };
+  };
+  ORACLE_BOUND_CLAIM = () => {
+    const resolved = mod.resolveReportBundle(ORACLE_BUNDLE);
+    if (resolved.outcome !== "RESOLVED") return undefined;
+    return resolved.claims.find((c) => c.state === "BOUND");
+  };
+}
+const ORACLE_JOB_SHAPES = [
+  { kind: ORACLE_PROPOSAL.payload.kind, jobShapeRef: ORACLE_PROPOSAL.payload.proposedJobShapeRef },
+];
+const ORACLE_MANIFEST = JSON.parse(
+  readFileSync(
+    join(root, "packages", "oracle-records", "vectors", "bound-context-manifest.json"),
+    "utf8",
+  ),
+);
+/**
+ * The identity an admission host would have stored for ORACLE_REQUEST.
+ *
+ * `requestDigest` is deliberately NOT computed here: a control that derives the
+ * expected digest from the function under test would agree with it however
+ * wrong both were. It is the pinned digest from the committed vector.
+ */
+const ORACLE_PRIOR_IDENTITY = {
+  schemaVersion: 1,
+  idempotencyKey: ORACLE_REQUEST.hostResolved.lineage.idempotencyKey,
+  requestId: ORACLE_REQUEST.hostResolved.requestId,
+  requestDigest: readFileSync(
+    join(root, "packages", "oracle-records", "vectors", "research-request-1-admitted", "digest.txt"),
+    "utf8",
+  ).trim(),
+};
+
 const AUTHORITY_GUARDS = [
   {
     pkg: "@getsimpledirect/vinci-device-auth",
@@ -754,6 +871,296 @@ const AUTHORITY_GUARDS = [
         && fn(attestation, "2026-08-24T00:00:00.000Z").length === 0;
     },
   },
+  // --- oracle-records ------------------------------------------------------
+  //
+  // Four decisions this package makes that a hostile input must never be able
+  // to win. Each `call` reduces the outcome union to the ONE arm that grants
+  // something, so a refusal reads as `false` to the probe above; each `control`
+  // proves both that the legitimate operation still works and that the guard
+  // says no to a specific, legitimate-looking wrong answer. A guard that
+  // refused everything would satisfy the hostile probes and fail its control.
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "admitResearchRequest",
+    label: "admitResearchRequest(draft).outcome === ADMITTED",
+    call: (fn, hostile) => fn(hostile).outcome === "ADMITTED",
+    control: (fn) =>
+      fn(ORACLE_REQUEST).outcome === "ADMITTED"
+      && fn(oracleWithout(ORACLE_REQUEST, "/policyRef")).outcome === "INCOMPLETE"
+      && fn(oracleWithout(ORACLE_REQUEST, "/hostResolved/missionOwner")).outcome === "INCOMPLETE",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveIdempotency",
+    label: "resolveIdempotency(hostile prior, request).outcome === SAME_REQUEST",
+    call: (fn, hostile) => fn(hostile, ORACLE_REQUEST).outcome === "SAME_REQUEST",
+    control: (fn) =>
+      fn(ORACLE_PRIOR_IDENTITY, ORACLE_REQUEST).outcome === "SAME_REQUEST"
+      && fn({ ...ORACLE_PRIOR_IDENTITY, requestDigest: "0".repeat(64) }, ORACLE_REQUEST).outcome
+        === "KEY_CONFLICT",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveIdempotency",
+    label: "resolveIdempotency(prior, hostile request).outcome === SAME_REQUEST",
+    call: (fn, hostile) => fn(ORACLE_PRIOR_IDENTITY, hostile).outcome === "SAME_REQUEST",
+    control: (fn) =>
+      fn(ORACLE_PRIOR_IDENTITY, ORACLE_REQUEST).outcome === "SAME_REQUEST"
+      && fn(ORACLE_PRIOR_IDENTITY, { ...ORACLE_REQUEST, workspaceRef: "ws-somebody-else" }).outcome
+        === "KEY_CONFLICT",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveCitations",
+    label: "resolveCitations(hostile citations, delivered).outcome === RESOLVED",
+    call: (fn, hostile) => fn(hostile, ORACLE_HANDLES).outcome === "RESOLVED",
+    control: (fn) =>
+      fn([ORACLE_CITATION], ORACLE_HANDLES).outcome === "RESOLVED"
+      && fn(
+        [{ ...ORACLE_CITATION, payload: { ...ORACLE_CITATION.payload, sourceId: "oracle-source-99" } }],
+        ORACLE_HANDLES,
+      ).outcome === "UNRESOLVED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveCitations",
+    label: "resolveCitations(citations, hostile delivered).outcome === RESOLVED",
+    call: (fn, hostile) => fn([ORACLE_CITATION], hostile).outcome === "RESOLVED",
+    control: (fn) =>
+      fn([ORACLE_CITATION], ORACLE_HANDLES).outcome === "RESOLVED"
+      && fn([ORACLE_CITATION], [{ ...ORACLE_HANDLES[0], runRef: "run-somebody-else" }]).outcome
+        === "UNRESOLVED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveContextBinding",
+    label: "resolveContextBinding(hostile binding, manifest, runRef).outcome === BOUND",
+    call: (fn, hostile) => fn(hostile, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND",
+    control: (fn) =>
+      fn(ORACLE_BINDING, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND"
+      && fn({ ...ORACLE_BINDING, contextManifestDigest: "0".repeat(64) }, ORACLE_MANIFEST,
+        ORACLE_BINDING.runRef).outcome === "MANIFEST_MISMATCH",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveContextBinding",
+    label: "resolveContextBinding(binding, hostile manifest, runRef).outcome === BOUND",
+    call: (fn, hostile) => fn(ORACLE_BINDING, hostile, ORACLE_BINDING.runRef).outcome === "BOUND",
+    control: (fn) =>
+      fn(ORACLE_BINDING, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND"
+      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: 7 }, ORACLE_BINDING.runRef).outcome
+        === "REFUSED"
+      && fn(ORACLE_BINDING, { ...ORACLE_MANIFEST, runId: "run-somebody-else" },
+        ORACLE_BINDING.runRef).outcome === "MANIFEST_MISMATCH",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveContextBinding",
+    label: "resolveContextBinding(binding, manifest, hostile runRef).outcome === BOUND",
+    // THE ANCHOR ARGUMENT, probed in its own right. The run check used to
+    // compare the binding to the manifest -- two untrusted inputs -- so a
+    // forger writing the same wrong run into both passed.
+    call: (fn, hostile) => fn(ORACLE_BINDING, ORACLE_MANIFEST, hostile).outcome === "BOUND",
+    control: (fn) =>
+      fn(ORACLE_BINDING, ORACLE_MANIFEST, ORACLE_BINDING.runRef).outcome === "BOUND"
+      && fn(ORACLE_BINDING, ORACLE_MANIFEST, "run-somebody-else").outcome === "MANIFEST_MISMATCH",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "isSupportedSchemaVersion",
+    label: "isSupportedSchemaVersion(version)",
+    call: (fn, hostile) => fn(hostile),
+    control: (fn) => fn(1) === true && fn(2) === false && fn("1") === false,
+  },
+  // CLM-01's decision, and the one this package exists for. The `call` reduces
+  // the five-status answer to the ONE status that grants something, so every
+  // hostile shape must read as false. The control proves the other direction
+  // three ways: a completed run over real spans DOES earn SUPPORTED, a timeout
+  // is CHECK_UNAVAILABLE, and a completed run over empty material is
+  // INSUFFICIENT_EVIDENCE rather than either.
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "statusForReviewerOutcome",
+    label: "statusForReviewerOutcome(outcome) === SUPPORTED",
+    call: (fn, hostile) => fn(hostile) === "SUPPORTED",
+    control: (fn) =>
+      fn({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: ORACLE_CLAIM.sourceSpans })
+        === "SUPPORTED"
+      && fn({ kind: "TIMED_OUT", detail: "the reviewer exceeded its wall clock" })
+        === "CHECK_UNAVAILABLE"
+      && fn({ kind: "COMPLETED", finding: "SUPPORTS", reviewedSpans: [] })
+        === "INSUFFICIENT_EVIDENCE",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "mapProposalToJobShape",
+    label: "mapProposalToJobShape(hostile proposal, allowlist).outcome === MAPPED",
+    call: (fn, hostile) => fn(hostile, ORACLE_JOB_SHAPES).outcome === "MAPPED",
+    control: (fn) =>
+      fn(ORACLE_PROPOSAL, ORACLE_JOB_SHAPES).outcome === "MAPPED"
+      && fn(
+        { ...ORACLE_PROPOSAL, payload: { ...ORACLE_PROPOSAL.payload, kind: "ESCALATE" } },
+        ORACLE_JOB_SHAPES,
+      ).outcome === "UNMAPPED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "mapProposalToJobShape",
+    label: "mapProposalToJobShape(proposal, hostile allowlist).outcome === MAPPED",
+    call: (fn, hostile) => fn(ORACLE_PROPOSAL, hostile).outcome === "MAPPED",
+    control: (fn) =>
+      fn(ORACLE_PROPOSAL, ORACLE_JOB_SHAPES).outcome === "MAPPED"
+      && fn(ORACLE_PROPOSAL, []).outcome === "UNMAPPED",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveOutcomeCredits",
+    label: "resolveOutcomeCredits(hostile outcomes, authorizedWork).outcome === CREDITED",
+    call: (fn, hostile) => fn(hostile, ORACLE_AUTHORIZED_WORK).outcome === "CREDITED",
+    control: (fn) =>
+      fn([ORACLE_OUTCOME], ORACLE_AUTHORIZED_WORK).outcome === "CREDITED"
+      && fn([ORACLE_OUTCOME, { ...ORACLE_OUTCOME, outcomeId: "oracle-outcome-99" }],
+        ORACLE_AUTHORIZED_WORK).outcome === "DOUBLE_CREDITED"
+      && fn([{ ...ORACLE_OUTCOME, authorizedWorkRef: "wo-invented" }],
+        ORACLE_AUTHORIZED_WORK).outcome === "UNAUTHORIZED_WORK",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveOutcomeCredits",
+    label: "resolveOutcomeCredits(outcomes, hostile authorizedWork).outcome === CREDITED",
+    // The ANCHOR argument, probed in its own right. A hostile authorized-work
+    // set must never let a credit through: it is the whole reason the rule
+    // stopped being keyed on a string the record writes.
+    call: (fn, hostile) => fn([ORACLE_OUTCOME], hostile).outcome === "CREDITED",
+    control: (fn) =>
+      fn([ORACLE_OUTCOME], ORACLE_AUTHORIZED_WORK).outcome === "CREDITED"
+      && fn([ORACLE_OUTCOME], []).outcome === "UNAUTHORIZED_WORK",
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing(boundClaim) === false",
+    // The permissive answer is FALSE -- "this claim rests on evidence that
+    // resolved" -- which is what puts it under "What the evidence establishes".
+    // So `false` is the yes, and no hostile shape may produce it.
+    call: (fn, hostile) => fn(hostile) === false,
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      if (bound === undefined) return false;
+      return (
+        fn(bound) === false
+        && fn({ ...bound, unresolvedSourceIds: bound.claim.sourceSpans.map((s) => s.sourceId) })
+          === true
+      );
+    },
+  },
+  // The INNER argument positions. The outer-position probe never reached them,
+  // and six inner shapes threw out of a function whose own contract says a
+  // guard must refuse rather than throw.
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ claim: hostile }) === false",
+    call: (fn, hostile) => fn({ claim: hostile, unresolvedSourceIds: [] }) === false,
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      return bound !== undefined && fn(bound) === false && fn({ ...bound, claim: undefined }) === true;
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ claim: { sourceSpans: hostile } }) === false",
+    call: (fn, hostile) =>
+      fn({ claim: { sourceSpans: hostile }, unresolvedSourceIds: [] }) === false,
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      if (bound === undefined) return false;
+      // No assessment in the control, so `cited` comes from the claim's spans
+      // alone -- otherwise a bound assessment's reviewed spans supply the
+      // evidence and an empty claim span list is correctly NOT missing.
+      return (
+        fn(bound) === false
+        && fn({ ...bound, assessment: undefined, claim: { ...bound.claim, sourceSpans: [] } })
+          === true
+      );
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ assessment: hostile }) manufactures evidence",
+    // The property in THIS position is not "a hostile assessment yields false"
+    // -- a claim whose own spans resolved still has evidence, whatever the
+    // assessment is, and answering false there is correct. What must not happen
+    // is a hostile assessment turning a claim with NO resolvable evidence into
+    // one that has some. So the base is a claim whose every cited span is
+    // unresolved, and the hostile value goes in beside it.
+    call: (fn, hostile) => {
+      const missing = ORACLE_MISSING_CLAIM();
+      return missing !== undefined && fn({ ...missing, assessment: hostile }) === false;
+    },
+    control: (fn) => {
+      const missing = ORACLE_MISSING_CLAIM();
+      const bound = ORACLE_BOUND_CLAIM();
+      if (missing === undefined || bound === undefined) return false;
+      return (
+        // The base really is missing, so the probes above have something to flip.
+        fn(missing) === true
+        // And a REAL assessment reviewing a delivered source does supply
+        // evidence, so this position can still answer false.
+        && fn({
+          ...missing,
+          assessment: { ...bound.assessment, reviewedSpans: bound.claim.sourceSpans },
+          unresolvedSourceIds: [],
+        }) === false
+      );
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "evidenceIsMissing",
+    label: "evidenceIsMissing({ unresolvedSourceIds: hostile }) === false",
+    // The wrong-type case that failed OPEN: a non-array coerced to the empty
+    // set, which reads as "nothing is unresolved".
+    call: (fn, hostile) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      return bound !== undefined && fn({ ...bound, unresolvedSourceIds: hostile }) === false;
+    },
+    control: (fn) => {
+      const bound = ORACLE_BOUND_CLAIM();
+      if (bound === undefined) return false;
+      const allUnresolved = bound.claim.sourceSpans.map((s) => s.sourceId);
+      return fn(bound) === false && fn({ ...bound, unresolvedSourceIds: allUnresolved }) === true;
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-oracle-records",
+    export: "resolveReportBundle",
+    label: "resolveReportBundle(bundle) binds a claim",
+    // "Granted a yes" for this one is not RESOLVED — a well-formed bundle whose
+    // bindings all fail is still RESOLVED, with the failures named. The yes is
+    // BINDING a claim, which is what lets a status be printed.
+    call: (fn, hostile) => {
+      const result = fn(hostile);
+      return result.outcome === "RESOLVED" && result.claims.some((c) => c.state === "BOUND");
+    },
+    control: (fn) => {
+      const bound = fn(ORACLE_BUNDLE);
+      if (bound.outcome !== "RESOLVED" || !bound.claims.some((c) => c.state === "BOUND")) return false;
+      // A CONSISTENT LIE: report and assessment agree on a digest that is not
+      // the claim's. Nothing binds, and the record set is otherwise valid.
+      const lying = fn({
+        ...ORACLE_BUNDLE,
+        report: {
+          ...ORACLE_BUNDLE.report,
+          claims: ORACLE_BUNDLE.report.claims.map((c) => ({ ...c, claimDigest: "5e".repeat(32) })),
+        },
+        assessments: ORACLE_BUNDLE.assessments.map((a) => ({ ...a, claimDigest: "5e".repeat(32) })),
+      });
+      return lying.outcome === "RESOLVED" && !lying.claims.some((c) => c.state === "BOUND");
+    },
+  },
 ];
 
 /**
@@ -779,6 +1186,26 @@ const AUTHORITY_GUARDS = [
  */
 const REQUIRED_GUARDS = [
   "isCredentialActiveAt(credential, at)",
+  "admitResearchRequest(draft).outcome === ADMITTED",
+  "resolveIdempotency(hostile prior, request).outcome === SAME_REQUEST",
+  "resolveIdempotency(prior, hostile request).outcome === SAME_REQUEST",
+  "resolveCitations(hostile citations, delivered).outcome === RESOLVED",
+  "resolveCitations(citations, hostile delivered).outcome === RESOLVED",
+  "resolveContextBinding(hostile binding, manifest, runRef).outcome === BOUND",
+  "resolveContextBinding(binding, hostile manifest, runRef).outcome === BOUND",
+  "resolveContextBinding(binding, manifest, hostile runRef).outcome === BOUND",
+  "isSupportedSchemaVersion(version)",
+  "statusForReviewerOutcome(outcome) === SUPPORTED",
+  "mapProposalToJobShape(hostile proposal, allowlist).outcome === MAPPED",
+  "mapProposalToJobShape(proposal, hostile allowlist).outcome === MAPPED",
+  "resolveOutcomeCredits(hostile outcomes, authorizedWork).outcome === CREDITED",
+  "resolveOutcomeCredits(outcomes, hostile authorizedWork).outcome === CREDITED",
+  "resolveReportBundle(bundle) binds a claim",
+  "evidenceIsMissing(boundClaim) === false",
+  "evidenceIsMissing({ claim: hostile }) === false",
+  "evidenceIsMissing({ claim: { sourceSpans: hostile } }) === false",
+  "evidenceIsMissing({ assessment: hostile }) manufactures evidence",
+  "evidenceIsMissing({ unresolvedSourceIds: hostile }) === false",
   "isKeyUsableAt(entry with hostile status, now, role)",
   "isKeyUsableAt(entry with hostile role, now, role)",
   "isKeyUsableAt(entry, now, hostile role)",
@@ -978,6 +1405,48 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-run.sha256Hex": "pure hash of a string; no input shape can make it answer a question",
   "@getsimpledirect/vinci-run.projectRunState": "projection over an already-validated event log: it reports a state and any anomalies, and grants nothing. Its refusal behaviour (TERMINAL is absorbing; a later event is reported, not folded away) is covered by src/run.test.ts",
   "@getsimpledirect/vinci-run.terminalEvidenceMissing": "projection over an already-validated event log: it reports which announced artifacts were never persisted. It withholds nothing and permits nothing",
+  // vinci-oracle-records. The four digest functions and their two helpers are
+  // IDENTITY, not authority, on the same terms as vinci-run's: each validates
+  // first and THROWS rather than digesting an invalid record. The four
+  // DECISIONS this package makes -- admission, idempotency, citation
+  // resolution and manifest binding -- are probed in AUTHORITY_GUARDS above,
+  // in every argument position, each with a positive control.
+  "@getsimpledirect/vinci-oracle-records.attestedEnvelopeDigest": "identity, not authority: validates and throws rather than digesting an invalid envelope",
+  "@getsimpledirect/vinci-oracle-records.researchRequestDigest": "identity, not authority: validates and throws rather than digesting an invalid request. What an admitted request MEANS is decided by admitResearchRequest, which is probed",
+  "@getsimpledirect/vinci-oracle-records.oracleContextBindingDigest": "identity, not authority: validates and throws rather than digesting an invalid context binding",
+  "@getsimpledirect/vinci-oracle-records.sourceRecordDigest": "identity, not authority: validates and throws rather than digesting an invalid source record",
+  "@getsimpledirect/vinci-oracle-records.sourceCitationDigest": "identity, not authority: validates and throws rather than digesting an invalid citation. Whether that citation RESOLVES is decided by resolveCitations, which is probed",
+  "@getsimpledirect/vinci-oracle-records.digestValidated": "takes an already-computed ValidationResult and throws unless it is ok; the shared body of the digest functions above, not a decision of its own",
+  "@getsimpledirect/vinci-oracle-records.sha256Hex": "pure hash of a string; no input shape can make it answer a question",
+  "@getsimpledirect/vinci-oracle-records.deliveredHandle": "projection over an already-validated source record: it copies the four identity fields a citation may refer to and grants nothing. Whether a handle resolves is resolveCitations' decision",
+  "@getsimpledirect/vinci-oracle-records.parseOracleRecordJson": "strict JSON ingress returning a ValidationResult; it decides only whether a document is unambiguous, and every record it produces still goes through a probed validator",
+  "@getsimpledirect/vinci-oracle-records.checkSchemaVersion": "appends an issue to a caller-supplied array and returns nothing; it cannot answer yes. The question it asks is exported as isSupportedSchemaVersion, which IS probed",
+  "@getsimpledirect/vinci-oracle-records.claimRecordDigest": "identity, not authority: validates and throws rather than digesting an invalid claim",
+  "@getsimpledirect/vinci-oracle-records.claimAssessmentDigest": "identity, not authority: validates and throws rather than digesting an invalid assessment. WHICH status an assessment earns is decided by statusForReviewerOutcome, which is probed",
+  "@getsimpledirect/vinci-oracle-records.researchReportDigest": "identity, not authority: validates and throws rather than digesting an invalid report",
+  "@getsimpledirect/vinci-oracle-records.decisionProposalDigest": "identity, not authority: validates and throws rather than digesting an invalid proposal. Whether a proposal may be carried into a job shape is decided by mapProposalToJobShape, which is probed in both argument positions",
+  "@getsimpledirect/vinci-oracle-records.outcomeRecordDigest": "identity, not authority: validates and throws rather than digesting an invalid outcome. Whether an outcome takes an accepted-work credit is decided by resolveOutcomeCredits, which is probed",
+  // The FIRST version of this waiver said REP-01 "is asserted in
+  // src/render-markdown.test.ts", and that sentence was load-bearing and wrong:
+  // the only hostile-prose test there mutated a field that WAS sanitized, so it
+  // exercised the path that worked while three unsanitized interpolations
+  // shipped. A waiver may not rest on a test's existence. This one rests on a
+  // property of the CODE that a probe here could not check anyway: the document
+  // is `Rendered[]`, a branded type, and `safe()` is the only way a
+  // caller-supplied value becomes one, so an unguarded interpolation does not
+  // compile. src/render-markdown.test.ts now also sweeps every string field of
+  // a whole render input and requires the line count to be unchanged.
+  // REVISED TWICE. The first version rested on a test's existence and the test
+  // was exercising the wrong path. The second rested on the injection
+  // chokepoint -- true, and it did not cover the defect found next: an unearned
+  // SUPPORTED rendered because this function DECIDED THE BINDING itself, which
+  // is not an injection question at all. It no longer decides anything: the
+  // binding moved to resolveReportBundle, which IS registered as an authority
+  // guard above and probed in the argument position that matters. What is left
+  // here is formatting, and the two properties below are about formatting.
+  "@getsimpledirect/vinci-oracle-records.renderMarkdownReport": "a formatter over records resolveReportBundle has already validated AND BOUND: it decides nothing, and it cannot print a status for an assessment the resolver did not bind, because the resolver returns one only for a BOUND claim. It cannot be probed as a guard because every answer it gives is a string; the binding decision it used to make is probed as resolveReportBundle, and its formatting properties are a compile-time chokepoint (the document is a branded Rendered[], safe() its only producer) plus a behavioural sweep over every string field in src/render-markdown.test.ts",
+  "@getsimpledirect/vinci-oracle-records.outcomeCreditAnchor": "projection over an already-validated outcome: it returns the work ref the record CLAIMS and grants nothing. It is NOT the anchor -- the anchor is the authorizedWork argument resolveOutcomeCredits takes from host state, and this function only says which work order a record is claiming so the resolver can look it up. Whether an outcome takes a credit is resolveOutcomeCredits' decision, which is probed in both argument positions",
+  "@getsimpledirect/vinci-oracle-records.runTerminalLabel": "total projection over an already-validated report's run terminal: it names the run-events vocabulary member the record carries and decides nothing",
 };
 
 /**
@@ -1120,6 +1589,7 @@ for (const guard of AUTHORITY_GUARDS) {
   const entry = join(root, "packages", dir, "dist", "index.js");
   if (!existsSync(entry)) continue;
   const mod = await import(pathToFileURL(entry).href);
+  if (guard.pkg === "@getsimpledirect/vinci-oracle-records") bindOracleBoundClaim(mod);
   const fn = mod[guard.export];
   if (typeof fn !== "function") {
     console.error(`  ${guard.pkg}.${guard.export}: not exported — the registry is stale`);

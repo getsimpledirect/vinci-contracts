@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "outcomeId": "oracle-outcome-1",
+  "proposalRef": "oracle-proposal-1",
+  "proposalDigest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+  "reportRef": "oracle-report-1",
+  "runRef": "run-oracle-1",
+  "workspaceRef": "ws-institutional-1",
+  "authorizedWorkRef": "wo-installed-reader-probe",
+  "executionEvidenceRefs": ["evidence-probe-run-77"],
+  "outcomeClass": "HELPFUL_OBSERVED",
+  "justification": "The probe ran and showed the installed reader does NOT share the limitation, which settled the question the report was written to settle.",
+  "observedWindow": {
+    "startedAt": "2026-09-07T09:00:00.000Z",
+    "endedAt": "2026-09-07T09:12:00.000Z"
+  },
+  "costMicrousd": 38000,
+  "uncertaintyResolved": true,
+  "hypothesisResult": "DISPROVED_BY_RESULT",
+  "evidence": {
+    "linkedFollowThrough": {
+      "workRef": "wo-installed-reader-probe",
+      "detail": "The proposed fixtures were the ones that ran."
+    },
+    "temporalAssociation": null,
+    "measuredCounterfactual": null
+  },
+  "causationClaimed": false,
+  "authoringIdentity": { "kind": "worker", "workerId": "worker-oracle-1" },
+  "assessingIdentity": { "kind": "verifier", "verifierId": "release-verifier-2", "independent": true },
+  "rubricRef": "rubric:oracle-usefulness-v1",
+  "creditKind": "ACCEPTED_WORK",
+  "duplicateOfOutcomeRef": null,
+  "issuedAt": "2026-09-07T09:30:00.000Z"
+}
