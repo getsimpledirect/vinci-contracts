@@ -71,6 +71,8 @@ export class RunReplay {
   private seen = new Map<string, RunEvent>();
   private pendingQuestionId: string | null = null;
   private pendingApprovalId: string | null = null;
+  private issuedQuestionIds = new Set<string>();
+  private issuedApprovalIds = new Set<string>();
   private responses = { questions: 0, approvals: 0, humanSeconds: 0 };
 
   constructor(declaration: unknown, options: RunReplayOptions = {}) {
@@ -126,13 +128,16 @@ export class RunReplay {
     const pending = this.pendingQuestionId !== null || this.pendingApprovalId !== null;
     if (candidate.type === "run.question" || candidate.type === "approval.requested") {
       if (pending) return this.refuse("decision_already_pending");
+      if (candidate.type === "run.question" && this.issuedQuestionIds.has(candidate.payload.questionId.value)) return this.refuse("question_id_reused");
+      if (candidate.type === "approval.requested" && this.issuedApprovalIds.has(candidate.payload.approvalId.value)) return this.refuse("approval_id_reused");
       if (this.snapshot().run.state !== "RUNNING") return this.refuse("run_not_running");
     }
     if (candidate.type === "run.question_answered" && candidate.payload.questionId.value !== this.pendingQuestionId) return this.refuse("question_not_pending");
-    if ((candidate.type === "approval.granted" || candidate.type === "approval.denied") && candidate.payload.approvalId.value !== this.pendingApprovalId) return this.refuse("approval_not_pending");
+    if ((candidate.type === "approval.granted" || candidate.type === "approval.denied" || candidate.type === "approval.expired") && candidate.payload.approvalId.value !== this.pendingApprovalId) return this.refuse("approval_not_pending");
     if (pending && (candidate.type === "run.resumed" || candidate.type === "run.attempt_started" || candidate.type === "run.started")) return this.refuse("decision_still_pending");
     if (candidate.type === "run.completed") {
       if (pending) return this.refuse("decision_still_pending");
+      if (this.snapshot().run.state !== "RUNNING") return this.refuse("run_not_running");
       if (terminalEvidenceMissing(this.events).length > 0) return this.refuse("artifact_evidence_missing");
       let observed: CompletionObservation;
       try {
@@ -149,8 +154,14 @@ export class RunReplay {
     this.events.push(event);
     this.seen.set(event.idempotencyKey, event);
     switch (event.type) {
-      case "run.question": this.pendingQuestionId = event.payload.questionId.value; break;
-      case "approval.requested": this.pendingApprovalId = event.payload.approvalId.value; break;
+      case "run.question":
+        this.pendingQuestionId = event.payload.questionId.value;
+        this.issuedQuestionIds.add(event.payload.questionId.value);
+        break;
+      case "approval.requested":
+        this.pendingApprovalId = event.payload.approvalId.value;
+        this.issuedApprovalIds.add(event.payload.approvalId.value);
+        break;
       case "run.question_answered":
         this.pendingQuestionId = null;
         this.responses.questions += 1;
@@ -161,6 +172,11 @@ export class RunReplay {
         this.pendingApprovalId = null;
         this.responses.approvals += 1;
         this.responses.humanSeconds += event.payload.humanSeconds.value;
+        break;
+      case "approval.expired":
+        // DENY is the canonical expiry default. Clear the pending item without
+        // changing projectRunState's PAUSED result or inventing human attention.
+        this.pendingApprovalId = null;
         break;
       case "run.failed":
       case "run.cancelled":

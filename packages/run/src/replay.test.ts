@@ -182,6 +182,44 @@ describe("canonical run replay admission", () => {
     expect(rejectionCode(replay.append({ ...f.completed, sequence: 4, idempotencyKey: "complete-now" }, 3))).toBe("decision_still_pending");
   });
 
+  it("cannot reopen a historical question ID, including after replay, while exact question retries remain idempotent", () => {
+    const f = fixture();
+    const replay = replayRun(declaration(), f.events.slice(0, 4), f.options).replay;
+    expect(replay.append(f.events[2], 2).kind).toBe("duplicate");
+    expect(rejectionCode(replay.append(event(5, "run.question", { questionId: id("question-1") }), 4))).toBe("question_id_reused");
+    expect(rejectionCode(replay.append(event(5, "run.question_answered", { questionId: id("question-1"), humanSeconds: count(3) }), 4))).toBe("question_not_pending");
+    expect(replay.append(event(5, "run.question", { questionId: id("question-2") }), 4).kind).toBe("append");
+    expect(replay.append(event(6, "run.question_answered", { questionId: id("question-2"), humanSeconds: count(2) }), 5).kind).toBe("append");
+  });
+
+  it("cannot reopen a historical approval ID or accept its stale grant, while new approval IDs still work", () => {
+    const f = fixture();
+    const replay = replayRun(declaration(), f.events.slice(0, 6), f.options).replay;
+    expect(replay.append(f.events[4], 4).kind).toBe("duplicate");
+    expect(rejectionCode(replay.append(event(7, "approval.requested", { approvalId: id("approval-1"), actionClass: enumValue("content_publication"), riskLevel: enumValue("medium") }), 6))).toBe("approval_id_reused");
+    expect(rejectionCode(replay.append(event(7, "approval.granted", { approvalId: id("approval-1"), narrowed: flag(false), humanSeconds: count(1) }), 6))).toBe("approval_not_pending");
+    expect(replay.append(event(7, "approval.requested", { approvalId: id("approval-2"), actionClass: enumValue("content_publication"), riskLevel: enumValue("medium") }), 6).kind).toBe("append");
+    expect(replay.append(event(8, "approval.denied", { approvalId: id("approval-2"), humanSeconds: count(1) }), 7).kind).toBe("append");
+  });
+
+  it("expiry closes only its pending approval, leaves canonical PAUSED state, and requires an explicit resume", () => {
+    const f = fixture();
+    const replay = replayRun(declaration(), f.events.slice(0, 5), f.options).replay;
+    expect(rejectionCode(replay.append(event(6, "approval.expired", { approvalId: id("other-approval"), defaultApplied: enumValue("DENY") }), 5))).toBe("approval_not_pending");
+    const expired = event(6, "approval.expired", { approvalId: id("approval-1"), defaultApplied: enumValue("DENY") });
+    expect(replay.append(expired, 5).kind).toBe("append");
+    expect(replay.snapshot().pendingApprovalId).toBeNull();
+    expect(replay.snapshot().run.state).toBe("PAUSED");
+    const restored = replayRun(declaration(), replay.acceptedEvents(), f.options).replay;
+    expect(restored.append(expired, 5).kind).toBe("duplicate");
+    expect(rejectionCode(restored.append(event(7, "approval.granted", { approvalId: id("approval-1"), narrowed: flag(false), humanSeconds: count(1) }), 6))).toBe("approval_not_pending");
+    expect(rejectionCode(restored.append({ ...f.completed, sequence: 7 }, 6))).toBe("run_not_running");
+    expect(rejectionCode(restored.append(event(7, "approval.requested", { approvalId: id("approval-2"), actionClass: enumValue("content_publication"), riskLevel: enumValue("medium") }), 6))).toBe("run_not_running");
+    expect(restored.append(event(7, "run.resumed", { resumedFromSequence: count(6) }), 6).kind).toBe("append");
+    expect(restored.append(event(8, "approval.requested", { approvalId: id("approval-2"), actionClass: enumValue("content_publication"), riskLevel: enumValue("medium") }), 7).kind).toBe("append");
+    expect(restored.snapshot().responses.approvals).toBe(0);
+  });
+
   it("fails closed on missing, ambiguous, stale, tampered or unavailable observed outcomes", () => {
     const f = fixture();
     const replay = replayRun(declaration(), f.events, f.options).replay;
