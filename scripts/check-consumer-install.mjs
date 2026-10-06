@@ -194,7 +194,7 @@ import {
   type ReviewPublicationAttribution,
 } from "@getsimpledirect/vinci-remote-protocol";
 import { checkValidatedExecutionSpecWithinOrder } from "@getsimpledirect/vinci-work-orders/dist/within-order.js";
-import { validateAgent, validateContextManifest } from "@getsimpledirect/vinci-run";
+import { validateAgent, validateContextManifest, RunReplay, replayRun } from "@getsimpledirect/vinci-run";
 
 const level: RiskLevel = RISK_LEVELS[0];
 if (level !== "critical") throw new Error("RISK_LEVELS is not ordered most-severe-first");
@@ -261,6 +261,69 @@ for (const excluded of [
 }
 if (validateContextManifest({ ...installedManifest, excluded: [{ ref: null, reason: "budget" }] }).ok) {
   throw new Error("installed validateContextManifest accepted a malformed excluded ref");
+}
+
+// Replay must admit and reconstruct through the installed public API. This
+// synthetic fixture cannot establish external completion or execution authority.
+const replayAt = "2026-10-05T12:00:00.000Z";
+const replayDigest = "ab".repeat(32);
+const replayDeclaration = {
+  schemaVersion: 1, runId: "run-installed", workOrderId: "wo-installed", workOrderDigest: replayDigest,
+  attemptId: "attempt-installed", agent: { id: "agent-installed", version: 1 },
+  environment: { id: "environment-installed", digest: replayDigest }, sessionId: null,
+  contextManifestDigest: null, harnessAttestationDigest: null, servicePrincipalId: null,
+  budget: { maxToolCalls: 4, maxHumanInterruptions: 2 }, requiredTerminal: "OBSERVED",
+  state: "CREATED", createdAt: replayAt, startedAt: null, lastEventAt: null,
+};
+const replayEvent = (sequence: number, type: string, payload: Record<string, unknown>) => ({
+  schemaVersion: 4, eventId: "event-installed-" + sequence, runId: "run-installed",
+  organizationId: null, workspaceId: "workspace-installed", sequence, type,
+  actor: { kind: "worker", workerId: "worker-installed" }, occurredAt: replayAt,
+  idempotencyKey: "key-installed-" + sequence, traceId: "trace-installed", payload,
+});
+const replayId = (value: string) => ({ kind: "id", value });
+const replayCount = (value: number) => ({ kind: "count", value });
+const replayEvents = [
+  replayEvent(1, "run.created", { workspaceId: replayId("workspace-installed"), policyId: replayId("policy-installed"), policyVersion: replayCount(1), workOrderDigest: { kind: "digest", value: replayDigest } }),
+  replayEvent(2, "run.started", { workerId: replayId("worker-installed") }),
+  replayEvent(3, "run.question", { questionId: replayId("question-installed") }),
+  replayEvent(4, "run.question_answered", { questionId: replayId("question-installed"), humanSeconds: replayCount(3) }),
+];
+const replayOptions = { logRefusal: () => {} };
+const installedReplay = new RunReplay(replayDeclaration, replayOptions);
+for (const next of replayEvents.slice(0, 3)) {
+  if (installedReplay.append(next, installedReplay.snapshot().revision).kind !== "append") {
+    throw new Error("installed replay refused a valid canonical event. Restore the public replay API.");
+  }
+}
+if (installedReplay.snapshot().pendingQuestionId !== "question-installed") {
+  throw new Error("installed replay lost its pending question. Restore question projection.");
+}
+const beforeStaleAnswer = JSON.stringify(installedReplay.snapshot());
+const staleAnswer = installedReplay.append(replayEvents[3], 2);
+if (staleAnswer.kind !== "reject" || staleAnswer.issues[0]?.code !== "stale_revision"
+    || JSON.stringify(installedReplay.snapshot()) !== beforeStaleAnswer) {
+  throw new Error("installed replay did not refuse a stale answer without mutation. Restore revision admission.");
+}
+if (installedReplay.append(replayEvents[3], 3).kind !== "append"
+    || installedReplay.snapshot().pendingQuestionId !== null
+    || installedReplay.snapshot().responses.questions !== 1
+    || installedReplay.snapshot().responses.humanSeconds !== 3) {
+  throw new Error("installed replay did not project the question answer. Restore response projection.");
+}
+const beforeRetry = JSON.stringify(installedReplay.snapshot());
+if (installedReplay.append(replayEvents[0], 0).kind !== "duplicate") {
+  throw new Error("installed replay changed an exact retry. Restore idempotent admission.");
+}
+const conflictingRetry = installedReplay.append({ ...replayEvents[0], traceId: "conflict" }, 4);
+if (conflictingRetry.kind !== "reject" || conflictingRetry.issues[0]?.code !== "idempotency_conflict"
+    || JSON.stringify(installedReplay.snapshot()) !== beforeRetry) {
+  throw new Error("installed replay accepted a conflicting retry. Restore idempotency refusal.");
+}
+const restoredReplay = replayRun(replayDeclaration, installedReplay.acceptedEvents(), replayOptions);
+if (restoredReplay.issues.length !== 0
+    || JSON.stringify(restoredReplay.replay.snapshot()) !== JSON.stringify(installedReplay.snapshot())) {
+  throw new Error("installed replay reconstruction changed canonical state. Restore the public replay API.");
 }
 
 // The guard must still refuse from outside the workspace. A validator that

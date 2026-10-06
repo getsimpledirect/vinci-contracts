@@ -194,7 +194,115 @@ const ORACLE_PRIOR_IDENTITY = {
   ).trim(),
 };
 
+// Synthetic initial declaration and canonical creation event. These controls
+// exercise admission, not merely the presence of the replay exports.
+const REPLAY_AT = "2026-10-05T12:00:00.000Z";
+const REPLAY_DIGEST = "ab".repeat(32);
+const replayDeclaration = () => ({
+  schemaVersion: 1, runId: "run-1", workOrderId: "wo-1", workOrderDigest: REPLAY_DIGEST,
+  attemptId: "attempt-1", agent: { id: "agent-1", version: 1 },
+  environment: { id: "env-1", digest: REPLAY_DIGEST }, sessionId: null,
+  contextManifestDigest: null, harnessAttestationDigest: null, servicePrincipalId: null,
+  budget: { maxToolCalls: 4, maxHumanInterruptions: 2 }, requiredTerminal: "OBSERVED",
+  state: "CREATED", createdAt: REPLAY_AT, startedAt: null, lastEventAt: null,
+});
+const replayCreated = () => ({
+  schemaVersion: 4, eventId: "event-1", runId: "run-1",
+  organizationId: null, workspaceId: "workspace-1", sequence: 1,
+  type: "run.created", actor: { kind: "worker", workerId: "worker-1" },
+  occurredAt: REPLAY_AT, idempotencyKey: "key-1", traceId: "trace-1",
+  payload: {
+    workspaceId: { kind: "id", value: "workspace-1" },
+    policyId: { kind: "id", value: "policy-1" }, policyVersion: { kind: "count", value: 1 },
+    workOrderDigest: { kind: "digest", value: REPLAY_DIGEST },
+  },
+});
+const replayOptions = { logRefusal: () => {} };
+
+// The constructor's documented invalid-declaration contract is a logged throw,
+// unlike append's rejection result. Recognize only that exact refusal; proxy
+// traps, incidental TypeErrors and missing refusal logging still fail the probe.
+function replayDeclarationGrants(create, declaration) {
+  const codes = [];
+  try {
+    create(declaration, { logRefusal: (_message, fields) => codes.push(fields.code) });
+    return true;
+  } catch (error) {
+    if (error instanceof Error
+      && error.message === "Run replay requires a valid initial CREATED declaration. Reload the original declaration and its accepted events."
+      && codes.length === 1 && codes[0] === "invalid_replay_declaration") return false;
+    throw error;
+  }
+}
+
+function replayAppendGrants(Constructor, candidate) {
+  const replay = new Constructor(replayDeclaration(), replayOptions);
+  const before = JSON.stringify(replay.snapshot());
+  const result = replay.append(candidate, 0);
+  if (result.kind === "reject" && (JSON.stringify(replay.snapshot()) !== before || replay.acceptedEvents().length !== 0)) {
+    throw new Error("Rejected replay event changed the admitted prefix. Restore refusal atomicity.");
+  }
+  return result.kind !== "reject";
+}
+
+const REPLAY_GUARDS = [
+  {
+    pkg: "@getsimpledirect/vinci-run", export: "RunReplay",
+    label: "RunReplay(hostile declaration)",
+    call: (Constructor, hostile) => replayDeclarationGrants((value, options) => new Constructor(value, options), hostile),
+    control: (Constructor) => replayDeclarationGrants((value, options) => new Constructor(value, options), replayDeclaration()),
+  },
+  {
+    pkg: "@getsimpledirect/vinci-run", export: "RunReplay",
+    label: "RunReplay(declaration with hostile agent)",
+    call: (Constructor, hostile) => replayDeclarationGrants((value, options) => new Constructor(value, options), { ...replayDeclaration(), agent: hostile }),
+    control: (Constructor) => new Constructor(replayDeclaration(), replayOptions).snapshot().run.agent.version === 1,
+  },
+  ...[
+    ["RunReplay.append(hostile event)", (hostile) => hostile],
+    ["RunReplay.append(event with hostile type)", (hostile) => ({ ...replayCreated(), type: hostile })],
+    ["RunReplay.append(event with hostile payload)", (hostile) => ({ ...replayCreated(), payload: hostile })],
+  ].map(([label, candidate]) => ({
+    pkg: "@getsimpledirect/vinci-run", export: "RunReplay", label,
+    call: (Constructor, hostile) => replayAppendGrants(Constructor, candidate(hostile)),
+    control: (Constructor) => {
+      const replay = new Constructor(replayDeclaration(), replayOptions);
+      return replay.append(replayCreated(), 0).kind === "append"
+        && replay.snapshot().revision === 1
+        && replay.append({ ...replayCreated(), traceId: "conflict" }, 1).kind === "reject"
+        && replay.snapshot().revision === 1;
+    },
+  })),
+  {
+    pkg: "@getsimpledirect/vinci-run", export: "replayRun",
+    label: "replayRun(hostile declaration, events)",
+    call: (fn, hostile) => replayDeclarationGrants((value, options) => fn(value, [], options), hostile),
+    control: (fn) => {
+      const result = fn(replayDeclaration(), [replayCreated()], replayOptions);
+      return result.issues.length === 0 && result.replay.snapshot().revision === 1;
+    },
+  },
+  {
+    pkg: "@getsimpledirect/vinci-run", export: "replayRun",
+    label: "replayRun(declaration, hostile event)",
+    call: (fn, hostile) => {
+      const result = fn(replayDeclaration(), [hostile], replayOptions);
+      if (result.issues.length > 0 && result.replay.acceptedEvents().length !== 0) {
+        throw new Error("Rejected replay input changed the admitted prefix. Restore refusal atomicity.");
+      }
+      return result.issues.length === 0;
+    },
+    control: (fn) => {
+      const good = fn(replayDeclaration(), [replayCreated()], replayOptions);
+      const bad = fn(replayDeclaration(), [replayCreated(), { ...replayCreated(), traceId: "conflict" }], replayOptions);
+      return good.issues.length === 0 && good.replay.snapshot().revision === 1
+        && bad.issues[0]?.code === "idempotency_conflict" && bad.replay.snapshot().revision === 1;
+    },
+  },
+];
+
 const AUTHORITY_GUARDS = [
+  ...REPLAY_GUARDS,
   {
     pkg: "@getsimpledirect/vinci-device-auth",
     export: "isCredentialActiveAt",
@@ -1185,6 +1293,13 @@ const AUTHORITY_GUARDS = [
  * though the conclusion held.
  */
 const REQUIRED_GUARDS = [
+  "RunReplay(hostile declaration)",
+  "RunReplay(declaration with hostile agent)",
+  "RunReplay.append(hostile event)",
+  "RunReplay.append(event with hostile type)",
+  "RunReplay.append(event with hostile payload)",
+  "replayRun(hostile declaration, events)",
+  "replayRun(declaration, hostile event)",
   "isCredentialActiveAt(credential, at)",
   "admitResearchRequest(draft).outcome === ADMITTED",
   "resolveIdempotency(hostile prior, request).outcome === SAME_REQUEST",
