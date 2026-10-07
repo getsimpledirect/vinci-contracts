@@ -32,6 +32,46 @@ version 2 (see below), and a v2 validator REFUSES a v1 attestation on
   `working_tree`), the attestation is unexpired at `now`, and the id is in
   `HARNESS_CAPABILITIES`.
 
+## Replay consumers and distribution
+
+`RunReplay` admits canonical events against a declared run; `replayRun`
+reconstructs the same state from accepted events. Consumers must use the built
+package exports and qualify both admission and reconstruction after installation.
+TypeScript workspace aliases alone do not establish that the replay exports are
+present in a distributable package.
+
+From an exact recorded checkout, use Node 20 or newer, npm 10, Python 3, and an
+OpenSSL executable that supports Ed25519 verification (`openssl pkeyutl -verify
+-rawin`). On macOS, the system LibreSSL executable is insufficient for the
+cross-language signature tests; select OpenSSL 3 explicitly on `PATH`.
+
+```bash
+npm ci
+npm run gate
+: "${artifact_dir:?Choose a new output directory outside this clean checkout}"
+mkdir -p "$(dirname "$artifact_dir")"
+npm run check:pack -- --bundle-directory "$artifact_dir"
+```
+
+Pack every workspace together: internal dependencies pin the same version, so
+packing only `vinci-run` can silently resolve other contracts from a different
+registry artifact. The installable application must bundle the selected tarballs
+or their complete built dependency closure, and record the source commit,
+package versions, and artifact hashes. Its installer must not ask the user to
+point at a developer's source checkout.
+
+The bundle command saves the exact tarballs used by the installed-consumer
+check and a `bundle-manifest.json` containing their hashes, installed distribution
+file hashes, source commit/tree, and toolchain versions. It refuses a dirty
+checkout, an existing output directory, or a directory inside the checkout.
+Without `--bundle-directory`, `check:pack` keeps its normal verification-only
+behavior. The bundle qualifies installed packages; the full gate remains the
+separate preceding check.
+
+A source-built artifact does not establish registry publication. An existing
+registry version is immutable; publishing replay changes requires a coordinated
+lockstep version and release decision rather than replacing the old bytes.
+
 ## Attestable is about bound identity, not about delivery
 
 `observedEntrypoint` v1 asked HOW the harness was delivered

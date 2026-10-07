@@ -27,14 +27,50 @@
  * CI runs it on pull requests via `npm run check:pack`.
  */
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, writeFileSync, readFileSync, realpathSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { assertExpectedInventory, readManifests, root } from "./lib/inventory.mjs";
 
-const scratch = mkdtempSync(join(tmpdir(), "vinci-consumer-"));
 const run = (cmd, args, cwd) =>
-  execFileSync(cmd, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  execFileSync(cmd, args, { cwd, timeout: 120_000, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+
+// Reuse the exact tarballs this consumer qualifies; a second pack after the
+// check would produce different bytes while borrowing the first pack's result.
+const args = process.argv.slice(2);
+let bundleDirectory = null;
+let sourceIdentity = null;
+if (args.length !== 0) {
+  try {
+    if (args.length !== 2 || args[0] !== "--bundle-directory") {
+      throw new Error("arguments must be --bundle-directory NEW_DIRECTORY");
+    }
+    const requested = resolve(args[1]);
+    bundleDirectory = join(realpathSync(dirname(requested)), basename(requested));
+    const location = relative(realpathSync(root), bundleDirectory);
+    if (location === "" || !location.startsWith(`..${sep}`)) {
+      throw new Error("bundle directory must be outside the source checkout");
+    }
+    try {
+      lstatSync(bundleDirectory);
+      throw new Error("bundle directory already exists");
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+    if (run("git", ["status", "--porcelain", "--untracked-files=all"], root).trim()) {
+      throw new Error("source checkout has uncommitted files");
+    }
+    sourceIdentity = {
+      commit: run("git", ["rev-parse", "HEAD"], root).trim(),
+      tree: run("git", ["rev-parse", "HEAD^{tree}"], root).trim(),
+    };
+  } catch (error) {
+    console.error(`  package bundle refused: ${error.message}. Choose a new directory outside a clean recorded checkout and rerun check:pack.`);
+    process.exit(1);
+  }
+}
+const scratch = mkdtempSync(join(tmpdir(), "vinci-consumer-"));
 
 // The inventory must match what is committed, not merely clear a floor. A floor
 // of five let a deleted package through: nine packages install cleanly and
@@ -713,6 +749,62 @@ try {
   console.error(String(error.stdout ?? "") + String(error.stderr ?? "") || String(error));
   console.error(`\n  fixture left in place for inspection: ${fixture}`);
   process.exit(1);
+}
+
+if (bundleDirectory) {
+  try {
+    if (run("git", ["status", "--porcelain", "--untracked-files=all"], root).trim()
+        || run("git", ["rev-parse", "HEAD"], root).trim() !== sourceIdentity.commit) {
+      throw new Error("source identity changed during packed-consumer qualification");
+    }
+    const hash = (bytes, algorithm = "sha256", encoding = "hex") =>
+      createHash(algorithm).update(bytes).digest(encoding);
+    const installedFiles = (directory, prefix = "dist") => {
+      const files = [];
+      for (const entry of readdirSync(join(directory, prefix), { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+        const path = `${prefix}/${entry.name}`;
+        if (entry.isDirectory()) files.push(...installedFiles(directory, path));
+        else if (entry.isFile()) {
+          const bytes = readFileSync(join(directory, path));
+          files.push({ path, sizeBytes: bytes.length, sha256: hash(bytes) });
+        } else throw new Error("installed package contains a non-regular distribution entry");
+        if (files.length > 10_000) throw new Error("installed distribution inventory exceeds its file bound");
+      }
+      return files;
+    };
+    const bundledPackages = Object.entries(tarballs).sort(([a], [b]) => a.localeCompare(b)).map(([name, path]) => {
+      const bytes = readFileSync(path);
+      const installed = join(fixture, "node_modules", ...name.split("/"));
+      const manifestBytes = readFileSync(join(installed, "package.json"));
+      const manifest = JSON.parse(manifestBytes);
+      if (manifest.name !== name) throw new Error("installed manifest identity differs from its selected package");
+      return {
+        name, version: manifest.version, file: basename(path), sizeBytes: bytes.length,
+        sha256: hash(bytes), integrity: `sha512-${hash(bytes, "sha512", "base64")}`,
+        manifestSha256: hash(manifestBytes), dependencies: manifest.dependencies ?? {},
+        installedFiles: installedFiles(installed),
+      };
+    });
+    // Exclusive creation also refuses another builder reserving this path while
+    // qualification ran. The manifest is written only after every copy succeeds.
+    mkdirSync(bundleDirectory);
+    for (const [name, path] of Object.entries(tarballs)) {
+      copyFileSync(path, join(bundleDirectory, bundledPackages.find(entry => entry.name === name).file));
+    }
+    writeFileSync(join(bundleDirectory, "bundle-manifest.json"), JSON.stringify({
+      schemaVersion: 1,
+      createdAt: run("date", ["-u", "+%FT%TZ"], root).trim(),
+      source: sourceIdentity,
+      toolchain: { node: process.version, npm: run("npm", ["--version"], root).trim() },
+      qualification: { packedConsumer: "passed", importedPackages: everyPackage.length, compiledReadmeExamples: exampleFiles.length },
+      registryPublication: false,
+      packages: bundledPackages,
+    }, null, 2) + "\n");
+    console.log(`  saved ${bundledPackages.length} qualified tarballs and their source/payload manifest into ${bundleDirectory}`);
+  } catch (error) {
+    console.error(`  package bundle FAILED: ${error.message}. Keep any incomplete directory out of the candidate and rerun check:pack with a new directory.`);
+    process.exit(1);
+  }
 }
 
 rmSync(scratch, { recursive: true, force: true });
