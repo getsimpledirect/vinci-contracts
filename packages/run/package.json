@@ -1,6 +1,6 @@
 {
   "name": "@getsimpledirect/vinci-run",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,10 +24,10 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@getsimpledirect/vinci-contracts": "0.4.0",
-    "@getsimpledirect/vinci-model-classes": "0.4.0",
-    "@getsimpledirect/vinci-run-events": "0.4.0",
-    "@getsimpledirect/vinci-work-orders": "0.4.0"
+    "@getsimpledirect/vinci-contracts": "0.4.1",
+    "@getsimpledirect/vinci-model-classes": "0.4.1",
+    "@getsimpledirect/vinci-run-events": "0.4.1",
+    "@getsimpledirect/vinci-work-orders": "0.4.1"
   },
   "devDependencies": {
     "typescript": "5.9.3"
