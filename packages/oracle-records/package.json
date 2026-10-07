@@ -1,6 +1,6 @@
 {
   "name": "@getsimpledirect/vinci-oracle-records",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -24,9 +24,9 @@
     "prepack": "npm run build"
   },
   "dependencies": {
-    "@getsimpledirect/vinci-contracts": "0.4.0",
-    "@getsimpledirect/vinci-run": "0.4.0",
-    "@getsimpledirect/vinci-run-events": "0.4.0"
+    "@getsimpledirect/vinci-contracts": "0.4.1",
+    "@getsimpledirect/vinci-run": "0.4.1",
+    "@getsimpledirect/vinci-run-events": "0.4.1"
   },
   "devDependencies": {
     "typescript": "5.9.3"
