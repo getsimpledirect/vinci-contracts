@@ -63,3 +63,6 @@ jobs:
       # while being unusable the moment it is installed.
       - name: Packages work when installed
         run: npm run check:pack
+
+      - name: Qualified bundle bytes and admission controls
+        run: node --test scripts/check-consumer-install.test.mjs
