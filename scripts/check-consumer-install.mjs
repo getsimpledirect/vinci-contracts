@@ -229,6 +229,11 @@ import {
   verifyReviewPublicationAttributionSignature, validateReviewPublicationReference,
   type ReviewPublicationAttribution,
 } from "@getsimpledirect/vinci-remote-protocol";
+import {
+  validateVeroAssistantV1, validateVeroResponsibilityV1, validateVeroOccurrenceBindingV1,
+  validateVeroHostBindingAnchorV1, veroResponsibilityDigestV1, bindVeroOccurrenceV1,
+  type VeroAssistantV1, type VeroResponsibilityV1, type VeroOccurrenceBindingV1,
+} from "@getsimpledirect/vinci-work-orders";
 import { checkValidatedExecutionSpecWithinOrder } from "@getsimpledirect/vinci-work-orders/dist/within-order.js";
 import { validateAgent, validateContextManifest, RunReplay, replayRun } from "@getsimpledirect/vinci-run";
 
@@ -244,6 +249,45 @@ const good = validateSessionBinding({
   hostDeviceId: "dev-1", policyId: "pol-1", policyVersion: 1, retentionClass: "zdr_0d",
 });
 if (!good.ok) throw new Error("a valid binding was refused: " + JSON.stringify(good));
+
+// New Vero records must work from packed output without changing existing records.
+const installedVero = validateVeroAssistantV1({
+  schemaVersion: 1, assistantId: "vero-1", ownerId: "owner-1", displayName: "Vero",
+  revision: 1, pauseEpoch: 0, paused: false,
+});
+if (!installedVero.ok) throw new Error("installed Vero assistant rejected its positive control");
+const typedVero: VeroAssistantV1 = installedVero.value;
+if (validateVeroAssistantV1({ ...typedVero, provider: "placeholder" }).ok) throw new Error("Vero identity accepted a model provider");
+const installedResponsibility = validateVeroResponsibilityV1({
+  schemaVersion: 1, responsibilityId: "responsibility-1", ownerId: "owner-1", assistantId: "vero-1",
+  revision: 1, pauseEpoch: 0, paused: false, revoked: false, consentedAt: "2026-08-23T12:00:00.000Z",
+  definition: {
+    goal: "Draft a daily status", instructions: "Use only explicitly selected sources.", contexts: [], sourceIds: [], permissions: ["read"],
+    schedule: { kind: "daily", timeZone: "UTC", minuteOfDay: 540, graceMinutes: 60 },
+    quietHours: { kind: "none" }, notifyInitial: false, expiresAt: "2026-08-24T12:00:00.000Z", maxOccurrences: 1, maxAttempts: 1,
+    budget: { maxRuntimeS: 60, maxToolCalls: 1, maxTurns: 1, maxCashCostMicrousd: 0, maxListCostMicrousd: 0 },
+    totalBudget: { maxCashCostMicrousd: 0, maxListCostMicrousd: 0 },
+  },
+});
+if (!installedResponsibility.ok) throw new Error("installed Vero responsibility rejected its positive control");
+const typedResponsibility: VeroResponsibilityV1 = installedResponsibility.value;
+const installedOccurrence = validateVeroOccurrenceBindingV1({
+  schemaVersion: 1, occurrenceId: "occurrence-1", ownerId: "owner-1", assistantId: "vero-1", assistantRevision: 1, assistantPauseEpoch: 0,
+  responsibilityId: "responsibility-1", responsibilityRevision: 1, responsibilityPauseEpoch: 0,
+  responsibilityDigest: veroResponsibilityDigestV1(typedResponsibility),
+  runId: "run-1", workOrderId: "wo-vec-1", workOrderVersion: 1,
+  workOrderDigest: ${JSON.stringify(readFileSync(join(root, "packages/work-orders/vectors/work-order-1-minimal/digest.txt"), "utf8").trim())},
+  contextManifestDigest: "b".repeat(64),
+});
+if (!installedOccurrence.ok) throw new Error("installed Vero occurrence rejected its positive control");
+const typedOccurrence: VeroOccurrenceBindingV1 = installedOccurrence.value;
+const { ownerId: installedOwner, ...installedBindingFields } = typedOccurrence;
+const installedHost = validateVeroHostBindingAnchorV1({ ...installedBindingFields, authenticatedOwnerId: installedOwner, observedAt: "2026-08-23T13:00:00.000Z" });
+if (!installedHost.ok) throw new Error("installed host anchor rejected its positive control");
+const installedVeroOrder = ${readFileSync(join(root, "packages/work-orders/vectors/work-order-1-minimal/input.json"), "utf8")};
+if (!bindVeroOccurrenceV1(typedOccurrence, typedVero, typedResponsibility, installedVeroOrder, installedHost.value).ok) throw new Error("installed Vero binder rejected its positive control");
+if (bindVeroOccurrenceV1({ ...typedOccurrence, runId: "another-run" }, typedVero, typedResponsibility, installedVeroOrder, installedHost.value).ok) throw new Error("installed Vero binder accepted an unanchored run");
+if (validateVeroResponsibilityV1({ ...typedResponsibility, schemaVersion: 2 }).ok) throw new Error("installed Vero validator silently migrated a version");
 
 // These are authority-shape checks, so exercise the public entry points from
 // the packed package rather than accepting source-only coverage. A duplicate

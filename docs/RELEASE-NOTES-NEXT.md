@@ -57,3 +57,15 @@ The two halves are validated separately and report separate paths — `/issuer/o
 - `vinci-code-cli` (worker) — emits the `agent.*`, `tool.*` and `context.*` events, and is what a `HarnessAttestation` names. As deployed today it is a `pinned_checkout`: it must record the 40-hex commit it was `checkout --detach`ed to (the value it already announces as `worker_build`) and the `git write-tree` of the tree it ran the self-test on. A capability observed on a `working_tree` establishes nothing.
 
 Release mechanics unchanged: lockstep versions across every package, tag on the merged head, `release.yml` publishes on the tag.
+
+**Additive personal Vero v1 records in `vinci-work-orders` (layer 2).** Explicit
+model-independent assistant identity, bounded responsibility/context-selection
+metadata, and fully-bound occurrence references to existing canonical runs,
+WorkOrders and ContextManifest digests. Validators are closed/versioned and
+snapshot untrusted data; a pure binding check compares against an independently
+loaded host anchor and recomputes responsibility/WorkOrder digests. Host session,
+current grants/membership, uniqueness, context resolution, reservations and atomic
+admission remain mandatory. Existing schemas, vectors and package dependency
+edges are unchanged. Experimental unversioned records are rejected and need an
+explicit host migration; no implicit retention/training defaults, account system,
+model provider, E2EE keys or imported chat history are introduced.

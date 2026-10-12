@@ -8,3 +8,5 @@ export * from "./work-order.ts";
 // Named, not `export *`: checkValidatedExecutionSpecWithinOrder trusts its
 // inputs and stays package-private.
 export { GRANT_PREFIXES, checkExecutionSpecWithinOrder, type WithinOrder } from "./within-order.ts";
+
+export * from "./vero.ts";

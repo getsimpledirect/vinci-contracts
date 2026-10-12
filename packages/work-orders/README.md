@@ -88,3 +88,85 @@ Time: `resourceBounds.deadline` may not be later than `order.expiresAt`. `scope`
 ### Golden vectors and the Python port
 
 `vectors/` holds four WorkOrder and four ExecutionSpec fixtures, each with the exact canonical bytes (`canonical.txt`) and digest (`digest.txt`). `src/vectors.test.ts` regenerates and compares them in Node; `python/vinci_canonical.py` (standard library only) does the same in Python via `npm run test:vectors`, which the gate runs. **`python3` (3.8+) on PATH is therefore a gate prerequisite**, locally and in CI; there are no Python dependencies beyond the standard library. The two implementations must agree byte for byte; a change to canonicalization, coverage, or a fixture fails in both languages. Regenerate with `node vectors/generate.mjs` (after `npm run build`) only as a deliberate act, and commit the result.
+
+## Personal Vero records (additive v1)
+
+`VeroAssistantV1`, `VeroResponsibilityV1`, `VeroOccurrenceBindingV1` and
+`VeroHostBindingAnchorV1` are additional **closed, explicitly versioned** records.
+They do not change WorkOrder v3, ExecutionSpec v1, existing golden vectors, or
+package layering. Each has a `validateVero…V1` validator and a
+`VERO_…_V1_SCHEMA_META`. Missing/unsupported versions and unknown fields are
+refused; there is no migration or default from experimental unversioned storage.
+Future schema changes require a separate version and an explicit migration.
+This addition is unreleased; lockstep package version selection remains a release
+step, not part of this implementation.
+
+### Identity and consent boundaries
+
+The assistant has `assistantId`, existing `ownerId` (`UserId`), `displayName`,
+`revision`, `pauseEpoch`, and `paused`. Its ID uses the shared identifier syntax
+but is deliberately **not** a per-run/model-bound `AgentId`. It carries no model,
+provider, credentials, account, workspace, retention, or training setting.
+The host enforces one personal assistant per existing authorized user in v1;
+validation does not create an account, prove ownership, or enforce uniqueness.
+
+A responsibility explicitly records the owner's consent timestamp, assistant
+binding, revision and pause epoch, paused/revoked state, and its complete bounded
+definition. The definition names goal, instructions, selected source IDs,
+read/draft scope, a daily schedule, quiet hours, initial-notification choice,
+expiry, occurrence/attempt caps, per-task bounds and lifetime cash/list caps.
+All choices are required. Money is safe-integer micro-USD. Bounds are declarations;
+reservation, aggregate account/global limits, retry accounting and concurrency
+remain host operations. Read/draft scope does not itself authorize either action.
+No permission for sending or other consequential actions is expressed here.
+
+Each nested `VeroContextReferenceV1` contains source ID and revision, a bounded
+ref (at most 512 UTF-16 code units), SHA-256 digest, purpose, explicit-selection
+provenance (owner and selection time), and `revokedAt` (explicit null or timestamp).
+Its schema is pinned by the enclosing responsibility's schema version; source
+revision separately pins the source generation. Selection must precede consent,
+and its source must appear in the selected source IDs. A valid historical record
+may contain a revoked selection, but it cannot bind new work. Changing purpose,
+source revision, digest, consent, expiry, or any other field changes the
+`veroResponsibilityDigestV1`, which hashes the complete validated record using
+the existing canonicalizer. No source content, E2EE keys or chat history is
+imported, and no privacy, retention or training choice is implied.
+
+Schedule validation checks a bounded IANA-style zone spelling, minute-of-day and
+grace window; the host must resolve the zone using its timezone database and apply
+its documented DST policy. It does not run a scheduler. Quiet hours must explicitly
+be `none`, `all-day`, or a `window` with distinct endpoints; notification delivery
+and timing remain host decisions under the saved choice.
+
+### Canonical bindings, independent host anchors
+
+`VeroOccurrenceBindingV1` exists **only after** an occurrence has a canonical
+`RunId` and WorkOrder. Reserved/admitting states remain internal; a local task ID
+must not be relabeled as a canonical run ID. It pins assistant revision/pause
+epoch, responsibility revision/pause epoch and digest, WorkOrder ID/contract
+version/digest, and a ContextManifest digest. It does not copy the run engine.
+
+`bindVeroOccurrenceV1(occurrence, assistant, responsibility, workOrder, hostAnchor)`
+validates every input, recomputes responsibility and WorkOrder digests, checks
+human ownership, exact IDs/versions/fences, inactivity/revocation and validity at
+trusted host time, then compares every occurrence field with the independent
+anchor. Successful validation or binding grants **no access**.
+
+The host anchor has the occurrence fields except `authenticatedOwnerId` replaces
+`ownerId`, plus `observedAt`. Its shape is not proof of authority. Populate it from
+an authenticated session and independently loaded host records, never by copying
+client claims. Matching lies in all supplied records otherwise prove nothing.
+The host must independently resolve selected contexts against current source
+grants/revisions/revocation, validate the canonical ContextManifest and recompute
+its digest, check its run ID and exact selected-ref/digest projection, and store
+that trusted mapping. Layer 2 cannot import the layer-3 ContextManifest validator,
+so this package deliberately carries only its digest. It does not verify manifest
+contents, signatures, session grants, membership, retention, or reservations.
+Recheck current authority and fences atomically with admission; a pure predicate
+cannot prevent a revoke/admit race. Copying an anchor from the candidate is only
+appropriate in positive test fixtures, never in production authorization.
+
+All validators use `toPlainRecord` first: the accepted value is a frozen inert
+snapshot of one serialization, isolated from later mutation. Getters/proxies may
+choose their serialized data; shape validation cannot establish truth. Independent
+anchors are necessary precisely because consistent hostile data can be well-shaped.
