@@ -301,7 +301,86 @@ const REPLAY_GUARDS = [
   },
 ];
 
+/** Positive Vero binding controls use independently pinned digests, not the binder under test. */
+function veroBindingFixture() {
+  const assistant = { schemaVersion: 1, assistantId: "vero-1", ownerId: "owner-1", displayName: "Vero", revision: 1, pauseEpoch: 0, paused: false };
+  const responsibility = {
+    "schemaVersion": 1,
+    "responsibilityId": "responsibility-1",
+    "ownerId": "owner-1",
+    "assistantId": "vero-1",
+    "revision": 1,
+    "pauseEpoch": 0,
+    "paused": false,
+    "revoked": false,
+    "consentedAt": "2026-08-23T12:00:00.000Z",
+    "definition": {
+      "goal": "Draft a daily status",
+      "instructions": "Use only explicitly selected sources.",
+      "contexts": [],
+      "sourceIds": [],
+      "permissions": [
+        "read"
+      ],
+      "schedule": {
+        "kind": "daily",
+        "timeZone": "UTC",
+        "minuteOfDay": 540,
+        "graceMinutes": 60
+      },
+      "quietHours": {
+        "kind": "none"
+      },
+      "notifyInitial": false,
+      "expiresAt": "2026-08-24T12:00:00.000Z",
+      "maxOccurrences": 1,
+      "maxAttempts": 1,
+      "budget": {
+        "maxRuntimeS": 60,
+        "maxToolCalls": 1,
+        "maxTurns": 1,
+        "maxCashCostMicrousd": 0,
+        "maxListCostMicrousd": 0
+      },
+      "totalBudget": {
+        "maxCashCostMicrousd": 0,
+        "maxListCostMicrousd": 0
+      }
+    }
+  };
+  const order = JSON.parse(readFileSync(join(root, "packages/work-orders/vectors/work-order-1-minimal/input.json"), "utf8"));
+  const occurrence = {
+    schemaVersion: 1, occurrenceId: "occurrence-1", ownerId: "owner-1", assistantId: "vero-1", assistantRevision: 1, assistantPauseEpoch: 0,
+    responsibilityId: "responsibility-1", responsibilityRevision: 1, responsibilityPauseEpoch: 0,
+    responsibilityDigest: "f4cb10e3b9fa0cb7543fe8a5bfdecaaf60713171e7a2476394bb629d29cb5dd3",
+    runId: "run-1", workOrderId: order.id, workOrderVersion: order.contractVersion,
+    workOrderDigest: readFileSync(join(root, "packages/work-orders/vectors/work-order-1-minimal/digest.txt"), "utf8").trim(),
+    contextManifestDigest: "b".repeat(64),
+  };
+  const { ownerId, ...fields } = occurrence;
+  const hostAnchor = { ...fields, authenticatedOwnerId: ownerId, observedAt: "2026-08-23T13:00:00.000Z" };
+  return [occurrence, assistant, responsibility, order, hostAnchor];
+}
+
 const AUTHORITY_GUARDS = [
+  // A pure binder is not access authority, but its success must still be probed
+  // in every input position. A copied client anchor is never a production grant.
+  ...["occurrence", "assistant", "responsibility", "workOrder", "hostAnchor"].map((position, index) => ({
+    pkg: "@getsimpledirect/vinci-work-orders",
+    export: "bindVeroOccurrenceV1",
+    label: `bindVeroOccurrenceV1(hostile ${position})`,
+    call: (fn, hostile) => {
+      const inputs = veroBindingFixture();
+      inputs[index] = hostile;
+      return fn(...inputs).ok;
+    },
+    control: (fn) => {
+      const inputs = veroBindingFixture();
+      if (fn(...inputs).ok !== true) return false;
+      inputs[4].authenticatedOwnerId = "other-owner";
+      return fn(...inputs).ok === false;
+    },
+  })),
   ...REPLAY_GUARDS,
   {
     pkg: "@getsimpledirect/vinci-device-auth",
@@ -1293,6 +1372,11 @@ const AUTHORITY_GUARDS = [
  * though the conclusion held.
  */
 const REQUIRED_GUARDS = [
+  "bindVeroOccurrenceV1(hostile occurrence)",
+  "bindVeroOccurrenceV1(hostile assistant)",
+  "bindVeroOccurrenceV1(hostile responsibility)",
+  "bindVeroOccurrenceV1(hostile workOrder)",
+  "bindVeroOccurrenceV1(hostile hostAnchor)",
   "RunReplay(hostile declaration)",
   "RunReplay(declaration with hostile agent)",
   "RunReplay.append(hostile event)",
@@ -1412,6 +1496,7 @@ const NOT_AUTHORITY_GUARDS = {
   "@getsimpledirect/vinci-work-orders.amendWorkOrder": "constructor over validated inputs; its output is validated",
   "@getsimpledirect/vinci-work-orders.classifyMateriality": "total classification over typed contract changes",
   "@getsimpledirect/vinci-work-orders.verificationIsStaleAfter": "projection from a validated amendment, not an authority decision",
+  "@getsimpledirect/vinci-work-orders.veroResponsibilityDigestV1": "encoder over a record it validates first; throws on an invalid one; never authenticates its fields or grants authority",
   "@getsimpledirect/vinci-work-orders.workOrderDigest": "encoder over a record it validates first; throws on an invalid one",
   "@getsimpledirect/vinci-work-orders.executionSpecDigest": "encoder over a record it validates first; throws on an invalid one",
   "@getsimpledirect/vinci-work-orders.isPlainBranchName": "pure string/regex predicate",
