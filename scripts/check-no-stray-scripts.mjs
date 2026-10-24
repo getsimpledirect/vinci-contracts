@@ -45,6 +45,8 @@ const ALLOWED_ROOT_FILES = [
   // re-flag them. Anything else secret-shaped is still caught.
   ".gitleaksignore",
   "README.md",
+  // The root license defines the permitted use of repository material.
+  "LICENSE",
   "eslint.config.mjs",
   "package-lock.json",
   "package.json",
