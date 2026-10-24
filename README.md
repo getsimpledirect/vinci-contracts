@@ -1,4 +1,14 @@
-# @getsimpledirect/vinci-contracts
+# Vinci Contracts
+
+Canonical TypeScript record types, validation functions and interoperability contracts shared by Vinci services and clients.
+
+A contract validates record structure and declared bindings; it does not by itself attest identity, execution or deployment. Preserve supported wire versions and consumer compatibility when changing this repository.
+
+## Start here
+
+[Dependency layers](#the-layer-hierarchy) · [Record examples](#using-the-record-types) · [Validation failures](#handling-validation-failures) · [Local gate](#running-the-gate) · [Signed GitHub attribution](docs/github-action-attribution-v1.md)
+
+Use Node.js 20 or newer and the committed npm lockfile. Run npm run gate for source checks; npm run check:pack separately exercises installed packages and requires dependency access.
 
 Shared types and validators for the Vinci platform, used by five repositories (vinci-code, vinci-work, vinci-mobile, vinci-platform, vinci-chat) that currently maintain drifting local copies. This monorepo closes that divergence by defining one canonical set of record types, their shapes, and their validation rules—so teams can build against the same definitions instead of against guesses about what they meant to agree on.
 
@@ -631,7 +641,7 @@ Issues (path, code, message):
 
 ### Timestamps: ISO-8601 UTC, Millisecond Precision
 
-Always `YYYY-MM-DDTHH:MM:SS.sssZ` — six digits after the decimal point, exactly. Ordering timestamps as strings is only sound in this exact canonical form. An unvalidated timestamp makes `"2026-1-1"` sort before `"2026-01-02"`, and a non-UTC offset sorts by its text rather than by the instant it represents. The round-trip validation also rejects dates that do not exist—Date.parse normalizes February 29 in a non-leap year to March 1 instead of refusing it, so the pattern alone would admit an impossible date.
+Always `YYYY-MM-DDTHH:MM:SS.sssZ` — three digits after the decimal point, exactly. Ordering timestamps as strings is only sound in this exact canonical form. An unvalidated timestamp makes `"2026-1-1"` sort before `"2026-01-02"`, and a non-UTC offset sorts by its text rather than by the instant it represents. The round-trip validation also rejects dates that do not exist—Date.parse normalizes February 29 in a non-leap year to March 1 instead of refusing it, so the pattern alone would admit an impossible date.
 
 ### Digests: 64 Lowercase Hex, No Prefix
 
@@ -725,7 +735,7 @@ network and takes minutes:
 npm run check:pack
 ```
 
-It packs all twelve packages, installs the tarballs into an empty directory outside
+It packs the expected packages, installs the tarballs into an empty directory outside
 this repository, and both type-checks and runs a program that imports every one
 of them. Everything else here resolves package names to source through tsconfig
 path aliases and project references; a consumer gets `files`, `main` and `types`
@@ -752,3 +762,7 @@ earlier session imported `dist/index.js` from, on a machine this one isn't. Poin
 import at your own `packages/model-classes/dist/index.js` (`npm run build` first) before
 running one. Treat these as a historical verification record to read, not a suite to
 execute unmodified.
+
+## License
+
+Original proprietary material is copyright © 2026 Alpine Pacific Trading Inc. and is governed by [LICENSE](LICENSE). Third-party material and separately licensed components retain their own terms; previously granted rights are preserved. Repository access does not authorize external publication.
