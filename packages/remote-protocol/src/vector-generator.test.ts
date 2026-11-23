@@ -10,16 +10,18 @@ import type { ReviewPublicationAttribution } from "./review-publication-attribut
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GENERATOR = join(PACKAGE_ROOT, "vectors", "generate.mjs");
-const ARTIFACTS = [
-  "valid-v1.json",
-  "invalid-v1.json",
-  "timestamp-v1.json",
-  "canonical.txt",
-  "digest.txt",
-  "public-key.txt",
-  "signature.txt",
-  "pointer.txt",
-];
+// SHA-256 of the committed vector files, including their exact formatting.
+const ARTIFACT_SHA256 = {
+  "valid-v1.json": "d37c785f444220af3b01c1e74436e4024416b71446a64e794c44a228745de985",
+  "invalid-v1.json": "8eb8af990a4796ed48cb503b3efccd68759d5a2bba0e7362a1d52022e6fd1267",
+  "timestamp-v1.json": "7699a0d5e532e2d513ae5149accdeedbf26df323a6af46eee92e65560da9c7de",
+  "canonical.txt": "6a81b96fa73260e5bed85a23c49c3671dddf4e7e15b8117560d4a9e4af1d1ae7",
+  "digest.txt": "fd6b810a28afa5ed989e8dc9777068c7424b5c69ba245608e9b710d6e30fbf92",
+  "public-key.txt": "f762498cbcd4baca389ccf363dbb0ff912aac48d5c1016a45cbcd616a5686238",
+  "signature.txt": "64ffe85585296a9397d15e3615c29029cc6f89921473a6ee3d42e3586877117e",
+  "pointer.txt": "5dfbf3053eae218e2d9db776a550e86a5d5441f3ca4f776bb946c47113dbfe14",
+};
+const ARTIFACTS = Object.keys(ARTIFACT_SHA256);
 
 function runGenerator(directory: string) {
   const vectors = join(directory, "vectors");
@@ -67,10 +69,23 @@ describe("review publication attribution vector generator", () => {
     }
   });
 
+  it.each(Object.entries(ARTIFACT_SHA256))(
+    "emits the pinned bytes of %s, equal to the committed vector",
+    (artifact, sha256) => {
+      const emitted = readFileSync(join(firstRun.vectors, artifact));
+      expect(createHash("sha256").update(emitted).digest("hex")).toBe(sha256);
+      expect(emitted).toEqual(readFileSync(join(PACKAGE_ROOT, "vectors", artifact)));
+    },
+  );
+
   it("writes the SHA-256 of canonical.txt to digest.txt", () => {
     const canonical = readFileSync(join(firstRun.vectors, "canonical.txt"));
     const digest = createHash("sha256").update(canonical).digest("hex");
     expect(readArtifact("digest.txt")).toBe(`${digest}\n`);
+  });
+
+  it("writes the canonical signing payload without a trailing newline", () => {
+    expect(readArtifact("canonical.txt")).not.toMatch(/[\r\n]$/);
   });
 
   it("writes the RFC 8032 fixture public key as base64url", () => {
@@ -124,6 +139,24 @@ describe("review publication attribution vector generator", () => {
   ])("preserves the raw JSON token for $name", ({ name, code, token }) => {
     expect(invalidCases.filter((entry) => entry.name === name)).toStrictEqual([
       { name, code, input: expect.stringContaining(token) },
+    ]);
+  });
+
+  it("emits exactly the pinned invalid cases, in order", () => {
+    expect(invalidCases.map(({ name, code }) => ({ name, code }))).toStrictEqual([
+      { name: "wrong purpose", code: "invalid_purpose" },
+      { name: "wrong audience", code: "invalid_audience" },
+      { name: "wrong verdict", code: "invalid_verdict" },
+      { name: "uppercase record digest", code: "invalid_digest" },
+      { name: "invalid idempotency key", code: "invalid_id" },
+      { name: "wrong provider", code: "invalid_provider" },
+      { name: "abbreviated head", code: "invalid_git_sha" },
+      { name: "reversed time", code: "invalid_time_order" },
+      { name: "lifetime over bound", code: "lifetime_exceeded" },
+      { name: "duplicate decoded key", code: "duplicate_field" },
+      { name: "unsafe integer", code: "unsafe_integer" },
+      { name: "fractional integer spelling", code: "ambiguous_number" },
+      { name: "non-NFC identity", code: "non_canonical_unicode" },
     ]);
   });
 
@@ -207,6 +240,13 @@ describe("review publication attribution vector generator", () => {
     const text = readArtifact("timestamp-v1.json");
     expect(text.endsWith("\n")).toBe(true);
     expect(JSON.parse(text)).toHaveLength(expectedTimestamps.length);
+  });
+
+  it("emits exactly the pinned timestamp cases, in order", () => {
+    const timestamps: { name: string }[] = JSON.parse(readArtifact("timestamp-v1.json"));
+    expect(timestamps.map(({ name }) => name)).toStrictEqual(
+      expectedTimestamps.map(({ name }) => name),
+    );
   });
 
   it.each(expectedTimestamps)("preserves the timestamp case: $name", (expected) => {
