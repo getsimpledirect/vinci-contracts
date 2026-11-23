@@ -40,6 +40,13 @@ function _checkFallbackTypes(): void {
   // @ts-expect-error A blocked fallback requires permitted: false.
   const _permittedBlocked: FallbackRecord = { ...blocked, policyDecision: applied.policyDecision };
 
+  const { destination: _destination, ...appliedWithoutDestination } = applied;
+  // @ts-expect-error An applied fallback requires its destination.
+  const _appliedWithoutDestination: FallbackRecord = appliedWithoutDestination;
+  const { policyDecision: _blockedPolicyDecision, ...blockedWithoutPolicyDecision } = blocked;
+  // @ts-expect-error A blocked fallback requires its policy decision.
+  const _blockedWithoutPolicyDecision: FallbackRecord = blockedWithoutPolicyDecision;
+
   const _usedApplied: MaterialFallbackDisclosure = { kind: "used", record: applied };
   const _usedBlocked: MaterialFallbackDisclosure = { kind: "used", record: blocked };
   // @ts-expect-error A used disclosure must include a fallback record.

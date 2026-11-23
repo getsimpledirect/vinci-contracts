@@ -62,6 +62,31 @@ describe("run vector generator", () => {
     expect(result.stderr).toContain("cannot digest an invalid agent: /version invalid_version");
   });
 
+  // One committed fixture per dispatch prefix in vectors/generate.mjs. Each must
+  // reach its own digest function: an unmatched prefix exits nonzero, and a
+  // prefix routed to another schema fails validation or changes the digest.
+  it.each([
+    ["agent-", "agent-1-minimal"],
+    ["context-manifest-", "context-manifest-1-trust"],
+    ["environment-", "environment-1-cloud"],
+    ["harness-attestation-", "harness-attestation-1-pass"],
+    ["human-correction-", "human-correction-1"],
+    ["run-", "run-1-created"],
+  ])("dispatches the %s prefix to its own digest function (%s)", (prefix, name) => {
+    expect(name.startsWith(prefix)).toBe(true);
+    const committed = join(here, "..", "vectors", name);
+    const input = JSON.parse(readFileSync(join(committed, "input.json"), "utf8"));
+    const { fixture, result } = runGenerator(name, input);
+
+    expect(result.status, result.stderr).toBe(0);
+    const digest = readFileSync(join(committed, "digest.txt"), "utf8");
+    expect(readFileSync(join(fixture, "canonical.txt"), "utf8")).toBe(
+      readFileSync(join(committed, "canonical.txt"), "utf8"),
+    );
+    expect(readFileSync(join(fixture, "digest.txt"), "utf8")).toBe(digest);
+    expect(result.stdout).toBe(`${name}: ${digest}`);
+  });
+
   it("exits nonzero with an uncaught error for an unknown vector prefix", () => {
     const { result } = runGenerator("unknown-vector", AGENT);
 
