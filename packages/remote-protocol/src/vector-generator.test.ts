@@ -1,10 +1,12 @@
+import { Buffer } from "node:buffer";
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, createPublicKey, verify } from "node:crypto";
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { ReviewPublicationAttribution } from "./review-publication-attribution.ts";
 
 const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GENERATOR = join(PACKAGE_ROOT, "vectors", "generate.mjs");
@@ -19,26 +21,38 @@ const ARTIFACTS = [
   "pointer.txt",
 ];
 
-function runGenerator(directory: string): string {
+function runGenerator(directory: string) {
   const vectors = join(directory, "vectors");
   mkdirSync(vectors, { recursive: true });
   const script = join(vectors, "generate.mjs");
   copyFileSync(GENERATOR, script);
   // Preserve the generator's relative import and use the built workspace package.
   symlinkSync(join(PACKAGE_ROOT, "dist"), join(directory, "dist"), "junction");
-  execFileSync(process.execPath, [script], { cwd: directory, timeout: 10_000 });
-  return vectors;
+  const stdout = execFileSync(process.execPath, [script], {
+    cwd: directory,
+    encoding: "utf8",
+    timeout: 10_000,
+  });
+  return { vectors, stdout };
 }
 
 describe("review publication attribution vector generator", () => {
   let scratch: string | undefined;
-  let firstRun: string;
-  let secondRun: string;
+  let firstRun: ReturnType<typeof runGenerator>;
+  let secondRun: ReturnType<typeof runGenerator>;
+  let attribution: ReviewPublicationAttribution;
+  let invalidCases: { name: string; code: string; input: string }[];
+
+  function readArtifact(name: string): string {
+    return readFileSync(join(firstRun.vectors, name), "utf8");
+  }
 
   beforeAll(() => {
     scratch = mkdtempSync(join(tmpdir(), "review-publication-vectors-"));
     firstRun = runGenerator(join(scratch, "first"));
     secondRun = runGenerator(join(scratch, "second"));
+    attribution = JSON.parse(readArtifact("valid-v1.json"));
+    invalidCases = JSON.parse(readArtifact("invalid-v1.json"));
   });
 
   afterAll(() => {
@@ -47,20 +61,82 @@ describe("review publication attribution vector generator", () => {
 
   it("emits byte-identical attribution artifacts on two independent runs", () => {
     for (const artifact of ARTIFACTS) {
-      expect(readFileSync(join(secondRun, artifact)), artifact).toEqual(
-        readFileSync(join(firstRun, artifact)),
+      expect(readFileSync(join(secondRun.vectors, artifact)), artifact).toEqual(
+        readFileSync(join(firstRun.vectors, artifact)),
       );
     }
   });
 
   it("writes the SHA-256 of canonical.txt to digest.txt", () => {
-    const canonical = readFileSync(join(firstRun, "canonical.txt"));
+    const canonical = readFileSync(join(firstRun.vectors, "canonical.txt"));
     const digest = createHash("sha256").update(canonical).digest("hex");
-    expect(readFileSync(join(firstRun, "digest.txt"), "utf8")).toBe(`${digest}\n`);
+    expect(readArtifact("digest.txt")).toBe(`${digest}\n`);
+  });
+
+  it("writes the RFC 8032 fixture public key as base64url", () => {
+    const rawKey = Buffer.from("d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a", "hex");
+    expect(readArtifact("public-key.txt")).toBe(`${rawKey.toString("base64url")}\n`);
+  });
+
+  it("uses the fixed issue time in the valid attribution", () => {
+    expect(attribution.issuedAt).toBe("2026-09-04T12:00:00.000Z");
+  });
+
+  it("writes a canonical Ed25519 signature for the generated signing payload", () => {
+    expect(attribution.signature.alg).toBe("Ed25519");
+    const signature = Buffer.from(attribution.signature.value, "base64url");
+    expect(signature).toHaveLength(64);
+    expect(attribution.signature.value).toBe(signature.toString("base64url"));
+    expect(readArtifact("signature.txt")).toBe(`${attribution.signature.value}\n`);
+
+    const publicKey = createPublicKey({
+      key: { kty: "OKP", crv: "Ed25519", x: readArtifact("public-key.txt").trimEnd() },
+      format: "jwk",
+    });
+    const canonical = readFileSync(join(firstRun.vectors, "canonical.txt"));
+    expect(verify(null, canonical, publicKey, signature)).toBe(true);
+  });
+
+  it("writes the v1 publication reference with a final newline", () => {
+    const publicationDigest = createHash("sha256").update("guard-review-publication-vector-v1").digest("hex");
+    expect(readArtifact("pointer.txt")).toBe(`grv_01JTEST@sha256:${publicationDigest}\n`);
+  });
+
+  it("writes the wrong-provider case as a complete compact attribution", () => {
+    const name = "wrong provider";
+    const input = JSON.stringify({ ...attribution, subject: { ...attribution.subject, provider: "gitlab" } });
+    expect(invalidCases.filter((entry) => entry.name === name)).toStrictEqual([
+      { name, code: "invalid_provider", input },
+    ]);
+  });
+
+  it.each([
+    {
+      name: "duplicate decoded key",
+      code: "duplicate_field",
+      token: '"schemaVersion":1,"schema\\u0056ersion":1,',
+    },
+    {
+      name: "unsafe integer",
+      code: "unsafe_integer",
+      token: `"pullRequestNumber":${Number.MAX_SAFE_INTEGER + 1},`,
+    },
+  ])("preserves the raw JSON token for $name", ({ name, code, token }) => {
+    expect(invalidCases.filter((entry) => entry.name === name)).toStrictEqual([
+      { name, code, input: expect.stringContaining(token) },
+    ]);
+  });
+
+  it("writes invalid-v1.json with two-space indentation and a final newline", () => {
+    expect(readArtifact("invalid-v1.json")).toBe(`${JSON.stringify(invalidCases, null, 2)}\n`);
+  });
+
+  it("reports the v1 attribution digest on stdout", () => {
+    expect(firstRun.stdout).toBe(`review-publication-attribution-v1: ${readArtifact("digest.txt")}`);
   });
 
   // The valid cases pin the digests from the committed timestamp vector.
-  it.each([
+  const expectedTimestamps = [
     {
       name: "year one lower boundary",
       issuedAt: "0001-01-01T00:00:00.000Z",
@@ -125,10 +201,16 @@ describe("review publication attribution vector generator", () => {
       valid: false,
       code: "expired",
     },
-  ])("preserves the timestamp case: $name", (expected) => {
-    const timestamps: { name: string }[] = JSON.parse(
-      readFileSync(join(firstRun, "timestamp-v1.json"), "utf8"),
-    );
+  ];
+
+  it("writes exactly the expected number of timestamp cases with a final newline", () => {
+    const text = readArtifact("timestamp-v1.json");
+    expect(text.endsWith("\n")).toBe(true);
+    expect(JSON.parse(text)).toHaveLength(expectedTimestamps.length);
+  });
+
+  it.each(expectedTimestamps)("preserves the timestamp case: $name", (expected) => {
+    const timestamps: { name: string }[] = JSON.parse(readArtifact("timestamp-v1.json"));
     expect(timestamps.filter(({ name }) => name === expected.name)).toStrictEqual([expected]);
   });
 });
