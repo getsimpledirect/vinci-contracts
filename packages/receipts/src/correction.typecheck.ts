@@ -4,8 +4,21 @@ import type { Correction } from "./correction.ts";
 import type { Receipt } from "./receipt.ts";
 
 type Assert<Condition extends true> = Condition;
+// Mutual assignability is not exactness: `any` is assignable both ways to every
+// type. Comparing two deferred conditional types is true only for identical types.
 type IsExactly<Left, Right> =
-  [Left] extends [Right] ? ([Right] extends [Left] ? true : false) : false;
+  (<T>() => T extends Left ? 1 : 2) extends (<T>() => T extends Right ? 1 : 2) ? true : false;
+type IsFalse<Condition extends false> = Condition;
+// `any` without the lint-banned keyword: JSON.parse is declared to return it.
+type AnyValue = ReturnType<typeof JSON.parse>;
+
+export type AnyValueIsAny = Assert<0 extends 1 & AnyValue ? true : false>;
+
+export type ExactnessRejectsAnyOnTheLeft = IsFalse<IsExactly<AnyValue, Receipt>>;
+export type ExactnessRejectsAnyOnTheRight = IsFalse<IsExactly<Receipt, AnyValue>>;
+export type ExactnessRejectsUnknown = IsFalse<IsExactly<unknown, Receipt>>;
+export type ExactnessRejectsNever = IsFalse<IsExactly<never, Receipt>>;
+export type ExactnessAcceptsItself = Assert<IsExactly<Receipt, Receipt>>;
 
 export type CorrectionIdUsesCanonicalReceiptId = Assert<
   IsExactly<Correction["correctionId"], ReceiptId>
